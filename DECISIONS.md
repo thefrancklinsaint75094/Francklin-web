@@ -122,6 +122,6 @@ simple qui respecte le mur de confidentialité (§12).
 
 ## Déploiement
 
-41. `railway.toml` fixe la région Amsterdam (`europe-west4-drams3a`) et une seule réplique. Amsterdam est
+41. `railway.toml` fixe la région Amsterdam (`ams`, l'identifiant actuel de Railway) et une seule réplique. Amsterdam est
     proche des serveurs Telegram et de la base Supabase créée à Paris (`eu-west-3`) ; la région par défaut
     d'un nouveau compte Railway est en Californie, ce qui ajoutait ~150 ms à chaque requête en base.

@@ -7,5 +7,5 @@ restartPolicyType = "always"
 
 # Une seule instance (deux pollings sur le même token = Conflict 409),
 # à Amsterdam : proche des serveurs Telegram et de la base Supabase (Paris).
-[deploy.multiRegionConfig.europe-west4-drams3a]
+[deploy.multiRegionConfig.ams]
 numReplicas = 1
