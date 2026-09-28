@@ -152,10 +152,13 @@ Tout se fait depuis un téléphone, dans Chrome :
 3. Dans Railway : `GOOGLE_SHEETS_WEBHOOK_URL` = l'adresse obtenue (finit par `/exec`),
    `GOOGLE_SHEETS_SECRET` = le même secret.
 4. Dans l'onglet **PARAMETRES**, colonnes **Q** et **R** à partir de la ligne 4 : en Q le nom du bot
-   (« Franchisé 1 », « Livreur 2 ») ou le vrai nom, en R le nom de la feuille (« PNO », « Livreur A »).
+   (« Livreur 2 ») ou le vrai nom, en R le nom de la feuille (« Livreur A »).
+
+La colonne Vendeur vaut toujours « TOTAL » (constante `VENDEUR` du script) : une ligne dont la seule case remplie
+est Vendeur = « TOTAL » compte comme vide, et après chaque écriture les cases Vendeur vidées repassent à « TOTAL ».
 
 Chaque course livrée va dans l'onglet de sa nuit (livrée à 2h dans la nuit de lundi à mardi → « Lundi »),
-sur la première ligne vide entre 2 et 41 : Vendeur, Livreur, Statut « OK », Adresse, puis jusqu'à 3 produits
+sur la première ligne vide entre 2 et 41 : Vendeur « TOTAL », Livreur, Statut « OK », Adresse, puis jusqu'à 3 produits
 avec leur quantité et leur prix (au-delà, la suite va sur la ligne vide suivante). Paiement reste vide, le bot
 ne le connaît pas. Le digicode et le commentaire ne vont jamais dans la feuille.
 
