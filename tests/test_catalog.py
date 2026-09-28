@@ -54,9 +54,9 @@ def test_model_example():
     [o] = parse_template(MODEL_EXAMPLE, CAT)
     assert o["address"] == "12 rue de Rivoli 75004 Paris"
     # « vodka » désigne deux produits : le mot est gardé tel quel, avec un avertissement.
-    assert o["products"] == "2 vodka (60 €) + 1 Coca-Cola (5 €)"
+    assert o["products"] == "2 vodka (60 €) + 1 Coca-Cola (10 €)"
     assert o["warnings"] == ["⚠️ « vodka » peut être : Vodka Absolut, Vodka Grey Goose"]
-    assert o["price"] == "65.00"
+    assert o["price"] == "70.00"
     assert o["address_detail"] == "Digicode 45A32, 3e étage"
 
 

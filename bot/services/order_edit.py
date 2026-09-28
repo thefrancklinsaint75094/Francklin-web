@@ -123,3 +123,18 @@ def off_step_prices(lines: list[dict]) -> list[str]:
 def same(a: list[dict], b: list[dict]) -> bool:
     key = lambda ls: [(l["p"], l["q"], round(float(l["x"]), 2)) for l in ls]  # noqa: E731
     return key(a) == key(b)
+
+
+def price_problems(price: float | None, products: str | None) -> list[str]:
+    """Prix d'une commande de franchisé qui ne sont pas des multiples de 10 € :
+    le total, et le prix de chaque ligne quand il est écrit (« 1 KT (5 €) »)."""
+    problems = []
+    if price is not None and not valid_price(float(price)):
+        problems.append(f"total {_eur(float(price))}")
+    for part in (products or "").split(" + "):
+        m = sheets.LINE_PRICE_RE.search(part)
+        if m:
+            value = float(m.group(1).replace(",", "."))
+            if not valid_price(value):
+                problems.append(f"{part[:m.start()].strip()} ({_eur(value)})")
+    return problems

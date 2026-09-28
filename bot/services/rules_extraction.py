@@ -261,7 +261,7 @@ class RuleExtractor:
 #
 #   12 rue de Rivoli 75004 Paris        ← adresse (et éventuellement digicode, heure)
 #   2 vodka 60                          ← quantité, produit, prix TOTAL de la ligne
-#   1 coca 5
+#   1 coca 10
 #                                        ← ligne vide
 #   Digicode 45A32, 3e étage             ← commentaire (vu par le livreur seulement)
 
@@ -345,4 +345,4 @@ def parse_template(text: str, catalog=None) -> list[dict] | None:
     }]
 
 
-MODEL_EXAMPLE = "12 rue de Rivoli 75004 Paris\n2 vodka 60\n1 coca 5\n\nDigicode 45A32, 3e étage"
+MODEL_EXAMPLE = "12 rue de Rivoli 75004 Paris\n2 vodka 60\n1 coca 10\n\nDigicode 45A32, 3e étage"

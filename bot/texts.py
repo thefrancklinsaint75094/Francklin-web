@@ -79,11 +79,12 @@ MODEL_HELP = (
     "📝 <b>Modèle de commande</b>\n\n"
     "<code>12 rue de Rivoli 75004 Paris\n"
     "2 vodka 60\n"
-    "1 coca 5\n"
+    "1 coca 10\n"
     "\n"
     "Digicode 45A32, 3e étage</code>\n\n"
     "• 1re ligne : l'adresse, avec le code postal.\n"
-    "• Puis une ligne par produit : <b>quantité</b>, <b>produit</b>, <b>prix total</b> de la ligne.\n"
+    "• Puis une ligne par produit : <b>quantité</b>, <b>produit</b>, <b>prix total</b> de la ligne "
+    "(de 10 en 10 €).\n"
     "• Une ligne vide, puis le commentaire : digicode, étage, consignes. Seul le livreur le verra.\n\n"
     "Je fais le total. /produits — voir les produits connus"
 )
@@ -161,6 +162,14 @@ def missing_fields(order) -> str:
         what = ", ".join(names[:-1]) + " et " + names[-1]
     label = order.address or order.products or "ta commande"
     return f"Il me manque {what} pour : {esc(label)}."
+
+
+def price_not_round(order, problems: list[str]) -> str:
+    label = order.address or order.products or "ta commande"
+    return (
+        f"⚠️ Les prix vont de 10 en 10 € : {esc(', '.join(problems))} — pas possible pour : {esc(label)}.\n"
+        "Renvoie la commande avec le bon prix (ex. 60, 70, 80…)."
+    )
 
 
 def complement_hint(course_id: int) -> str:
