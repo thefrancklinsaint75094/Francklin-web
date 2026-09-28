@@ -71,7 +71,26 @@ WELCOME_DISPATCH = (
     "/reactiver — rendre un accès"
 )
 
+WELCOME_FRANCHISE_RULES = (
+    "✅ Tu es validé.\n\n"
+    "Envoie-moi tes commandes en texte. Je te renvoie une fiche à confirmer, "
+    "puis je trouve le livreur le plus proche.\n\n"
+    "Il me faut au minimum : l'adresse, les produits et le prix. "
+    "Le plus sûr : sépare-les par des virgules, avec le code postal et le signe €.\n"
+    "Exemple : 12 rue de Rivoli 75004, 2 vodka + coca, 60€, digicode 45A32\n\n"
+    "/mescourses — voir mes courses de la nuit"
+)
+
 WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch": WELCOME_DISPATCH}
+
+
+def welcome(role: str) -> str:
+    """Message de bienvenue du rôle, adapté au mode de lecture des commandes."""
+    from bot import config
+
+    if role == "franchise" and not config.get().uses_ai:
+        return WELCOME_FRANCHISE_RULES
+    return WELCOME[role]
 
 UNBANNED_NOTICE = "✅ Ton accès est rétabli."
 
@@ -108,6 +127,7 @@ EXTRACTION_PARSE_FAIL = "Je n'ai pas réussi à lire ta commande, tu peux la ré
 NO_ORDER_FOUND = "Je n'ai pas trouvé de commande dans ton message."
 NO_ORDER_IN_IMAGE = "Je n'ai pas trouvé de commande sur cette image."
 VOICE_UNSUPPORTED = "Les vocaux ne sont pas encore pris en charge, écris-moi la commande."
+PHOTO_UNSUPPORTED = "Je ne lis pas encore les captures d'écran, écris-moi la commande."
 VOICE_FAILED = "Je n'ai pas réussi à écouter ton vocal, tu peux l'écrire ?"
 CORRECTION_PROMPT = "Renvoie-moi la commande corrigée."
 CORRECTION_CANCELLED = "Correction annulée."

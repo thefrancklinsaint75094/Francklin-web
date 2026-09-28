@@ -15,7 +15,10 @@ class FakeMessages:
         self.replies = list(replies)
         self.calls = []
 
-    async def create(self, **kwargs):
+    async def create(self, *, model, max_tokens, system, messages, extra_body=None):
+        # Signature stricte, comme le SDK anthropic 1.x : un argument retiré
+        # (ex. temperature) lève TypeError ici aussi.
+        kwargs = dict(model=model, max_tokens=max_tokens, system=system, messages=messages, extra_body=extra_body)
         self.calls.append(kwargs)
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
@@ -77,7 +80,7 @@ async def test_real_examples(message, reply):
     call = calls.calls[0]
     assert call["model"] == "claude-haiku-4-5-20251001"
     assert call["max_tokens"] == 1024
-    assert call["temperature"] == 0
+    assert call["extra_body"] == {"temperature": 0}
     assert call["system"] == extraction.SYSTEM_PROMPT
     assert call["messages"] == [{"role": "user", "content": message}]
 
@@ -112,6 +115,16 @@ async def test_two_bad_json_raise_parse_error():
     with pytest.raises(ExtractionParseError):
         await ex.extract_text("x")
     assert len(calls.calls) == 2
+
+
+def test_real_sdk_rejects_temperature_keyword():
+    """Garde-fou : le vrai SDK installé refuse `temperature` en argument direct."""
+    import inspect
+
+    from anthropic.resources.messages import AsyncMessages
+
+    params = inspect.signature(AsyncMessages.create).parameters
+    assert "temperature" not in params and "extra_body" in params
 
 
 async def test_network_error_twice_is_unavailable():

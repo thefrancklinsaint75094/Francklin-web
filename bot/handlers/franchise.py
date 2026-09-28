@@ -9,6 +9,7 @@ from telegram import Update
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, relay
 from bot.services import broadcast, geocoding, lifecycle, transcription
+from bot.services.rules_extraction import RuleExtractor
 from bot.services.extraction import (
     ExtractionParseError, ExtractionUnavailable, Extractor, looks_like_complement,
 )
@@ -22,15 +23,19 @@ DUPLICATE_WINDOW = timedelta(minutes=15)
 _extractor: Extractor | None = None
 
 
-def extractor() -> Extractor:
+def extractor():
+    """Extracteur selon EXTRACTION_MODE : règles fixes (sans IA) ou Anthropic."""
     global _extractor
     if _extractor is None:
         cfg = config.get()
-        _extractor = Extractor(cfg.anthropic_api_key, cfg.anthropic_model)
+        if cfg.uses_ai:
+            _extractor = Extractor(cfg.anthropic_api_key, cfg.anthropic_model)
+        else:
+            _extractor = RuleExtractor()
     return _extractor
 
 
-def set_extractor(ex: Extractor) -> None:
+def set_extractor(ex) -> None:
     global _extractor
     _extractor = ex
 
@@ -68,7 +73,7 @@ async def on_message(update: Update, context, user: dict, state: str | None, pay
 
 async def process_voice(update: Update, context, user: dict, correcting_id: str | None) -> None:
     cfg = config.get()
-    if not cfg.openai_api_key:
+    if not cfg.uses_ai or not cfg.openai_api_key:  # la transcription est aussi de l'IA
         await messaging.reply(update, texts.VOICE_UNSUPPORTED)
         return
     voice = update.message.voice
@@ -96,6 +101,9 @@ async def process_voice(update: Update, context, user: dict, correcting_id: str 
 
 async def process_photo(update: Update, context, user: dict, correcting_id: str | None) -> None:
     msg = update.message
+    if not config.get().uses_ai:
+        await messaging.reply(update, texts.PHOTO_UNSUPPORTED)
+        return
     if msg.photo:
         file_id, media_type = msg.photo[-1].file_id, "image/jpeg"
     else:

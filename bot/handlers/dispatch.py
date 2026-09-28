@@ -343,7 +343,7 @@ async def unban(update: Update, context):
         return texts.ALREADY_HANDLED
     user = await db.update_user(user["id"], {"status": "active"})
     await common.set_commands(context.bot, user)
-    await messaging.send(context.bot, user, f"{texts.UNBANNED_NOTICE}\n\n{texts.WELCOME[user['role']]}")
+    await messaging.send(context.bot, user, f"{texts.UNBANNED_NOTICE}\n\n{texts.welcome(user['role'])}")
     await db.log_event("user_unbanned", user_id=user["id"], payload={"by": dispatcher["id"]})
     await messaging.reply(update, texts.unbanned_done(user))
     return "Réactivé"

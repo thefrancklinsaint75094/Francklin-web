@@ -41,14 +41,26 @@ def _int(name: str, default: int) -> int:
         raise ConfigError(f"{name} doit être un nombre entier (reçu : {value!r})") from exc
 
 
+def _mode() -> str:
+    """EXTRACTION_MODE : « regles » (lecture par règles, sans IA) ou « ia ».
+    Sans valeur : « ia » si une clé Anthropic est fournie, sinon « regles »."""
+    value = (_raw("EXTRACTION_MODE") or "").lower().replace("è", "e")
+    if not value:
+        return "ia" if _raw("ANTHROPIC_API_KEY") else "regles"
+    if value not in ("regles", "ia"):
+        raise ConfigError(f"EXTRACTION_MODE doit valoir « regles » ou « ia » (reçu : {value!r})")
+    return value
+
+
 @dataclass(frozen=True)
 class Config:
     telegram_bot_token: str
     supabase_url: str
     supabase_service_key: str
-    anthropic_api_key: str
+    anthropic_api_key: str | None
     dispatch_telegram_id: int
     openai_api_key: str | None = None
+    extraction_mode: str = "regles"   # "regles" (sans IA) ou "ia" (Anthropic)
     departements_autorises: tuple[str, ...] = ("75", "77", "78", "91", "92", "93", "94", "95")
     broadcast_wave_size: int = 3
     broadcast_wave_seconds: int = 120
@@ -62,6 +74,10 @@ class Config:
     night_start_hour: int = 18
     night_end_hour: int = 6
     anthropic_model: str = ANTHROPIC_MODEL
+
+    @property
+    def uses_ai(self) -> bool:
+        return self.extraction_mode == "ia"
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -78,7 +94,7 @@ class Config:
             telegram_bot_token=_required("TELEGRAM_BOT_TOKEN"),
             supabase_url=_required("SUPABASE_URL"),
             supabase_service_key=_required("SUPABASE_SERVICE_KEY"),
-            anthropic_api_key=_required("ANTHROPIC_API_KEY"),
+            anthropic_api_key=_raw("ANTHROPIC_API_KEY"),
             dispatch_telegram_id=dispatch_id,
             openai_api_key=_raw("OPENAI_API_KEY"),
             departements_autorises=departements,
@@ -94,7 +110,10 @@ class Config:
             night_start_hour=_int("NIGHT_START_HOUR", 18),
             night_end_hour=_int("NIGHT_END_HOUR", 6),
             anthropic_model=_raw("ANTHROPIC_MODEL") or ANTHROPIC_MODEL,
+            extraction_mode=_mode(),
         )
+        if cfg.extraction_mode == "ia" and not cfg.anthropic_api_key:
+            raise ConfigError("EXTRACTION_MODE=ia demande ANTHROPIC_API_KEY")
         if cfg.broadcast_wave_size < 1:
             raise ConfigError("BROADCAST_WAVE_SIZE doit être au moins 1")
         if not (0 <= cfg.night_end_hour <= 23 and 0 <= cfg.night_start_hour <= 23):

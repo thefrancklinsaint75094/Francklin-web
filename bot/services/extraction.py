@@ -141,12 +141,14 @@ class Extractor:
         last_exc: Exception | None = None
         for attempt in range(2):
             try:
+                # Le SDK anthropic 1.x n'accepte plus `temperature` en argument : il passe
+                # par extra_body (Haiku 4.5 l'accepte toujours côté API).
                 resp = await self.client.messages.create(
                     model=self.model,
                     max_tokens=MAX_TOKENS,
-                    temperature=0,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": content}],
+                    extra_body={"temperature": 0},
                 )
                 return "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
             except Exception as exc:  # noqa: BLE001 — réseau, 5xx, 429… : on réessaie une fois

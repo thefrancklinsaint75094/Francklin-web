@@ -15,7 +15,7 @@ Trois rôles : **dispatch** (toi), **franchisés**, **livreurs**. Tout se passe 
 | Un compte Telegram | pour créer le bot et être le dispatch | gratuit |
 | [Supabase](https://supabase.com) | la base de données | gratuit (plan Free) |
 | [Railway](https://railway.app) | héberger le bot 24h/24 | ~5 $/mois |
-| [Anthropic](https://console.anthropic.com) | lire les commandes écrites librement | quelques centimes par nuit |
+| [Anthropic](https://console.anthropic.com) *(optionnel)* | lire les commandes écrites librement (mode `ia`) | quelques centimes par nuit |
 | [OpenAI](https://platform.openai.com) *(optionnel)* | transcrire les vocaux | quelques centimes par nuit |
 
 ---
@@ -61,7 +61,7 @@ Le bot tourne en *polling* : pas de domaine, pas de port à ouvrir. Arrête-le (
 1. Pousse ce dépôt sur GitHub.
 2. Railway → **New Project → Deploy from GitHub repo** → choisis le dépôt.
 3. Onglet **Variables** : ajoute toutes les variables de [`.env.example`](.env.example)
-   (au minimum les 5 obligatoires).
+   (au minimum les 4 obligatoires, plus `ANTHROPIC_API_KEY` en mode `ia`).
 4. Onglet **Settings → Deploy** : **Replicas = 1**. C'est indispensable (voir plus haut).
 5. Aucun domaine ni port à configurer : c'est un simple *worker*. `railway.toml` donne déjà la commande
    de démarrage (`python -m bot.main`) et le redémarrage automatique.
@@ -76,9 +76,10 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `TELEGRAM_BOT_TOKEN` | oui | | token @BotFather |
 | `SUPABASE_URL` | oui | | URL du projet |
 | `SUPABASE_SERVICE_KEY` | oui | | clé `service_role` |
-| `ANTHROPIC_API_KEY` | oui | | lecture des commandes |
+| `EXTRACTION_MODE` | non | `ia` si une clé Anthropic est fournie, sinon `regles` | `regles` : lecture par règles fixes, sans IA (vocaux et captures refusés) ; `ia` : lecture par Anthropic |
+| `ANTHROPIC_API_KEY` | si `EXTRACTION_MODE=ia` | | lecture des commandes par l'IA |
 | `DISPATCH_TELEGRAM_ID` | oui | | ton identifiant numérique |
-| `OPENAI_API_KEY` | non | | sans elle, les vocaux sont refusés poliment |
+| `OPENAI_API_KEY` | non | | vocaux, en mode `ia` seulement ; sans elle, ils sont refusés poliment |
 | `DEPARTEMENTS_AUTORISES` | non | `75,77,78,91,92,93,94,95` | zone acceptée |
 | `BROADCAST_WAVE_SIZE` | non | `3` | livreurs sollicités par vague |
 | `BROADCAST_WAVE_SECONDS` | non | `120` | délai avant d'élargir |
@@ -94,6 +95,17 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `BAN_URL` | non | API Adresse | à changer seulement si l'API Adresse déménage |
 
 ---
+
+### Lire les commandes avec ou sans IA
+
+- **`EXTRACTION_MODE=regles`** : le bot découpe le message aux virgules, retours à la ligne, « / », « ; »
+  et reconnaît l'adresse (mot de voie ou code postal), le prix (nombre suivi de €, ou nombre seul à la fin),
+  le digicode ou l'étage, l'heure (« vers 23h ») ; le reste devient les produits. Rien n'est inventé :
+  s'il manque une information, il le dit. Les vocaux et les captures d'écran sont refusés poliment.
+- **`EXTRACTION_MODE=ia`** : lecture par Anthropic, qui comprend les messages les plus désordonnés,
+  les vocaux (avec `OPENAI_API_KEY`) et les captures d'écran.
+
+Dans les deux cas, le franchisé voit une fiche et la confirme avant que la course parte.
 
 ## 7. Premier démarrage
 

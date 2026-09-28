@@ -769,3 +769,39 @@ async def test_daily_journal_empty(h):
     assert "📋 Journal nuit du" in h.tg.last(DISPATCH).text
     assert h.tg.last(DISPATCH).text.endswith("— aucune course livrée.")
     assert h.tg.documents(DISPATCH) == []
+
+
+async def test_rules_mode_end_to_end(h, monkeypatch, test_config):
+    """Mode sans IA : lecture par règles, vocaux et photos refusés poliment."""
+    import dataclasses
+
+    from bot import config
+
+    config.set_config(dataclasses.replace(test_config, extraction_mode="regles", anthropic_api_key=None,
+                                          openai_api_key="sk-ignored"))
+    franchise_h.set_extractor(None)  # l'extracteur par règles sera choisi
+
+    async def geocode_contains(address, client=None):
+        if "rivoli" in address.lower():
+            return ADDR["12 rue de Rivoli, 75004 Paris"]
+        return None
+
+    monkeypatch.setattr(geocoding, "geocode", geocode_contains)
+    await h.text(DISPATCH, "/start")
+    await register(h, F1, "franchise", "Bar du Coin")
+    assert h.tg.last(F1).text == texts.WELCOME_FRANCHISE_RULES
+
+    await h.text(F1, "12 rue de rivoli paris 4, digicode 45A32, 2 vodka + coca, 60€")
+    card = h.tg.last(F1)
+    assert "📍 12 Rue de Rivoli 75004 Paris" in card.text and "🔑 Digicode 45A32" in card.text
+    assert "🍾 2 vodka + coca" in card.text and "💶 60 €" in card.text
+    await h.press(F1, card, "draft_confirm:")
+    assert len(await db.list_courses_by_status("pending")) == 1
+
+    await h.text(F1, "54 rue du point du jour Boulogne 50 mousseux")
+    assert h.tg.last(F1).text == "Il me manque le prix pour : 54 rue du point du jour Boulogne."
+    await h.voice(F1)
+    assert h.tg.last(F1).text == texts.VOICE_UNSUPPORTED
+    await h.photo(F1)
+    assert h.tg.last(F1).text == texts.PHOTO_UNSUPPORTED
+    franchise_h.set_extractor(None)
