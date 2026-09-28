@@ -1013,3 +1013,128 @@ async def test_franchise_order_price_must_be_multiple_of_ten(h):
     # Le bon prix passe.
     await h.text(F1, "rivoli")
     assert "draft_confirm:" in h.tg.last(F1).buttons[0][1]
+
+
+R1 = 4001
+
+
+async def test_ravitailleur_restocks_livreur_with_buttons(h, monkeypatch):
+    """Un ravitailleur charge un livreur par boutons ; le livreur et le dispatch sont
+    prévenus ; la ligne part vers le tableau Rechargement ; /synchro la renvoie."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    div = await db.create_product("DIV", "div", [])
+    kt = await db.create_product("KT", "kt", [])
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+    assert r1["display_name"] == "Ravitailleur 1" and r1["role"] == "ravitailleur"
+    assert "/recharge" in h.tg.last(R1).text
+
+    # Un livreur ou un franchisé n'y a pas accès.
+    await h.text(L1, "/recharge")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    await h.text(R1, "/recharge")
+    screen_id = h.tg.last(R1).message_id
+
+    def screen():
+        return h.tg.messages[(R1, screen_id)]
+
+    def txt(m):
+        return m.text.replace("\xa0", " ")
+
+    assert screen().text == texts.RESTOCK_CHOOSE_LIVREUR
+    await h.press(R1, screen(), "rs_l:")
+    assert "Chargement, reprise ou cash" in txt(screen())
+    await h.press_data(R1, screen(), "rs_k:load")
+    assert "Quel box ?" in txt(screen())
+    await h.press_data(R1, screen(), "rs_b:1")
+    assert "📦 Chargement · Box 2" in txt(screen())
+
+    # Valider vide : refusé.
+    await h.press_data(R1, screen(), "rs_ok")
+    assert h.tg.answers()[-1]["text"] == texts.RESTOCK_EMPTY
+
+    await h.press_data(R1, screen(), "rs_add:0")
+    await h.press_data(R1, screen(), f"rs_pick:{div['id']}")
+    await h.press_data(R1, screen(), "rs_q:0:5")
+    await h.press_data(R1, screen(), "rs_q:0:5")
+    await h.press_data(R1, screen(), "rs_q:0:1")
+    await h.press_data(R1, screen(), "rs_add:0")
+    await h.press_data(R1, screen(), f"rs_pick:{kt['id']}")
+    await h.press_data(R1, screen(), "rs_q:1:5")
+    assert "+12 DIV" in txt(screen()) and "+6 KT" in txt(screen())
+
+    # Cash : boutons, puis montant tapé.
+    await h.press_data(R1, screen(), "rs_c")
+    await h.press_data(R1, screen(), "rs_cp:100")
+    assert "💶 Cash récupéré : 100 €" in txt(screen())
+    await h.text(R1, "250")
+    assert "💶 Cash récupéré : 250 €" in txt(screen())
+
+    await h.press_data(R1, screen(), "rs_ok")
+    [row] = await db.list_restocks_between(now_utc() - timedelta(hours=1), now_utc() + timedelta(minutes=1))
+    assert (row["kind"], row["box"], row["items"], float(row["cash"])) == (
+        "load", "Box 2", [{"p": "DIV", "q": 12}, {"p": "KT", "q": 6}], 250.0)
+    assert row["livreur_id"] == l1["id"] and row["by_user_id"] == r1["id"]
+    assert txt(screen()).startswith(f"✅ Rechargement #{row['id']} enregistré — Livreur 1")
+    assert f"📦 Chargement reçu (#R{row['id']})\n+12 DIV, +6 KT" in txt(h.tg.last(L1))
+    assert f"📦 R#{row['id']} — Ravitailleur 1 → Livreur 1 — 📦 Chargement · Box 2" in txt(h.tg.last(DISPATCH))
+    assert (await db.get_user(r1["id"]))["conversation_state"] is None
+
+    await asyncio.gather(*list(sheets._tasks))
+    assert len(sent) == 1 and sent[0]["type"] == "recharge"
+    assert sent[0]["produits"] == {"DIV": 12, "KT": 6} and sent[0]["cash"] == 250.0
+    assert (sent[0]["livreur"], sent[0]["ravitailleur"], sent[0]["box"]) == ("Livreur 1", "Ravitailleur 1", "Box 2")
+
+    # Reprise par le dispatch, puis cash seul.
+    await h.text(DISPATCH, "/recharge")
+    d_id = h.tg.last(DISPATCH).message_id
+
+    def dscreen():
+        return h.tg.messages[(DISPATCH, d_id)]
+
+    await h.press(DISPATCH, dscreen(), "rs_l:")
+    await h.press_data(DISPATCH, dscreen(), "rs_k:unload")
+    await h.press_data(DISPATCH, dscreen(), "rs_b:0")
+    await h.press_data(DISPATCH, dscreen(), f"rs_pick:{div['id']}")
+    await h.press_data(DISPATCH, dscreen(), "rs_q:0:1")
+    await h.press_data(DISPATCH, dscreen(), "rs_q:0:1")
+    await h.press_data(DISPATCH, dscreen(), "rs_ok")
+    assert "↩️ Stock repris" in h.tg.last(L1).text and "−3 DIV" in h.tg.last(L1).text
+
+    await h.text(R1, "/recharge")
+    c_id = h.tg.last(R1).message_id
+    cmsg = h.tg.messages[(R1, c_id)]
+    await h.press(R1, cmsg, "rs_l:")
+    await h.press_data(R1, h.tg.messages[(R1, c_id)], "rs_k:cash")
+    await h.text(R1, "300")
+    await h.press_data(R1, h.tg.messages[(R1, c_id)], "rs_ok")
+    assert "💶 Cash remis" in txt(h.tg.last(L1)) and "300 €" in txt(h.tg.last(L1))
+
+    await asyncio.gather(*list(sheets._tasks))
+    assert [s["produits"] for s in sent[1:]] == [{"DIV": -3}, {}]
+    assert sent[2]["box"] == "" and sent[2]["cash"] == 300.0
+
+    # Annuler ne crée rien ; /synchro renvoie les 3 rechargements de la nuit.
+    await h.text(R1, "/recharge")
+    x = h.tg.last(R1)
+    await h.press_data(R1, x, "rs_x")
+    assert h.tg.messages[(R1, x.message_id)].text == texts.RESTOCK_CANCELLED
+    assert len(await db.list_restocks_between(now_utc() - timedelta(hours=1), now_utc() + timedelta(minutes=1))) == 3
+
+    sent.clear()
+    await h.text(DISPATCH, "/synchro")
+    assert "3 rechargements" in h.tg.last(DISPATCH).text and len(sent) == 3
+
+    await h.text(DISPATCH, "/users")
+    assert "<b>Ravitailleurs</b>" in h.tg.last(DISPATCH).text and "Ravitailleur 1 — Sam" in h.tg.last(DISPATCH).text

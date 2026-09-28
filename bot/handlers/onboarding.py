@@ -55,7 +55,7 @@ async def aide(update: Update, context) -> None:
 async def choose_role(update: Update, context):
     tg = update.effective_user
     role = common.arg(update)
-    if role not in ("franchise", "livreur") or tg.id == config.get().dispatch_telegram_id:
+    if role not in ("franchise", "livreur", "ravitailleur") or tg.id == config.get().dispatch_telegram_id:
         return None
     user = await db.get_user_by_tg(tg.id)
     if user is not None:

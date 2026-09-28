@@ -9,7 +9,7 @@ create table users (
   telegram_username text,                       -- @pseudo, peut être null
   real_name       text,                          -- nom donné à l'inscription, visible du dispatch seulement
   display_name    text,                          -- « Franchisé 3 », « Livreur 4 » — visible de l'autre partie
-  role            text not null check (role in ('dispatch','franchise','livreur')),
+  role            text not null check (role in ('dispatch','franchise','livreur','ravitailleur')),
   status          text not null default 'pending' check (status in ('pending','active','banned')),
   on_duty         boolean not null default false,   -- livreur en service
   soon_free       boolean not null default false,   -- livreur a signalé qu'il termine
@@ -100,6 +100,20 @@ create table products (
   created_at  timestamptz not null default now()
 );
 
+create table restocks (
+  id          serial primary key,
+  livreur_id  uuid not null references users(id),
+  by_user_id  uuid not null references users(id),     -- ravitailleur ou dispatch qui a saisi
+  kind        text not null check (kind in ('load','unload','cash')),  -- chargement, reprise, cash seul
+  box         text,                                   -- « Box 1 »… (null pour le cash seul)
+  items       jsonb not null default '[]',            -- [{"p": "DIV", "q": 12}] quantités positives
+  cash        numeric(8,2) not null default 0,        -- cash récupéré auprès du livreur
+  created_at  timestamptz not null default now()
+);
+
+create index on restocks (created_at);
+create index on restocks (livreur_id);
+create index on restocks (by_user_id);
 create index on courses (status);
 create index on courses (franchise_id, created_at);
 create index on courses (livreur_id, created_at);
@@ -115,3 +129,4 @@ alter table broadcasts enable row level security;
 alter table messages enable row level security;
 alter table events enable row level security;
 alter table products enable row level security;
+alter table restocks enable row level security;

@@ -95,6 +95,7 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `BAN_URL` | non | API Adresse | à changer seulement si l'API Adresse déménage |
 | `GOOGLE_SHEETS_WEBHOOK_URL` | non | | adresse du script Google Sheets (voir plus haut) |
 | `GOOGLE_SHEETS_SECRET` | non | | secret partagé avec ce script |
+| `BOXES` | non | `Box 1,Box 2,Box 3` | box proposés au ravitailleur (noms du tableau Rechargement) |
 
 ---
 
@@ -186,6 +187,26 @@ ne le connaît pas. Le digicode et le commentaire ne vont jamais dans la feuille
 Le numéro de course est gardé dans une note sur la cellule Vendeur : le script n'écrit jamais deux fois la même
 course et ne touche pas aux lignes remplies à la main. `/synchro` (dispatch) renvoie les courses de la nuit,
 sans risque de doublon. Si un onglet est plein, le dispatch le voit dans la réponse de `/synchro`.
+
+### Rechargement des livreurs (ravitailleur)
+
+Un **ravitailleur** s'inscrit comme les autres (`/start` → Ravitailleur) et le dispatch le valide. Avec
+`/recharge` (aussi disponible pour le dispatch), tout se fait par boutons dans un seul message :
+
+1. le **livreur** ;
+2. **📦 Chargement**, **↩️ Reprise** ou **💶 Cash seulement** ;
+3. le **box** (liste `BOXES`) ;
+4. les **produits** du catalogue et leurs quantités (−1, +1, +5) ;
+5. le **cash récupéré** (boutons ±10, ±50, ±100 €, ou montant tapé) ;
+6. **✅ Valider**.
+
+Le livreur reçoit le détail (« 📦 Chargement reçu : +12 DIV, +6 KT »), le dispatch est prévenu, et la ligne
+part dans le tableau **Rechargement** (même script Google que la feuille Dispatch, voir `RECHARGE_SPREADSHEET_ID`
+dans `Code.gs`) : onglet de la nuit, première ligne libre entre 3 et 20, livreur, box, cash, quantités
+(+ chargé, − repris) dans la colonne du produit, heure et ravitailleur. Noms : table **PARAMETRES J/K** du
+tableau Rechargement (nom du bot → nom de la feuille). `/synchro` renvoie aussi les rechargements de la nuit.
+
+Base créée avant le rechargement : exécuter une fois `sql/migrations/003_restocks.sql`.
 
 ## 7. Premier démarrage
 

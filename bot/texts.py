@@ -7,7 +7,7 @@ from __future__ import annotations
 import html
 from decimal import Decimal, ROUND_HALF_UP
 
-ROLE_LABEL = {"franchise": "Franchisé", "livreur": "Livreur", "dispatch": "Dispatch"}
+ROLE_LABEL = {"franchise": "Franchisé", "livreur": "Livreur", "dispatch": "Dispatch", "ravitailleur": "Ravitailleur"}
 
 
 def esc(value) -> str:
@@ -35,7 +35,7 @@ def ordinal(n: int) -> str:
 
 # ================================================================ onboarding
 
-ASK_ROLE = "Tu es franchisé ou livreur ?"
+ASK_ROLE = "Tu es franchisé, livreur ou ravitailleur ?"
 ASK_NAME = "Ton prénom ou le nom de ton point de vente ?"
 NAME_TOO_LONG = "C'est un peu long — donne-moi juste ton prénom ou le nom du point de vente."
 REGISTRATION_SENT = "Merci, ton inscription est envoyée. Tu seras prévenu dès qu'elle est validée."
@@ -72,6 +72,7 @@ WELCOME_DISPATCH = (
     "/exclure — retirer un accès\n"
     "/reactiver — rendre un accès\n"
     "/produits — catalogue des produits (ajouter, supprimer)\n"
+    "/recharge — charger ou reprendre un livreur, cash récupéré\n"
     "/synchro — renvoyer les courses de la nuit vers Google Sheets"
 )
 
@@ -97,7 +98,15 @@ WELCOME_FRANCHISE_RULES = (
     + "\n\n/modele — revoir ce modèle\n/produits — produits connus\n/mescourses — voir mes courses de la nuit"
 )
 
-WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch": WELCOME_DISPATCH}
+WELCOME_RAVITAILLEUR = (
+    "✅ Tu es validé.\n\n"
+    "/recharge — charger un livreur, reprendre du stock ou noter le cash récupéré.\n\n"
+    "Tout se fait par boutons : le livreur, chargement ou reprise, le box, les produits et les quantités, "
+    "puis le cash. Chaque rechargement part dans le tableau Rechargement et le livreur est prévenu."
+)
+
+WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch": WELCOME_DISPATCH,
+           "ravitailleur": WELCOME_RAVITAILLEUR}
 
 
 def welcome(role: str) -> str:
@@ -443,6 +452,96 @@ def d_order_modified(course: dict, livreur: dict, old_products: str, old_price) 
     )
 
 
+# ================================================================ rechargement (ravitailleur / dispatch)
+
+RESTOCK_KIND_LABEL = {"load": "📦 Chargement", "unload": "↩️ Reprise", "cash": "💶 Cash seulement"}
+RESTOCK_CHOOSE_LIVREUR = "📦 <b>Rechargement</b> — quel livreur ?"
+RESTOCK_NO_LIVREUR = "Aucun livreur actif pour l'instant."
+RESTOCK_EXPIRED = "Rechargement expiré : relance /recharge."
+RESTOCK_EMPTY = "Ajoute au moins un produit ou du cash."
+RESTOCK_CASH_HINT = "Tape seulement le montant, par exemple 250."
+RESTOCK_USE_BUTTONS = "Utilise les boutons du rechargement en cours (ou ❌ Annuler)."
+RESTOCK_CANCELLED = "Rechargement annulé."
+
+
+def _restock_head(livreur_name: str, kind: str | None = None, box: str | None = None) -> str:
+    head = f"📦 <b>Rechargement — {esc(livreur_name)}</b>"
+    if kind:
+        head += f"\n{RESTOCK_KIND_LABEL[kind]}"
+        if box:
+            head += f" · {esc(box)}"
+    return head
+
+
+def restock_choose_kind(livreur_name: str) -> str:
+    return f"{_restock_head(livreur_name)}\n\nChargement, reprise ou cash seulement ?"
+
+
+def restock_choose_box(livreur_name: str, kind: str) -> str:
+    return f"{_restock_head(livreur_name, kind)}\n\nQuel box ?"
+
+
+def restock_editor(livreur_name: str, kind: str, box: str | None, items: list[dict], cash: float) -> str:
+    lines = [_restock_head(livreur_name, kind, box), ""]
+    if kind != "cash":
+        sign = "−" if kind == "unload" else "+"
+        if items:
+            lines += [f"{sign}{i['q']} {esc(i['p'])}" for i in items]
+        else:
+            lines.append("Aucun produit : ➕ Ajouter un produit.")
+    lines += ["", f"💶 Cash récupéré : {eur(cash)}", ""]
+    if kind == "cash":
+        lines.append("Règle le cash avec les boutons (ou tape le montant), puis ✅ Valider.")
+    else:
+        lines.append("−1 / +1 / +5 sur les quantités. ✅ Valider quand c'est bon.")
+    return "\n".join(lines)
+
+
+def restock_picker(livreur_name: str, page: int, pages: int) -> str:
+    text = f"📦 Rechargement — {esc(livreur_name)} — choisis le produit"
+    if pages > 1:
+        text += f" (page {page + 1}/{pages})"
+    return text
+
+
+def restock_done(restock: dict, livreur_name: str) -> str:
+    from bot.services import restock as rs
+
+    lines = [f"✅ Rechargement #{restock['id']} enregistré — {esc(livreur_name)}",
+             RESTOCK_KIND_LABEL[restock["kind"]] + (f" · {esc(restock['box'])}" if restock.get("box") else "")]
+    if restock.get("items"):
+        lines.append(esc(rs.items_text(restock["items"], restock["kind"])))
+    if float(restock.get("cash") or 0) > 0:
+        lines.append(f"💶 Cash récupéré : {eur(restock['cash'])}")
+    return "\n".join(lines)
+
+
+def restock_for_livreur(restock: dict) -> str:
+    from bot.services import restock as rs
+
+    head = {"load": "📦 Chargement reçu", "unload": "↩️ Stock repris", "cash": "💶 Cash remis"}[restock["kind"]]
+    lines = [f"{head} (#R{restock['id']})"]
+    if restock.get("items"):
+        lines.append(esc(rs.items_text(restock["items"], restock["kind"])))
+    if float(restock.get("cash") or 0) > 0:
+        lines.append(f"💶 Cash récupéré : {eur(restock['cash'])}")
+    return "\n".join(lines)
+
+
+def d_restock(restock: dict, by: dict, livreur: dict) -> str:
+    from bot.services import restock as rs
+
+    text = (f"📦 R#{restock['id']} — {esc(by['display_name'])} → {esc(livreur['display_name'])} — "
+            f"{RESTOCK_KIND_LABEL[restock['kind']]}")
+    if restock.get("box"):
+        text += f" · {esc(restock['box'])}"
+    if restock.get("items"):
+        text += f"\n{esc(rs.items_text(restock['items'], restock['kind']))}"
+    if float(restock.get("cash") or 0) > 0:
+        text += f"\n💶 {eur(restock['cash'])}"
+    return text
+
+
 # ================================================================ relais
 
 COURSE_FINISHED = "Cette course est terminée."
@@ -618,11 +717,15 @@ def plural(n: int, word: str) -> str:
     return f"{n} {word}{'s' if n > 1 else ''}"
 
 
-def users_list(franchises: list[str], livreurs: list[str], pending: list[str]) -> str:
+def users_list(franchises: list[str], livreurs: list[str], pending: list[str],
+               ravitailleurs: list[str] | None = None) -> str:
     lines = ["👥 Utilisateurs", "", "<b>Franchisés</b>"]
     lines += franchises or ["—"]
     lines += ["", "<b>Livreurs</b>"]
     lines += livreurs or ["—"]
+    if ravitailleurs:
+        lines += ["", "<b>Ravitailleurs</b>"]
+        lines += ravitailleurs
     lines += ["", "<b>En attente de validation</b>"]
     lines += pending or ["—"]
     return "\n".join(lines)
@@ -696,10 +799,14 @@ def catalog_summary(summary: dict) -> str:
 SHEETS_DISABLED = "Google Sheets n'est pas encore relié au bot."
 
 
-def sheets_synced(total: int, added: int) -> str:
-    if total == 0:
-        return "📗 Aucune course livrée cette nuit : rien à envoyer."
-    return f"📗 Google Sheets à jour : {added} ligne{'s' if added > 1 else ''} ajoutée{'s' if added > 1 else ''} sur {total} course{'s' if total > 1 else ''} de la nuit."
+def sheets_synced(total: int, added: int, restocks: int = 0) -> str:
+    if total == 0 and restocks == 0:
+        return "📗 Aucune course livrée ni rechargement cette nuit : rien à envoyer."
+    what = [plural(total, "course")] if total else []
+    if restocks:
+        what.append(plural(restocks, "rechargement"))
+    return (f"📗 Google Sheets à jour : {added} ajout{'s' if added > 1 else ''} sur "
+            f"{' et '.join(what)} de la nuit.")
 
 
 def sheets_failed(error: str) -> str:

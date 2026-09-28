@@ -400,6 +400,20 @@ async def delete_product(product_id: int) -> None:
 
 # ---------------------------------------------------------------- events
 
+# ---------------------------------------------------------------- rechargements
+
+async def create_restock(fields: dict) -> dict | None:
+    return _first(await _t("restocks").insert(fields).execute())
+
+
+async def list_restocks_between(start: datetime, end: datetime) -> list[dict]:
+    res = await (
+        _t("restocks").select("*").gte("created_at", iso(start)).lt("created_at", iso(end))
+        .order("created_at").execute()
+    )
+    return res.data
+
+
 async def log_event(type_: str, course_id: int | None = None, user_id: str | None = None, payload: dict | None = None) -> None:
     await _t("events").insert(
         {"type": type_, "course_id": course_id, "user_id": user_id, "payload": payload}

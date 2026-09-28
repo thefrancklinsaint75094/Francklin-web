@@ -209,3 +209,22 @@ simple qui respecte le mur de confidentialité (§12).
     (« 1 KT (5 €) ») doivent être des multiples de 10 €. Sinon, pas de fiche : un message explique quoi
     corriger, comme pour une information manquante (le franchisé renvoie la commande, ou la corrige avec
     ✏️ Corriger). L'exemple du modèle passe à « 1 coca 10 ».
+
+## Rechargement des livreurs
+
+66. **Nouveau rôle « ravitailleur »** (inscription et validation comme les autres ; nom visible « Ravitailleur 1 »).
+    `/recharge` est ouvert au ravitailleur et au dispatch. Livreurs et franchisés n'y ont pas accès.
+67. Un rechargement = un livreur, un type (chargement, reprise, cash seul), un box (sauf cash seul), des
+    quantités positives et le cash récupéré. Table `restocks` (migration 003) ; la reprise est rendue
+    négative seulement dans la feuille, comme le veut le tableau (+ chargé / − repris).
+68. Tout par boutons dans un seul message, brouillon dans l'état de conversation `restocking` (30 min), verrou
+    par utilisateur. Seul le montant du cash peut être tapé. Pas de règle des 10 € sur le cash : c'est de
+    l'argent récupéré, pas un prix.
+69. Le livreur reçoit un message à chaque rechargement (il doit savoir ce qu'on lui a compté) ; le dispatch est
+    prévenu quand c'est un ravitailleur qui saisit.
+70. **Un seul script Google** pour les deux tableaux : les lignes `type: recharge` vont dans le tableau
+    Rechargement (`RECHARGE_SPREADSHEET_ID`). Même secret, même adresse. Colonne du produit trouvée par son nom
+    en ligne 2 ; un produit absent des colonnes est une erreur (rien n'est écrit à moitié). Ligne libre = rien
+    entre C et T (un livreur ou un box laissé seul ne bloque pas la ligne). Anti-doublon par la note
+    « Bot R#7 » sur la cellule Livreur.
+71. Même découpage des nuits que les courses : un rechargement à 2h dans la nuit de lundi à mardi va dans « Lundi ».

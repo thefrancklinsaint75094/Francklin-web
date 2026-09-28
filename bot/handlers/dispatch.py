@@ -264,6 +264,9 @@ async def users(update: Update, context) -> None:
             duty = "en service" if u.get("on_duty") else "pause"
             n = u.get("cancel_count") or 0
             livreurs.append(f"{texts.user_who(u)} — actif · {duty} — {n} annulation{'s' if n > 1 else ''}")
+    ravitailleurs = [f"{texts.user_who(u)} — {status_label(u)}"
+                     for u in sorted((u for u in all_users if u["role"] == "ravitailleur" and u["status"] != "pending"),
+                                     key=sort_key)]
     pending_users = [u for u in all_users if u["status"] == "pending" and u["role"] != "dispatch"]
     pending = []
     for u in pending_users:
@@ -271,7 +274,7 @@ async def users(update: Update, context) -> None:
         if u.get("telegram_username"):
             line += f" (@{texts.esc(u['telegram_username'])})"
         pending.append(line)
-    await messaging.reply(update, texts.users_list(franchises, livreurs, pending),
+    await messaging.reply(update, texts.users_list(franchises, livreurs, pending, ravitailleurs),
                           keyboards.pending_users(pending_users))
 
 
@@ -458,11 +461,14 @@ async def synchro(update: Update, context) -> None:
     night = _current_night()
     start, end = night_bounds(night, cfg.night_end_hour)
     delivered = await db.list_delivered_between(start, end)
-    users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered])
+    restocks = await db.list_restocks_between(start, end)
+    users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered]
+                               + [r["livreur_id"] for r in restocks] + [r["by_user_id"] for r in restocks])
     try:
         catalog = await sheets.load_catalog()
-        added = await sheets.send_rows([sheets.row(c, users, catalog) for c in delivered])
+        rows = [sheets.row(c, users, catalog) for c in delivered] + [sheets.restock_row(r, users) for r in restocks]
+        added = await sheets.send_rows(rows)
     except RuntimeError as exc:
         await messaging.reply(update, texts.sheets_failed(str(exc)))
         return
-    await messaging.reply(update, texts.sheets_synced(len(delivered), added))
+    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks)))
