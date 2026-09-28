@@ -22,6 +22,7 @@ TEST_CONFIG = config.Config(
     anthropic_api_key="test",
     dispatch_telegram_id=1000,
     openai_api_key=None,
+    extraction_mode="ia",  # les scénarios historiques simulent l'extracteur IA
 )
 
 

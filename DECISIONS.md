@@ -125,3 +125,17 @@ simple qui respecte le mur de confidentialité (§12).
 41. `railway.toml` fixe la région Amsterdam (`ams`, l'identifiant actuel de Railway) et une seule réplique. Amsterdam est
     proche des serveurs Telegram et de la base Supabase créée à Paris (`eu-west-3`) ; la région par défaut
     d'un nouveau compte Railway est en Californie, ce qui ajoutait ~150 ms à chaque requête en base.
+
+## Lecture des commandes sans IA
+
+42. **Mode `regles`** (`EXTRACTION_MODE`), demandé par l'exploitant : la lecture des commandes se fait par
+    règles fixes (`bot/services/rules_extraction.py`), sans appel à une IA. Même interface et même
+    validation que l'extraction IA ; la fiche de confirmation reste le garde-fou. Le mode `ia` reste
+    disponible en changeant une variable.
+43. En mode `regles`, les vocaux et les captures d'écran sont refusés poliment : les lire demanderait de
+    l'IA (Whisper, vision). Le message de bienvenue du franchisé conseille de séparer les informations par
+    des virgules, avec le code postal et le signe € — c'est un conseil, pas une obligation.
+44. Un nombre suivi d'un mot (« 50 mousseux ») est une quantité, jamais un prix : sans €, ni « prix », ni
+    nombre seul en fin de message, le bot répond qu'il manque le prix plutôt que de deviner.
+45. Correctif : le SDK `anthropic` 1.x n'accepte plus `temperature` en argument ; il passe désormais par
+    `extra_body`. Les deux premières commandes réelles avaient échoué pour cette raison.
