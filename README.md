@@ -93,6 +93,8 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `NIGHT_START_HOUR` / `NIGHT_END_HOUR` | non | `18` / `6` | découpage des nuits (voir DECISIONS.md) |
 | `ANTHROPIC_MODEL` | non | `claude-haiku-4-5-20251001` | modèle d'extraction |
 | `BAN_URL` | non | API Adresse | à changer seulement si l'API Adresse déménage |
+| `GOOGLE_SHEETS_WEBHOOK_URL` | non | | adresse du script Google Sheets (voir plus haut) |
+| `GOOGLE_SHEETS_SECRET` | non | | secret partagé avec ce script |
 
 ---
 
@@ -135,6 +137,21 @@ fautes, et affiche le nom du catalogue sur la fiche. Un produit inconnu ne bloqu
 fiche porte « ⚠️ Produit pas dans le catalogue ». Les franchisés voient la liste avec `/produits`.
 
 Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002_products.sql`.
+
+### Google Sheets (facultatif)
+
+Chaque course livrée peut s'ajouter automatiquement à une feuille Google, via un petit script attaché à
+la feuille ([`integrations/google_sheets/Code.gs`](integrations/google_sheets/Code.gs)) :
+
+1. Crée une feuille Google, puis **Extensions → Apps Script**. Remplace le contenu par `Code.gs` et
+   mets ton secret à la place de `A_REMPLACER`.
+2. **Déployer → Nouveau déploiement → Application Web** ; « Exécuter en tant que : moi » ;
+   « Qui a accès : Tout le monde ». Autorise l'accès demandé par Google.
+3. Dans Railway : `GOOGLE_SHEETS_WEBHOOK_URL` = l'adresse obtenue (finit par `/exec`),
+   `GOOGLE_SHEETS_SECRET` = le même secret.
+
+L'onglet « Courses » se crée tout seul. Le script refuse toute requête sans le secret et n'ajoute jamais
+deux fois la même course. `/synchro` (dispatch) renvoie les courses de la nuit, sans risque de doublon.
 
 ## 7. Premier démarrage
 

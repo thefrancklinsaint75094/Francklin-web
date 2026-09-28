@@ -13,6 +13,7 @@ from telegram.error import TelegramError
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
 from bot.services import catalog as catalog_service
+from bot.services import sheets
 from bot.services import lifecycle
 from bot.timeutil import hhmm, minutes_since, night_bounds, night_label, night_start_date, now_utc, parse_ts, to_paris
 
@@ -441,3 +442,26 @@ async def catalog_delete(update: Update, context):
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.catalog_list(products, for_dispatch=True), keyboards.catalog(products))
     return f"{product['name']} supprimé"
+
+
+# ================================================================ /synchro (Google Sheets)
+
+async def synchro(update: Update, context) -> None:
+    """Renvoie à Google Sheets toutes les courses livrées de la nuit en cours.
+    Sans danger : la feuille ignore les courses déjà présentes."""
+    if not await _guard_command(update):
+        return
+    if not sheets.enabled():
+        await messaging.reply(update, texts.SHEETS_DISABLED)
+        return
+    cfg = config.get()
+    night = _current_night()
+    start, end = night_bounds(night, cfg.night_end_hour)
+    delivered = await db.list_delivered_between(start, end)
+    users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered])
+    try:
+        added = await sheets.send_rows([sheets.row(c, users) for c in delivered])
+    except RuntimeError as exc:
+        await messaging.reply(update, texts.sheets_failed(str(exc)))
+        return
+    await messaging.reply(update, texts.sheets_synced(len(delivered), added))

@@ -69,7 +69,8 @@ WELCOME_DISPATCH = (
     "/users — tous les utilisateurs\n"
     "/exclure — retirer un accès\n"
     "/reactiver — rendre un accès\n"
-    "/produits — catalogue des produits (ajouter, supprimer)"
+    "/produits — catalogue des produits (ajouter, supprimer)\n"
+    "/synchro — renvoyer les courses de la nuit vers Google Sheets"
 )
 
 MODEL_HELP = (
@@ -612,3 +613,18 @@ def catalog_summary(summary: dict) -> str:
         lines.append(f"⚠️ « {esc(alias)} » désigne aussi : {esc(', '.join(others))} — "
                      "le bot demandera de préciser.")
     return "\n".join(lines) or CATALOG_NOTHING
+
+
+# ================================================================ Google Sheets
+
+SHEETS_DISABLED = "Google Sheets n'est pas encore relié au bot."
+
+
+def sheets_synced(total: int, added: int) -> str:
+    if total == 0:
+        return "📗 Aucune course livrée cette nuit : rien à envoyer."
+    return f"📗 Google Sheets à jour : {added} ligne{'s' if added > 1 else ''} ajoutée{'s' if added > 1 else ''} sur {total} course{'s' if total > 1 else ''} de la nuit."
+
+
+def sheets_failed(error: str) -> str:
+    return f"⚠️ Envoi à Google Sheets impossible : {esc(error[:200])}"

@@ -21,7 +21,7 @@ COMMANDS = {
     "dispatch": [("recap", "Totaux par livreur"), ("journal", "Détail des courses livrées"),
                  ("encours", "Courses en attente et en cours"), ("users", "Tous les utilisateurs"),
                  ("exclure", "Retirer un accès"), ("reactiver", "Rendre un accès"),
-                 ("produits", "Catalogue des produits")],
+                 ("produits", "Catalogue des produits"), ("synchro", "Renvoyer la nuit vers Google Sheets")],
 }
 COMMON_COMMANDS = [("start", "Démarrer"), ("aide", "Aide")]
 

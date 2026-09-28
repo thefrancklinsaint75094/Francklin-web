@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from bot import db, keyboards, messaging, texts
-from bot.services import broadcast
+from bot.services import broadcast, sheets
 from bot.services.distance import format_distance, haversine_m
 from bot.timeutil import iso, now_utc, parse_ts
 
@@ -136,6 +136,7 @@ async def deliver(context, course: dict, by_dispatch: bool = False) -> dict | No
         "course_delivered", course["id"], livreur["id"] if livreur else None,
         {"by_dispatch": by_dispatch, "distance_m": fields.get("delivered_distance_m")},
     )
+    sheets.push_delivered_later(updated)
     await broadcast.kick_pending(context)
     return updated
 

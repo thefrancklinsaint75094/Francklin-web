@@ -130,6 +130,7 @@ def register_handlers(app: Application) -> None:
     cmd("produits", dispatch.produits)
     cmd("ajouter", dispatch.ajouter)
     cmd("modele", franchise.modele)
+    cmd("synchro", dispatch.synchro)
 
     callbacks = [
         (r"^role:", onboarding.choose_role),
