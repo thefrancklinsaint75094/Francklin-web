@@ -14,7 +14,8 @@ import re
 
 from bot.services import sheets
 
-PRICE_STEPS = (-10, -5, -1, 1, 5, 10)
+PRICE_STEP = 10         # les prix vont toujours de 10 en 10 €
+PRICE_STEPS = (-50, -20, -10, 10, 20, 50)
 PAGE_SIZE = 24          # produits par page du sélecteur (8 rangées de 3)
 MAX_LINES = 15
 MAX_QTY = 99
@@ -37,13 +38,24 @@ def total(lines: list[dict]) -> float:
     return round(sum(float(l["x"]) for l in lines), 2)
 
 
+def round_price(value: float) -> float:
+    """Au multiple de 10 € le plus proche (jamais 0 pour un prix qui existait)."""
+    if value <= 0:
+        return 0.0
+    return float(max(PRICE_STEP, round(value / PRICE_STEP) * PRICE_STEP))
+
+
+def valid_price(value: float) -> bool:
+    return value > 0 and abs(value / PRICE_STEP - round(value / PRICE_STEP)) < 1e-9
+
+
 def _unit(line: dict) -> float | None:
     return float(line["x"]) / line["q"] if line["q"] > 0 and float(line["x"]) > 0 else None
 
 
 def change_qty(lines: list[dict], idx: int, delta: int) -> list[dict]:
-    """➖ / ➕ : le prix de la ligne suit la quantité (prix unitaire gardé).
-    Une ligne qui tombe à 0 disparaît."""
+    """➖ / ➕ : le prix de la ligne suit la quantité (prix unitaire gardé),
+    arrondi au multiple de 10 €. Une ligne qui tombe à 0 disparaît."""
     if not 0 <= idx < len(lines):
         return lines
     line = dict(lines[idx])
@@ -52,7 +64,7 @@ def change_qty(lines: list[dict], idx: int, delta: int) -> list[dict]:
     if line["q"] <= 0:
         return lines[:idx] + lines[idx + 1:]
     if unit is not None:
-        line["x"] = round(unit * line["q"], 2)
+        line["x"] = round_price(unit * line["q"])
     return lines[:idx] + [line] + lines[idx + 1:]
 
 
@@ -101,6 +113,11 @@ def products_text(lines: list[dict]) -> str:
 
 def missing_prices(lines: list[dict]) -> list[str]:
     return [l["p"] for l in lines if float(l["x"]) <= 0]
+
+
+def off_step_prices(lines: list[dict]) -> list[str]:
+    """Lignes dont le prix n'est pas un multiple de 10 € (reprises d'une ancienne commande)."""
+    return [l["p"] for l in lines if float(l["x"]) > 0 and not valid_price(float(l["x"]))]
 
 
 def same(a: list[dict], b: list[dict]) -> bool:

@@ -60,7 +60,7 @@ WELCOME_LIVREUR = (
     "Tu ne reçois que les courses proches de toi. Une seule à la fois — appuie sur « Bientôt libre » "
     "quand tu termines pour enchaîner.\n\n"
     "Le client prend autre chose ? « ✏️ Modifier la commande » sur ta course : ➖ / ➕ pour les quantités, "
-    "➕ Ajouter un produit pour choisir dans la liste, et les boutons de prix. Rien à taper."
+    "➕ Ajouter un produit pour choisir dans la liste, et les boutons de prix (de 10 en 10 €). Rien à taper."
 )
 
 WELCOME_DISPATCH = (
@@ -388,7 +388,7 @@ def order_editor(course_id: int, lines: list[dict], sel: int | None = None) -> s
     out += ["", f"💶 <b>Total : {eur(sum(float(l['x']) for l in lines))}</b>", ""]
     if sel is not None and 0 <= sel < len(lines):
         out.append(f"Prix de la ligne {sel + 1} ({esc(lines[sel]['p'])}) : ajuste avec les boutons, "
-                   "ou tape le prix (ex. 35). Puis ✅ OK.")
+                   "ou tape le prix (ex. 30). Puis ✅ OK.")
     else:
         out.append("➖ / ➕ : quantité. Touche un produit pour changer son prix. ✅ Valider quand c'est bon.")
     return "\n".join(out)
@@ -406,12 +406,16 @@ ORDER_EDIT_EXPIRED = "Modification expirée : rouvre ✏️ Modifier la commande
 ORDER_EDIT_UNCHANGED = "Aucun changement."
 ORDER_EDIT_EMPTY = "La commande doit garder au moins un produit."
 ORDER_EDIT_TOO_MANY = "Trop de produits sur cette commande."
-ORDER_EDIT_PRICE_HINT = "Tape seulement le prix de la ligne, par exemple 35."
+ORDER_EDIT_PRICE_HINT = "Les prix vont de 10 en 10 € : tape seulement le prix de la ligne, par exemple 30."
 ORDER_EDIT_USE_BUTTONS = "Utilise les boutons de la commande en cours de modification (➖ ➕ ✅ Valider)."
 
 
 def order_edit_missing_price(names: list[str]) -> str:
     return "Mets le prix de : " + ", ".join(names)[:180]
+
+
+def order_edit_off_step(names: list[str]) -> str:
+    return "Les prix vont de 10 en 10 € : corrige le prix de " + ", ".join(names)[:150]
 
 
 def order_modified_for_franchise(course: dict, old_price, livreur_name: str) -> str:
