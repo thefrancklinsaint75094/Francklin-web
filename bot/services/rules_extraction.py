@@ -255,3 +255,94 @@ class RuleExtractor:
 
     async def extract_image(self, image: bytes, media_type: str, caption: str | None = None) -> list[Order]:
         raise NotImplementedError("Les images demandent l'IA")
+
+
+# ================================================================ modèle de commande
+#
+#   12 rue de Rivoli 75004 Paris        ← adresse (et éventuellement digicode, heure)
+#   2 vodka 60                          ← quantité, produit, prix TOTAL de la ligne
+#   1 coca 5
+#                                        ← ligne vide
+#   Digicode 45A32, 3e étage             ← commentaire (vu par le livreur seulement)
+
+PRODUCT_LINE_RE = re.compile(
+    r"^\s*(\d{1,3})\s*(?:[x×*]\s*)?(?=\D)(.+?)(?:\s+(\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|euros?|eur|e)?)?\s*$",
+    re.I,
+)
+
+
+def _product_line(line: str):
+    """« 2 vodka 60 » → (2, "vodka", "60"). None si la ligne n'est pas une ligne produit."""
+    m = PRODUCT_LINE_RE.match(line)
+    if not m:
+        return None
+    qty, name, price = m.group(1), _clean(m.group(2)), m.group(3)
+    if not name or STREET_RE.search(name) or POSTCODE_RE.search(name) or NOISE_RE.match(name) \
+            or DETAIL_RE.search(name) or TIME_RE.fullmatch(f"{qty}{name}"):
+        return None
+    if FLOOR_RE.match(f"{qty}{name.split()[0]}") and len(name.split()) <= 3:
+        return None  # « 3e étage gauche »
+    return int(qty), name, price.replace(",", ".") if price else None
+
+
+def _eur(value: float) -> str:
+    return (f"{value:.2f}".replace(".", ",").replace(",00", "")) + " €"
+
+
+def parse_template(text: str, catalog=None) -> list[dict] | None:
+    """Lit une commande au format du modèle. None si le message n'est pas à ce format
+    (on retombe alors sur la lecture libre)."""
+    lines = (text or "").splitlines()
+    if any(BULLET_RE.match(l) for l in lines):
+        return None  # plusieurs commandes à puces : lecture libre
+    blank = next((i for i, l in enumerate(lines) if not l.strip()), None)
+    head = [l for l in (lines if blank is None else lines[:blank]) if l.strip()]
+    comment = " ".join(_clean(l) for l in ([] if blank is None else lines[blank + 1:]) if l.strip())
+
+    items, other = [], []
+    for line in head:
+        parsed = _product_line(line)
+        if parsed:
+            items.append(parsed)
+        elif items:
+            return None  # texte libre après les produits : ce n'est pas le modèle
+        else:
+            other.append(line)
+    if not items:
+        return None
+
+    warnings: list[str] = []
+    labels: list[str] = []
+    for qty, name, _ in items:
+        label = name
+        if catalog:
+            m = catalog.match(name)
+            if m.product:
+                label = m.product["name"]
+            elif m.ambiguous:
+                warnings.append(f"⚠️ « {name} » peut être : {', '.join(m.ambiguous)}")
+            else:
+                warnings.append(f"⚠️ Produit pas dans le catalogue : « {name} »")
+        labels.append(f"{qty} {label}")
+
+    if all(p is not None for _, _, p in items):
+        prices = [float(p) for _, _, p in items]
+        total = f"{sum(prices):.2f}"
+        if len(items) > 1:
+            labels = [f"{lab} ({_eur(p)})" for lab, p in zip(labels, prices)]
+    else:
+        total = None
+
+    head_info = parse_order(", ".join(other)) if other else {}
+    details = [d for d in (head_info.get("address_detail"), head_info.get("products"), comment) if d]
+    return [{
+        "address": head_info.get("address"),
+        "address_detail": " · ".join(details) or None,
+        "products": " + ".join(labels),
+        "price": total,
+        "requested_time": head_info.get("requested_time"),
+        "warnings": warnings,
+    }]
+
+
+MODEL_EXAMPLE = "12 rue de Rivoli 75004 Paris\n2 vodka 60\n1 coca 5\n\nDigicode 45A32, 3e étage"

@@ -805,3 +805,59 @@ async def test_rules_mode_end_to_end(h, monkeypatch, test_config):
     await h.photo(F1)
     assert h.tg.last(F1).text == texts.PHOTO_UNSUPPORTED
     franchise_h.set_extractor(None)
+
+
+async def test_catalog_from_bot_and_model_order(h, monkeypatch, test_config):
+    """Le dispatch saisit le catalogue depuis le bot ; le franchisé commande avec le modèle."""
+    import dataclasses
+
+    from bot import config
+
+    config.set_config(dataclasses.replace(test_config, extraction_mode="regles", anthropic_api_key=None))
+    franchise_h.set_extractor(None)
+
+    async def geocode_contains(address, client=None):
+        return ADDR["12 rue de Rivoli, 75004 Paris"] if "rivoli" in address.lower() else None
+
+    monkeypatch.setattr(geocoding, "geocode", geocode_contains)
+    await h.text(DISPATCH, "/start")
+    await register(h, F1, "franchise", "Bar du Coin")
+
+    # Le dispatch ouvre le catalogue et ajoute des produits.
+    await h.text(DISPATCH, "/produits")
+    assert "Catalogue vide" in h.tg.last(DISPATCH).text
+    await h.press(DISPATCH, h.tg.last(DISPATCH), "prod_add")
+    assert "un par ligne" in h.tg.last(DISPATCH).text
+    await h.text(DISPATCH, "Vodka Absolut : absolut, abso\nCoca-Cola : coca\nJack Daniel's : jack, jd")
+    summary = h.tg.inbox(DISPATCH)[-2].text
+    assert "Ajoutés : Vodka Absolut, Coca-Cola, Jack Daniel's" in summary
+    listing = h.tg.last(DISPATCH)
+    assert "Produits connus</b> (3)" in listing.text
+    # Compléter un produit existant : pas de doublon.
+    await h.text(DISPATCH, "/ajouter vodka absolut : vodka")
+    assert "Complété : Vodka Absolut" in h.tg.inbox(DISPATCH)[-2].text
+    assert len(await db.list_products()) == 3
+
+    # Le franchisé voit le modèle et les produits.
+    await h.text(F1, "/modele")
+    assert "Modèle de commande" in h.tg.last(F1).text
+    await h.text(F1, "/produits")
+    assert "Vodka Absolut" in h.tg.last(F1).text and "🗑" not in h.tg.last(F1).text
+
+    # Commande au format du modèle.
+    await h.text(F1, "12 rue de Rivoli 75004 Paris\n2 abso 60\n1 cocas 5\n1 ricard 25\n\nDigicode 45A32, 3e étage")
+    card = h.tg.last(F1)
+    assert "🍾 2 Vodka Absolut (60 €) + 1 Coca-Cola (5 €) + 1 ricard (25 €)" in card.text
+    assert "💶 90 €" in card.text
+    assert "🔑 Digicode 45A32, 3e étage" in card.text
+    assert "⚠️ Produit pas dans le catalogue : « ricard »" in card.text
+    await h.press(F1, card, "draft_confirm:")
+    [course] = await db.list_courses_by_status("pending")
+    assert float(course["price"]) == 90 and course["address_detail"] == "Digicode 45A32, 3e étage"
+
+    # Suppression depuis la liste.
+    await h.text(DISPATCH, "/produits")
+    listing = h.tg.last(DISPATCH)
+    await h.press(DISPATCH, listing, "prod_del:")
+    assert len(await db.list_products()) == 2
+    franchise_h.set_extractor(None)

@@ -376,6 +376,28 @@ async def scrub_messages(course_ids: list[int]) -> int:
     return len(res.data)
 
 
+# ---------------------------------------------------------------- produits
+
+async def list_products() -> list[dict]:
+    return (await _t("products").select("*").order("name").execute()).data
+
+
+async def get_product(product_id: int) -> dict | None:
+    return _first(await _t("products").select("*").eq("id", product_id).limit(1).execute())
+
+
+async def create_product(name: str, name_key: str, aliases: list[str]) -> dict:
+    return _first(await _t("products").insert({"name": name, "name_key": name_key, "aliases": aliases}).execute())
+
+
+async def update_product(product_id: int, fields: dict) -> dict | None:
+    return _first(await _t("products").update(fields).eq("id", product_id).execute())
+
+
+async def delete_product(product_id: int) -> None:
+    await _t("products").delete().eq("id", product_id).execute()
+
+
 # ---------------------------------------------------------------- events
 
 async def log_event(type_: str, course_id: int | None = None, user_id: str | None = None, payload: dict | None = None) -> None:

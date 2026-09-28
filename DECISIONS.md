@@ -139,3 +139,18 @@ simple qui respecte le mur de confidentialité (§12).
     nombre seul en fin de message, le bot répond qu'il manque le prix plutôt que de deviner.
 45. Correctif : le SDK `anthropic` 1.x n'accepte plus `temperature` en argument ; il passe désormais par
     `extra_body`. Les deux premières commandes réelles avaient échoué pour cette raison.
+
+## Modèle de commande et catalogue
+
+46. **Modèle** : quantité, produit, prix total par ligne ; ligne vide ; commentaire. L'adresse n'était pas
+    placée dans la demande : elle est attendue sur les lignes avant les produits (en pratique la 1re).
+    Le prix de la course est la somme des lignes ; une ligne sans prix rend le total manquant.
+47. Le modèle est lu **sans IA dans les deux modes**. Un message qui n'y correspond pas (texte libre,
+    commandes à puces) retombe sur la lecture habituelle.
+48. Le commentaire devient le complément d'adresse : comme le digicode, seul le livreur qui a pris la
+    course le voit.
+49. **Catalogue** (table `products`) : reconnaissance par nom normalisé, autre écriture, nom contenu dans
+    le texte, puis faute de frappe proche (similarité de lettres, sans IA). Un mot qui désigne plusieurs
+    produits est gardé tel quel avec un avertissement ; un produit inconnu aussi. Catalogue vide : aucun
+    avertissement.
+50. Pas de prix dans le catalogue : le franchisé donne le prix total de chaque ligne.

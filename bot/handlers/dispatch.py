@@ -12,6 +12,7 @@ from telegram.error import TelegramError
 
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
+from bot.services import catalog as catalog_service
 from bot.services import lifecycle
 from bot.timeutil import hhmm, minutes_since, night_bounds, night_label, night_start_date, now_utc, parse_ts, to_paris
 
@@ -347,3 +348,96 @@ async def unban(update: Update, context):
     await db.log_event("user_unbanned", user_id=user["id"], payload={"by": dispatcher["id"]})
     await messaging.reply(update, texts.unbanned_done(user))
     return "Réactivé"
+
+
+# ================================================================ catalogue des produits
+
+CATALOG_STATE_MINUTES = 10
+
+
+async def produits(update: Update, context) -> None:
+    """/produits : gestion du catalogue pour le dispatch, lecture seule pour un franchisé."""
+    user = await common.actor(update)
+    if user is not None and user["status"] == "active" and user["role"] == "franchise":
+        from bot.handlers import franchise
+
+        await franchise.produits(update, context)
+        return
+    if not await common.require(update, user, role="dispatch"):
+        return
+    await _send_catalog(update)
+
+
+async def _send_catalog(update: Update) -> None:
+    products = await db.list_products()
+    await messaging.reply(update, texts.catalog_list(products, for_dispatch=True), keyboards.catalog(products))
+
+
+async def ajouter(update: Update, context) -> None:
+    """/ajouter suivi des produits (un par ligne), ou seul pour ouvrir la saisie."""
+    user = await common.actor(update)
+    if not await common.require(update, user, role="dispatch"):
+        return
+    text = update.message.text or ""
+    body = text.split(None, 1)[1] if len(text.split(None, 1)) > 1 else ""
+    if body.strip():
+        await save_products(update, user, body)
+    else:
+        await _open_catalog_input(update, user)
+
+
+async def _open_catalog_input(update: Update, user: dict) -> None:
+    await db.set_state(user["id"], "adding_products", {},
+                       now_utc() + timedelta(minutes=CATALOG_STATE_MINUTES))
+    await messaging.reply(update, texts.CATALOG_ADD_PROMPT, keyboards.catalog_cancel())
+
+
+async def save_products(update: Update, user: dict, text: str) -> None:
+    entries = catalog_service.parse_input(text)
+    if not entries:
+        await messaging.reply(update, texts.CATALOG_NOTHING)
+        return
+    summary = await catalog_service.add_products(entries)
+    if user.get("conversation_state") == "adding_products":
+        await db.clear_state(user["id"])
+    await db.log_event("catalog_updated", user_id=user["id"],
+                       payload={k: v for k, v in summary.items() if k != "conflicts"})
+    await messaging.reply(update, texts.catalog_summary(summary))
+    await _send_catalog(update)
+
+
+@common.callback
+async def catalog_add(update: Update, context):
+    user = await _dispatch(update)
+    if user is None:
+        return None
+    await _open_catalog_input(update, user)
+    return None
+
+
+@common.callback
+async def catalog_cancel(update: Update, context):
+    user = await _dispatch(update)
+    if user is None:
+        return None
+    if user.get("conversation_state") == "adding_products":
+        await db.clear_state(user["id"])
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         texts.CANCELLED_OP)
+    return None
+
+
+@common.callback
+async def catalog_delete(update: Update, context):
+    user = await _dispatch(update)
+    if user is None:
+        return None
+    product = await db.get_product(common.arg(update, int))
+    if product is None:
+        return texts.ALREADY_HANDLED
+    await db.delete_product(product["id"])
+    await db.log_event("catalog_deleted", user_id=user["id"], payload={"name": product["name"]})
+    products = await db.list_products()
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         texts.catalog_list(products, for_dispatch=True), keyboards.catalog(products))
+    return f"{product['name']} supprimé"

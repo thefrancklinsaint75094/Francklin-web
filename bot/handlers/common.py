@@ -14,12 +14,14 @@ from bot.timeutil import now_utc, parse_ts
 log = logging.getLogger(__name__)
 
 COMMANDS = {
-    "franchise": [("mescourses", "Mes courses de la nuit")],
+    "franchise": [("mescourses", "Mes courses de la nuit"), ("modele", "Modèle de commande"),
+                  ("produits", "Produits connus")],
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
                 ("macourse", "Revoir ma course en cours")],
     "dispatch": [("recap", "Totaux par livreur"), ("journal", "Détail des courses livrées"),
                  ("encours", "Courses en attente et en cours"), ("users", "Tous les utilisateurs"),
-                 ("exclure", "Retirer un accès"), ("reactiver", "Rendre un accès")],
+                 ("exclure", "Retirer un accès"), ("reactiver", "Rendre un accès"),
+                 ("produits", "Catalogue des produits")],
 }
 COMMON_COMMANDS = [("start", "Démarrer"), ("aide", "Aide")]
 
