@@ -179,3 +179,7 @@ simple qui respecte le mur de confidentialité (§12).
     la feuille reste juste.
 56. Anti-doublon par une note « Bot #142 » sur la cellule Vendeur, invisible dans le tableau : pas de colonne
     ajoutée à la feuille.
+57. **Vendeur = « TOTAL »**, demandé par l'exploitant, sur toutes les lignes de commande des 7 onglets. Le menu
+    Vendeur accepte TOTAL (liste PARAMETRES!M4:M8, sans toucher à la liste des vendeurs). Une ligne dont seule
+    la case Vendeur est remplie par « TOTAL » compte comme libre ; le script remet « TOTAL » dans les cases
+    Vendeur vidées. La correspondance des noms ne sert plus qu'aux livreurs.

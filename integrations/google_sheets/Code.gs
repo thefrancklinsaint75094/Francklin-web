@@ -12,10 +12,15 @@
  *    GOOGLE_SHEETS_WEBHOOK_URL.
  *
  * Chaque course livrée est écrite dans l'onglet de la nuit, sur la première ligne
- * de commande vide (lignes 2 à 41), colonnes A à N : Vendeur, Livreur, Statut « OK »,
+ * de commande vide (lignes 2 à 41), colonnes A à N : Vendeur (toujours VENDEUR,
+ * « TOTAL »), Livreur, Statut « OK »,
  * Adresse, Paiement (laissé vide), puis 3 produits (Produit, Qté, Prix). Au-delà de
  * 3 produits, la suite va sur la ligne vide suivante. Le numéro de course est gardé
  * dans une note sur la cellule Vendeur : une course n'est jamais écrite deux fois.
+ *
+ * Vendeur : une ligne dont la seule case remplie est Vendeur = « TOTAL » compte comme
+ * vide. Après chaque écriture, les cases Vendeur vides de l'onglet repassent à « TOTAL ».
+ * Pour écrire le nom du franchisé à la place, mets VENDEUR = ''.
  *
  * Noms : le bot connaît « Franchisé 1 », « Livreur 2 »… Dans PARAMETRES, colonnes
  * Q et R à partir de la ligne 4, écris en Q le nom du bot (ou le vrai nom) et en R
@@ -26,6 +31,8 @@
  */
 const SPREADSHEET_ID = '';
 const SECRET = 'A_REMPLACER';
+
+const VENDEUR = 'TOTAL';
 
 const FIRST_ROW = 2;
 const LAST_ROW = 41;
@@ -83,11 +90,11 @@ function write_(ss, names, r) {
   const values = sheet.getRange(FIRST_ROW, 1, count, COLS).getValues();
   const free = [];
   for (let i = 0; i < count && free.length < chunks.length; i++) {
-    if (values[i].every(function (v) { return v === ''; })) free.push(FIRST_ROW + i);
+    if (isFree_(values[i])) free.push(FIRST_ROW + i);
   }
   if (free.length < chunks.length) throw new Error('onglet « ' + r.onglet + ' » plein (lignes ' + FIRST_ROW + ' à ' + LAST_ROW + ')');
 
-  const vendeur = name_(names, r.vendeur, r.vendeur_nom);
+  const vendeur = VENDEUR || name_(names, r.vendeur, r.vendeur_nom);
   const livreur = name_(names, r.livreur, r.livreur_nom);
   chunks.forEach(function (chunk, k) {
     const out = [vendeur, livreur, r.statut || 'OK', r.adresse || '', ''];
@@ -99,7 +106,23 @@ function write_(ss, names, r) {
     sheet.getRange(rowNum, 1, 1, COLS).setValues([out]);
     sheet.getRange(rowNum, 1).setNote(chunks.length > 1 ? tag + ' (' + (k + 1) + '/' + chunks.length + ')' : tag);
   });
+  fillVendeur_(sheet);
   return true;
+}
+
+// Ligne libre : tout est vide, sauf éventuellement Vendeur = VENDEUR.
+function isFree_(row) {
+  return row.every(function (v, j) { return v === '' || (j === 0 && VENDEUR && v === VENDEUR); });
+}
+
+// Remet VENDEUR dans les cases Vendeur vides des lignes de commande.
+function fillVendeur_(sheet) {
+  if (!VENDEUR) return;
+  const range = sheet.getRange(FIRST_ROW, 1, LAST_ROW - FIRST_ROW + 1, 1);
+  const col = range.getValues();
+  let changed = false;
+  col.forEach(function (c) { if (c[0] === '') { c[0] = VENDEUR; changed = true; } });
+  if (changed) range.setValues(col);
 }
 
 // Table de correspondance PARAMETRES!Q:R — nom du bot ou vrai nom → nom de la feuille.
