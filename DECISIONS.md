@@ -154,3 +154,14 @@ simple qui respecte le mur de confidentialité (§12).
     produits est gardé tel quel avec un avertissement ; un produit inconnu aussi. Catalogue vide : aucun
     avertissement.
 50. Pas de prix dans le catalogue : le franchisé donne le prix total de chaque ligne.
+
+## Google Sheets
+
+51. Liaison par **Google Apps Script** attaché à la feuille plutôt que par un compte de service Google
+    Cloud : moins d'étapes pour l'exploitant, aucune clé Google à stocker. Le script est protégé par un
+    secret partagé et ne sait qu'ajouter des lignes.
+52. Une ligne par course **livrée**, mêmes colonnes que le CSV du journal. Envoi en arrière-plan après
+    « Livré » : Google lent ou en panne ne ralentit jamais le livreur. Un échec écrit un événement
+    `sheet_error` ; `/synchro` renvoie la nuit, le script ignorant les courses déjà présentes.
+53. La rétention de 90 jours (§15) ne s'applique pas à la feuille : les compléments (digicodes) y restent
+    tant que l'exploitant ne les efface pas.

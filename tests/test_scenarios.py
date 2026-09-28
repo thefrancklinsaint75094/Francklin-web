@@ -861,3 +861,31 @@ async def test_catalog_from_bot_and_model_order(h, monkeypatch, test_config):
     await h.press(DISPATCH, listing, "prod_del:")
     assert len(await db.list_products()) == 2
     franchise_h.set_extractor(None)
+
+
+async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
+    import asyncio
+
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await asyncio.gather(*list(sheets._tasks))
+    assert [(r["numero"], r["franchise"], r["livreur"], r["prix"]) for r in sent] == [
+        (course["id"], "Franchisé 1", "Livreur 1", 60.0)]
+
+    sent.clear()
+    await h.text(DISPATCH, "/synchro")
+    assert "Google Sheets à jour" in h.tg.last(DISPATCH).text and len(sent) == 1
