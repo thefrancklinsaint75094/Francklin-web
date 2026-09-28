@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 import traceback
 
 from telegram import BotCommand, LinkPreviewOptions, Update
 from telegram.constants import ParseMode
+from telegram.error import Conflict, NetworkError
 from telegram.ext import (
     AIORateLimiter, Application, CallbackQueryHandler, CommandHandler, Defaults, MessageHandler, filters,
 )
@@ -27,9 +29,36 @@ def setup_logging() -> None:
     logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
+CONFLICT_ALERT_SECONDS = 120   # conflit continu au-delà : deux instances tournent vraiment
+CONFLICT_STREAK_GAP = 30       # silence plus long : nouvel épisode
+_conflict = {"first": None, "last": None, "notified": False}
+
+
+async def polling_error(context, err: Exception) -> None:
+    """Erreurs de polling passagères (réseau, relève d'instance lors d'un déploiement) :
+    un simple avertissement dans les logs, sans événement ni message au dispatch.
+
+    Un conflit qui dure plus de 2 minutes signifie que deux instances tournent
+    vraiment : le dispatch est alors prévenu, une fois par épisode."""
+    log.warning("Erreur de polling passagère : %s", err)
+    if not isinstance(err, Conflict):
+        return
+    now = time.monotonic()
+    if _conflict["last"] is None or now - _conflict["last"] > CONFLICT_STREAK_GAP:
+        _conflict.update(first=now, notified=False)
+    _conflict["last"] = now
+    if now - _conflict["first"] > CONFLICT_ALERT_SECONDS and not _conflict["notified"]:
+        _conflict["notified"] = True
+        await messaging.notify_dispatch(context.bot, texts.D_TWO_INSTANCES)
+        await db.log_event("error", payload={"type": "Conflict", "message": "deux instances en polling"})
+
+
 async def error_handler(update: object, context) -> None:
     """Toute exception : log, événement `error`, dispatch prévenu, message générique."""
     err = context.error
+    if update is None and isinstance(err, (Conflict, NetworkError)):
+        await polling_error(context, err)
+        return
     log.error("Exception dans un handler", exc_info=err)
     kind = type(err).__name__ if err else "Inconnue"
     user = None

@@ -399,6 +399,12 @@ def d_blocked(user: dict) -> str:
     return f"🚫 {esc(user.get('display_name') or user.get('real_name') or 'Un utilisateur')} a bloqué le bot"
 
 
+D_TWO_INSTANCES = (
+    "⚠️ Deux copies du bot tournent en même temps depuis plus de 2 minutes. "
+    "Vérifie qu'il n'y a qu'une seule réplique sur Railway et aucun bot lancé ailleurs."
+)
+
+
 def d_error(kind: str) -> str:
     return f"⚠️ Erreur technique : {esc(kind)}"
 
