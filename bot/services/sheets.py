@@ -108,6 +108,52 @@ def row(course: dict, users: dict[str, dict], catalog=None) -> dict:
     }
 
 
+def restock_row(restock: dict, users: dict[str, dict]) -> dict:
+    """Rechargement pour le tableau Rechargement : quantités signées
+    (+ chargé au livreur, − repris), cash récupéré, box, ravitailleur."""
+    from bot.services import restock as rs
+
+    at = to_paris(parse_ts(restock["created_at"]))
+    livreur = users.get(restock["livreur_id"], {})
+    by = users.get(restock["by_user_id"], {})
+    return {
+        "type": "recharge",
+        "numero": restock["id"],
+        "onglet": day_tab(restock["created_at"]),
+        "heure": at.strftime("%H:%M"),
+        "livreur": livreur.get("display_name", ""),
+        "livreur_nom": livreur.get("real_name") or "",
+        "box": restock.get("box") or "",
+        "cash": round(float(restock.get("cash") or 0), 2),
+        "produits": rs.signed_quantities(restock.get("items") or [], restock["kind"]),
+        "ravitailleur": by.get("display_name", ""),
+        "ravitailleur_nom": by.get("real_name") or "",
+    }
+
+
+async def push_restock(restock: dict) -> None:
+    """Ajoute un rechargement au tableau Rechargement. Ne lève jamais d'exception."""
+    if not enabled():
+        return
+    try:
+        users = await db.get_users([restock["livreur_id"], restock["by_user_id"]])
+        await send_rows([restock_row(restock, users)])
+    except Exception as exc:  # noqa: BLE001 — la feuille ne doit jamais bloquer le rechargement
+        log.warning("Rechargement R#%s non envoyé à Google Sheets : %s", restock.get("id"), exc)
+        try:
+            await db.log_event("sheet_error", payload={"restock_id": restock.get("id"), "error": str(exc)[:300]})
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def push_restock_later(restock: dict) -> None:
+    if not enabled():
+        return
+    task = asyncio.get_running_loop().create_task(push_restock(dict(restock)))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
 async def load_catalog():
     """Catalogue des produits, pour écrire le nom exact de la liste de la feuille.
     Sans catalogue (erreur), les produits partent tels qu'écrits."""

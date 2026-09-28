@@ -8,7 +8,8 @@ from bot.texts import ROLE_LABEL
 
 
 def role_choice() -> M:
-    return M([[B("Franchisé", callback_data="role:franchise"), B("Livreur", callback_data="role:livreur")]])
+    return M([[B("Franchisé", callback_data="role:franchise"), B("Livreur", callback_data="role:livreur")],
+              [B("Ravitailleur", callback_data="role:ravitailleur")]])
 
 
 def approve_reject(user_id: str) -> M:
@@ -180,3 +181,65 @@ def catalog(products: list[dict]) -> M:
 
 def catalog_cancel() -> M:
     return M([[B("Annuler", callback_data="prod_cancel")]])
+
+
+# ---------------------------------------------------------------- rechargement
+
+_RS_CANCEL = B("❌ Annuler", callback_data="rs_x")
+
+
+def restock_livreurs(livreurs: list[dict]) -> M:
+    rows = [[B(_user_label(u)[:40], callback_data=f"rs_l:{u['id']}")] for u in livreurs]
+    rows.append([_RS_CANCEL])
+    return M(rows)
+
+
+def restock_kind() -> M:
+    return M([[B("📦 Chargement", callback_data="rs_k:load"), B("↩️ Reprise", callback_data="rs_k:unload")],
+              [B("💶 Cash seulement", callback_data="rs_k:cash")], [_RS_CANCEL]])
+
+
+def restock_boxes(boxes: tuple[str, ...]) -> M:
+    buttons = [B(b[:30], callback_data=f"rs_b:{i}") for i, b in enumerate(boxes)]
+    rows = [buttons[j:j + 3] for j in range(0, len(buttons), 3)]
+    rows.append([_RS_CANCEL])
+    return M(rows)
+
+
+def restock_editor(kind: str, items: list[dict]) -> M:
+    from bot.services.restock import CASH_STEPS
+
+    rows = []
+    if kind == "cash":
+        steps = [B(f"{d:+d} €", callback_data=f"rs_cp:{d}") for d in CASH_STEPS]
+        rows += [steps[:3], steps[3:]]
+    else:
+        for i, item in enumerate(items):
+            rows.append([B("−1", callback_data=f"rs_q:{i}:-1"), B(f"{item['q']} {item['p']}"[:30], callback_data="rs_noop"),
+                         B("+1", callback_data=f"rs_q:{i}:1"), B("+5", callback_data=f"rs_q:{i}:5")])
+        rows.append([B("➕ Ajouter un produit", callback_data="rs_add:0"), B("💶 Cash", callback_data="rs_c")])
+    rows.append([B("✅ Valider", callback_data="rs_ok"), _RS_CANCEL])
+    return M(rows)
+
+
+def restock_cash() -> M:
+    from bot.services.restock import CASH_STEPS
+
+    steps = [B(f"{d:+d} €", callback_data=f"rs_cp:{d}") for d in CASH_STEPS]
+    return M([steps[:3], steps[3:], [B("✅ OK", callback_data="rs_back")]])
+
+
+def restock_picker(products: list[dict], page: int, page_size: int) -> M:
+    start = page * page_size
+    chunk = products[start:start + page_size]
+    rows = [[B(p["name"][:30], callback_data=f"rs_pick:{p['id']}") for p in chunk[i:i + 3]]
+            for i in range(0, len(chunk), 3)]
+    nav = []
+    if page > 0:
+        nav.append(B("◀️", callback_data=f"rs_add:{page - 1}"))
+    if start + page_size < len(products):
+        nav.append(B("▶️", callback_data=f"rs_add:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([B("↩️ Retour", callback_data="rs_back")])
+    return M(rows)

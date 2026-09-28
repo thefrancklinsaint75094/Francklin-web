@@ -7,7 +7,7 @@ from __future__ import annotations
 from telegram import Update
 
 from bot import config, messaging, texts
-from bot.handlers import common, franchise, livreur, onboarding
+from bot.handlers import common, franchise, livreur, onboarding, restock
 
 
 async def on_message(update: Update, context) -> None:
@@ -29,6 +29,9 @@ async def on_message(update: Update, context) -> None:
             await messaging.reply(update, texts.PENDING)
         return
     state, payload = common.active_state(user)
+    if user["role"] == "ravitailleur" or (user["role"] == "dispatch" and state == restock.STATE):
+        await restock.on_message(update, context, user, state, payload)
+        return
     if user["role"] == "dispatch":
         if state == "adding_products" and update.message.text:
             from bot.handlers import dispatch

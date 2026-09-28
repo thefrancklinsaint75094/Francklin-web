@@ -27,10 +27,17 @@
  * le nom de la feuille (PNO, Livreur A…). Sans correspondance, le nom du bot est
  * écrit tel quel : choisis ensuite le bon nom dans le menu déroulant.
  *
+ * Rechargements (« type: recharge ») : écrits dans le tableau Rechargement
+ * (RECHARGE_SPREADSHEET_ID), onglet de la nuit, première ligne libre entre 3 et 20
+ * (colonnes C à T vides) : A Livreur, B Box, C Cash récupéré, D→R quantités
+ * (+ chargé, − repris, colonne trouvée par le nom du produit en ligne 2),
+ * S heure, T Ravitailleur. Noms : table PARAMETRES!J4:K40 du tableau Rechargement.
+ *
  * Le script refuse toute requête sans le bon SECRET.
  */
 const SPREADSHEET_ID = '';
 const SECRET = 'A_REMPLACER';
+const RECHARGE_SPREADSHEET_ID = '';
 
 const VENDEUR = 'TOTAL';
 
@@ -41,23 +48,52 @@ const PRODUCTS_PER_ROW = 3;
 const NOTE_PREFIX = 'Bot #';
 const NAMES_RANGE = 'PARAMETRES!Q4:R40';
 
+const R_FIRST_ROW = 3;
+const R_LAST_ROW = 20;
+const R_HEADER_ROW = 2;
+const R_COLS = 20;           // A à T
+const R_FIRST_PRODUCT_COL = 4; // D
+const R_LAST_PRODUCT_COL = 18; // R
+const R_NOTE_PREFIX = 'Bot R#';
+const R_NAMES_RANGE = 'PARAMETRES!J4:K40';
+
 function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     const data = JSON.parse(e.postData.contents);
     if (data.secret !== SECRET) return json_({ ok: false, error: 'secret' });
-    const ss = spreadsheet_();
-    const names = names_(ss);
+    const rows = data.rows || [];
+    const courses = rows.filter(function (r) { return r.type !== 'recharge'; });
+    const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
     let added = 0;
     const errors = [];
-    (data.rows || []).forEach(function (r) {
-      try {
-        if (write_(ss, names, r)) added++;
-      } catch (err) {
-        errors.push('course ' + r.numero + ' : ' + err.message);
+    if (courses.length) {
+      const ss = spreadsheet_();
+      const names = names_(ss, NAMES_RANGE);
+      courses.forEach(function (r) {
+        try {
+          if (write_(ss, names, r)) added++;
+        } catch (err) {
+          errors.push('course ' + r.numero + ' : ' + err.message);
+        }
+      });
+    }
+    if (recharges.length) {
+      if (!RECHARGE_SPREADSHEET_ID) {
+        errors.push('RECHARGE_SPREADSHEET_ID vide dans le script');
+      } else {
+        const rss = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID);
+        const rnames = names_(rss, R_NAMES_RANGE);
+        recharges.forEach(function (r) {
+          try {
+            if (writeRecharge_(rss, rnames, r)) added++;
+          } catch (err) {
+            errors.push('rechargement R' + r.numero + ' : ' + err.message);
+          }
+        });
       }
-    });
+    }
     if (errors.length) return json_({ ok: false, added: added, error: errors.join(' ; ') });
     return json_({ ok: true, added: added });
   } catch (err) {
@@ -126,11 +162,49 @@ function fillVendeur_(sheet) {
 }
 
 // Table de correspondance PARAMETRES!Q:R — nom du bot ou vrai nom → nom de la feuille.
-function names_(ss) {
+// Renvoie true si le rechargement a été écrit, false s'il y était déjà.
+function writeRecharge_(ss, names, r) {
+  const sheet = ss.getSheetByName(r.onglet);
+  if (!sheet) throw new Error('onglet « ' + r.onglet + ' » introuvable');
+  const count = R_LAST_ROW - R_FIRST_ROW + 1;
+  const tag = R_NOTE_PREFIX + r.numero;
+  const notes = sheet.getRange(R_FIRST_ROW, 1, count, 1).getNotes();
+  for (let i = 0; i < count; i++) if (notes[i][0] === tag) return false;
+
+  const nProducts = R_LAST_PRODUCT_COL - R_FIRST_PRODUCT_COL + 1;
+  const header = sheet.getRange(R_HEADER_ROW, R_FIRST_PRODUCT_COL, 1, nProducts).getDisplayValues()[0];
+  const cols = {};
+  header.forEach(function (h, j) { if (String(h).trim()) cols[key_(h)] = j; });
+  const qty = new Array(nProducts).fill('');
+  const unknown = [];
+  Object.keys(r.produits || {}).forEach(function (p) {
+    const j = cols[key_(p)];
+    if (j === undefined) { unknown.push(p); return; }
+    qty[j] = (qty[j] === '' ? 0 : qty[j]) + Number(r.produits[p]);
+  });
+  if (unknown.length) throw new Error('produit absent des colonnes : ' + unknown.join(', '));
+
+  const values = sheet.getRange(R_FIRST_ROW, 1, count, R_COLS).getValues();
+  let rowNum = -1;
+  for (let i = 0; i < count; i++) {
+    // Libre : rien entre C et T (un livreur ou un box seul, sans mouvement, ne compte pas).
+    if (values[i].slice(2).every(function (v) { return v === ''; })) { rowNum = R_FIRST_ROW + i; break; }
+  }
+  if (rowNum < 0) throw new Error('onglet « ' + r.onglet + ' » plein (lignes ' + R_FIRST_ROW + ' à ' + R_LAST_ROW + ')');
+
+  const out = [name_(names, r.livreur, r.livreur_nom), r.box || '', r.cash ? r.cash : '']
+    .concat(qty)
+    .concat([r.heure ? r.heure + ' (bot)' : '(bot)', name_(names, r.ravitailleur, r.ravitailleur_nom)]);
+  sheet.getRange(rowNum, 1, 1, R_COLS).setValues([out]);
+  sheet.getRange(rowNum, 1).setNote(tag);
+  return true;
+}
+
+function names_(ss, a1) {
   const map = {};
   let rows = [];
   try {
-    rows = ss.getRange(NAMES_RANGE).getValues();
+    rows = ss.getRange(a1).getValues();
   } catch (err) {
     return map;
   }

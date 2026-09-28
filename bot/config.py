@@ -74,6 +74,7 @@ class Config:
     night_start_hour: int = 18
     night_end_hour: int = 6
     anthropic_model: str = ANTHROPIC_MODEL
+    boxes: tuple[str, ...] = ("Box 1", "Box 2", "Box 3")
 
     @property
     def uses_ai(self) -> bool:
@@ -90,6 +91,7 @@ class Config:
         departements = tuple(d.strip() for d in deps.split(",") if d.strip())
         if not departements:
             raise ConfigError("DEPARTEMENTS_AUTORISES est vide")
+        boxes = tuple(b.strip() for b in (_raw("BOXES") or "Box 1,Box 2,Box 3").split(",") if b.strip())
         cfg = cls(
             telegram_bot_token=_required("TELEGRAM_BOT_TOKEN"),
             supabase_url=_required("SUPABASE_URL"),
@@ -111,6 +113,7 @@ class Config:
             night_end_hour=_int("NIGHT_END_HOUR", 6),
             anthropic_model=_raw("ANTHROPIC_MODEL") or ANTHROPIC_MODEL,
             extraction_mode=_mode(),
+            boxes=boxes or ("Box 1",),
         )
         if cfg.extraction_mode == "ia" and not cfg.anthropic_api_key:
             raise ConfigError("EXTRACTION_MODE=ia demande ANTHROPIC_API_KEY")
