@@ -460,7 +460,8 @@ async def synchro(update: Update, context) -> None:
     delivered = await db.list_delivered_between(start, end)
     users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered])
     try:
-        added = await sheets.send_rows([sheets.row(c, users) for c in delivered])
+        catalog = await sheets.load_catalog()
+        added = await sheets.send_rows([sheets.row(c, users, catalog) for c in delivered])
     except RuntimeError as exc:
         await messaging.reply(update, texts.sheets_failed(str(exc)))
         return

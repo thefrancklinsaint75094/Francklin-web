@@ -140,18 +140,28 @@ Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002
 
 ### Google Sheets (facultatif)
 
-Chaque course livrée peut s'ajouter automatiquement à une feuille Google, via un petit script attaché à
-la feuille ([`integrations/google_sheets/Code.gs`](integrations/google_sheets/Code.gs)) :
+Chaque course livrée peut s'écrire automatiquement dans la feuille « Dispatch » (onglets Lundi à Dimanche),
+via un petit script Google ([`integrations/google_sheets/Code.gs`](integrations/google_sheets/Code.gs)).
+Tout se fait depuis un téléphone, dans Chrome :
 
-1. Crée une feuille Google, puis **Extensions → Apps Script**. Remplace le contenu par `Code.gs` et
-   mets ton secret à la place de `A_REMPLACER`.
+1. Ouvre **script.google.com** → **Nouveau projet**. Remplace le contenu par `Code.gs`.
+   Mets à la place de `SPREADSHEET_ID` l'identifiant de la feuille (la partie entre `/d/` et `/edit` de son
+   lien) et à la place de `A_REMPLACER` ton secret.
 2. **Déployer → Nouveau déploiement → Application Web** ; « Exécuter en tant que : moi » ;
    « Qui a accès : Tout le monde ». Autorise l'accès demandé par Google.
 3. Dans Railway : `GOOGLE_SHEETS_WEBHOOK_URL` = l'adresse obtenue (finit par `/exec`),
    `GOOGLE_SHEETS_SECRET` = le même secret.
+4. Dans l'onglet **PARAMETRES**, colonnes **Q** et **R** à partir de la ligne 4 : en Q le nom du bot
+   (« Franchisé 1 », « Livreur 2 ») ou le vrai nom, en R le nom de la feuille (« PNO », « Livreur A »).
 
-L'onglet « Courses » se crée tout seul. Le script refuse toute requête sans le secret et n'ajoute jamais
-deux fois la même course. `/synchro` (dispatch) renvoie les courses de la nuit, sans risque de doublon.
+Chaque course livrée va dans l'onglet de sa nuit (livrée à 2h dans la nuit de lundi à mardi → « Lundi »),
+sur la première ligne vide entre 2 et 41 : Vendeur, Livreur, Statut « OK », Adresse, puis jusqu'à 3 produits
+avec leur quantité et leur prix (au-delà, la suite va sur la ligne vide suivante). Paiement reste vide, le bot
+ne le connaît pas. Le digicode et le commentaire ne vont jamais dans la feuille.
+
+Le numéro de course est gardé dans une note sur la cellule Vendeur : le script n'écrit jamais deux fois la même
+course et ne touche pas aux lignes remplies à la main. `/synchro` (dispatch) renvoie les courses de la nuit,
+sans risque de doublon. Si un onglet est plein, le dispatch le voit dans la réponse de `/synchro`.
 
 ## 7. Premier démarrage
 
