@@ -890,3 +890,105 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     sent.clear()
     await h.text(DISPATCH, "/synchro")
     assert "Google Sheets à jour" in h.tg.last(DISPATCH).text and len(sent) == 1
+
+
+async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
+    """Sur place, le livreur change les quantités, ajoute un produit du catalogue et
+    règle les prix sans rien taper (sauf un prix, au choix)."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    div = await db.create_product("DIV", "div", [])
+    await db.create_product("KT", "kt", [])
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")          # « 2 vodka + coca », 60 €
+    prop = h.tg.last(L1)
+    await h.press(L1, prop, "course_take:")
+    card = h.tg.messages[(L1, prop.message_id)]
+    assert "🍾 Produits :\n   • 2 vodka\n   • coca" in card.text
+
+    def screen():
+        return h.tg.messages[(L1, prop.message_id)]
+
+    def txt(m):
+        return m.text.replace("\xa0", " ")
+
+    await h.press(L1, card, "order_edit:")
+    assert "modifier la commande" in txt(screen())
+    assert "1. 2 × vodka — 60 €" in txt(screen()) and "2. 1 × coca — ⚠️ prix ?" in txt(screen())
+
+    # Valider sans prix pour le coca : refusé.
+    await h.press_data(L1, screen(), "oe_ok")
+    assert h.tg.answers()[-1]["text"] == "Mets le prix de : coca" and h.tg.answers()[-1]["show_alert"]
+
+    # Prix du coca : +5 par bouton, puis 7 tapé au clavier.
+    await h.press_data(L1, screen(), "oe_s:1")
+    assert "◀️" in txt(screen()) and "oe_p:1:5" in [d for _, d in screen().buttons]
+    await h.press_data(L1, screen(), "oe_p:1:5")
+    assert "2. 1 × coca — 5 €" in txt(screen())
+    await h.text(L1, "7")
+    assert "2. 1 × coca — 7 €" in txt(screen())
+
+    # Une vodka de plus : le prix suit (30 € l'unité).
+    await h.press_data(L1, screen(), "oe_q:0:1")
+    assert "1. 3 × vodka — 90 €" in txt(screen())
+
+    # Ajout d'un produit du catalogue par le sélecteur, prix réglé par boutons.
+    await h.press_data(L1, screen(), "oe_add:0")
+    assert "choisis le produit" in txt(screen())
+    await h.press_data(L1, screen(), f"oe_pick:{div['id']}")
+    assert "3. 1 × DIV — ⚠️ prix ?  ◀️" in txt(screen())
+    await h.press_data(L1, screen(), "oe_p:2:10")
+    await h.press_data(L1, screen(), "oe_p:2:10")
+    await h.press_data(L1, screen(), "oe_s:-1")
+    assert "💶 <b>Total : 117 €</b>" in txt(screen())
+
+    await h.press_data(L1, screen(), "oe_ok")
+    saved = await db.get_course(course["id"])
+    assert saved["products"] == "3 vodka (90 €) + 1 coca (7 €) + 1 DIV (20 €)"
+    assert float(saved["price"]) == 117
+    assert "💶 117 € à encaisser" in txt(screen()) and "   • 1 DIV (20 €)" in txt(screen())
+    assert "order_edit:" in [d.split(":")[0] + ":" for _, d in screen().buttons]
+    assert f"✏️ Course #{course['id']} modifiée par Livreur 1 sur place" in txt(h.tg.find(F1, "modifiée par"))
+    assert "(avant : 60 €)" in txt(h.tg.find(F1, "modifiée par"))
+    assert "117 €" in txt(h.tg.find(F1, f"Course #{course['id']} — prise par"))
+    assert f"✏️ #{course['id']} — modifiée par Livreur 1 — 60 € → 117 €" in txt(h.tg.find(DISPATCH, "modifiée par"))
+    user = await db.get_user(l1["id"])
+    assert user["conversation_state"] is None
+
+    # Ouvrir puis annuler : rien ne change.
+    await h.press(L1, screen(), "order_edit:")
+    await h.press_data(L1, screen(), "oe_q:0:-1")
+    await h.press_data(L1, screen(), "oe_x")
+    assert float((await db.get_course(course["id"]))["price"]) == 117
+
+    # Bouton d'un éditeur expiré : la fiche revient.
+    await h.press(L1, screen(), "order_edit:")
+    await db.clear_state(l1["id"])
+    await h.press_data(L1, screen(), "oe_q:0:1")
+    assert h.tg.answers()[-1]["text"] == texts.ORDER_EDIT_EXPIRED
+    assert "à encaisser" in txt(screen())
+
+    # Livraison pendant un réglage de prix : un nombre tapé ensuite ne touche plus la course.
+    await h.press(L1, screen(), "order_edit:")
+    await h.press_data(L1, screen(), "oe_s:0")
+    await h.press_data(L1, card, f"course_deliver:{course['id']}")
+    await h.text(L1, "5")
+    assert h.tg.last(L1).text == texts.COURSE_FINISHED
+    assert (await db.get_user(l1["id"]))["conversation_state"] is None
+    assert float((await db.get_course(course["id"]))["price"]) == 117
+    await asyncio.gather(*list(sheets._tasks))
+    assert sent[0]["prix"] == 117.0
+    assert sent[0]["lignes"] == [{"produit": "vodka", "qte": 3, "prix": 90.0},
+                                 {"produit": "coca", "qte": 1, "prix": 7.0},
+                                 {"produit": "DIV", "qte": 1, "prix": 20.0}]
+    assert f"✅ #{course['id']} — livrée — Livreur 1 — 117 €" in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]

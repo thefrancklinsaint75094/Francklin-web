@@ -183,3 +183,21 @@ simple qui respecte le mur de confidentialité (§12).
     Vendeur accepte TOTAL (liste PARAMETRES!M4:M8, sans toucher à la liste des vendeurs). Une ligne dont seule
     la case Vendeur est remplie par « TOTAL » compte comme libre ; le script remet « TOTAL » dans les cases
     Vendeur vidées. La correspondance des noms ne sert plus qu'aux livreurs.
+
+## Modification de la commande par le livreur
+
+58. Bouton **✏️ Modifier la commande** sur la fiche du livreur, tant que la course est en cours (`assigned`).
+    Tout se fait par boutons dans le même message : quantités ➖/➕, sélecteur des produits du catalogue,
+    prix de ligne par pas de ±1/5/10 €. Taper un prix reste possible pendant le réglage d'une ligne.
+59. Le brouillon de modification est gardé dans l'état de conversation du livreur (`editing_order`,
+    30 minutes), comme les autres états : il survit à un redémarrage. Un bouton d'un éditeur expiré remet la
+    fiche. Les appuis d'un même livreur passent par son verrou : pas de modification perdue en tapant vite.
+60. Changer la quantité garde le prix à l'unité. Un produit ajouté arrive sans prix et son réglage s'ouvre
+    tout de suite ; « Valider » est refusé tant qu'une ligne n'a pas de prix.
+61. Les produits sont réécrits au format du modèle (« 3 DIV (90 €) + 1 KT (5 €) ») et le prix de la course
+    devient la somme des lignes : récap, journal et Google Sheets suivent sans autre changement.
+62. Le franchisé reçoit un **nouveau message** (« modifiée par … sur place », avec l'ancien prix) en plus de
+    l'édition de son message de course : un changement d'argent ne doit pas passer inaperçu (exception
+    assumée au principe « un seul message par course »). Le dispatch est prévenu ; un événement
+    `course_modified` garde l'avant et l'après.
+63. Fiche du livreur : un produit par ligne quand la commande en a plusieurs, plus lisible sur place.

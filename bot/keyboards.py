@@ -54,12 +54,54 @@ def livreur_course(course_id: int) -> M:
     return M(
         [
             [B("📦 Livré", callback_data=f"course_deliver:{course_id}"), B("💬 Contacter", callback_data=f"relay_start:{course_id}")],
+            [B("✏️ Modifier la commande", callback_data=f"order_edit:{course_id}")],
             [
                 B("🔜 Bientôt libre", callback_data="livreur_soon_free"),
                 B("❌ Annuler", callback_data=f"course_livreur_cancel:{course_id}"),
             ],
         ]
     )
+
+
+def _short_eur(value) -> str:
+    v = float(value)
+    return (f"{v:.2f}".replace(".", ",").replace(",00", "")) + "€"
+
+
+def order_editor(lines: list[dict], sel: int | None = None) -> M:
+    """Éditeur de commande du livreur. callback_data : oe_q:<ligne>:<±1>, oe_s:<ligne> (choisir
+    la ligne dont on change le prix, -1 pour revenir), oe_p:<ligne>:<±€>, oe_add:<page>, oe_ok, oe_x."""
+    from bot.services.order_edit import PRICE_STEPS
+
+    rows = []
+    if sel is not None and 0 <= sel < len(lines):
+        steps = [B(f"{d:+d} €", callback_data=f"oe_p:{sel}:{d}") for d in PRICE_STEPS]
+        rows += [steps[:3], steps[3:], [B("✅ OK", callback_data="oe_s:-1")]]
+        return M(rows)
+    for i, line in enumerate(lines):
+        price = _short_eur(line["x"]) if float(line["x"]) > 0 else "prix ?"
+        label = f"{line['q']} {line['p']} · {price}"[:40]
+        rows.append([B("➖", callback_data=f"oe_q:{i}:-1"), B(label, callback_data=f"oe_s:{i}"),
+                     B("➕", callback_data=f"oe_q:{i}:1")])
+    rows.append([B("➕ Ajouter un produit", callback_data="oe_add:0")])
+    rows.append([B("✅ Valider", callback_data="oe_ok"), B("↩️ Annuler", callback_data="oe_x")])
+    return M(rows)
+
+
+def order_picker(products: list[dict], page: int, page_size: int) -> M:
+    start = page * page_size
+    chunk = products[start:start + page_size]
+    rows = [[B(p["name"][:30], callback_data=f"oe_pick:{p['id']}") for p in chunk[i:i + 3]]
+            for i in range(0, len(chunk), 3)]
+    nav = []
+    if page > 0:
+        nav.append(B("◀️", callback_data=f"oe_add:{page - 1}"))
+    if start + page_size < len(products):
+        nav.append(B("▶️", callback_data=f"oe_add:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([B("↩️ Retour", callback_data="oe_s:-1")])
+    return M(rows)
 
 
 def livreur_cancel_confirm(course_id: int) -> M:

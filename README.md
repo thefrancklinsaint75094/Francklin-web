@@ -138,6 +138,21 @@ fiche porte « ⚠️ Produit pas dans le catalogue ». Les franchisés voient l
 
 Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002_products.sql`.
 
+### Modification de la commande par le livreur
+
+Sur place, le client prend parfois plus, moins ou autre chose. Sur sa course, le livreur appuie sur
+**✏️ Modifier la commande** et corrige tout avec des boutons, sans rien taper :
+
+- **➖ / ➕** sur chaque produit : la quantité change et le prix de la ligne suit (même prix à l'unité) ;
+  à 0, le produit disparaît ;
+- **➕ Ajouter un produit** : la liste du catalogue s'affiche, un appui ajoute le produit ;
+- toucher un produit ouvre son **prix** : boutons −10, −5, −1, +1, +5, +10 (ou taper le prix, au choix) ;
+- **✅ Valider** enregistre, **↩️ Annuler** ne change rien.
+
+À la validation, la course prend les nouveaux produits et le nouveau total (« à encaisser »), le franchisé et
+le dispatch sont prévenus (ancien → nouveau prix), et c'est cette version qui part dans Google Sheets à la
+livraison. Possible tant que la course n'est pas livrée.
+
 ### Google Sheets (facultatif)
 
 Chaque course livrée peut s'écrire automatiquement dans la feuille « Dispatch » (onglets Lundi à Dimanche),
