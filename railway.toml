@@ -4,3 +4,8 @@ builder = "nixpacks"
 [deploy]
 startCommand = "python -m bot.main"
 restartPolicyType = "always"
+
+# Une seule instance (deux pollings sur le même token = Conflict 409),
+# à Amsterdam : proche des serveurs Telegram et de la base Supabase (Paris).
+[deploy.multiRegionConfig.europe-west4-drams3a]
+numReplicas = 1
