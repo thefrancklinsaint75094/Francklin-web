@@ -205,3 +205,7 @@ simple qui respecte le mur de confidentialité (§12).
     refusé s'il n'est pas un multiple de 10, prix recalculé après ➖/➕ arrondi à 10 € près, et « Valider »
     refusé si une ligne modifiée garde un prix hors pas. Une commande ouverte puis validée sans changement
     n'est pas contrôlée (rien n'est enregistré).
+65. La règle des 10 € vaut aussi pour les **commandes des franchisés** : total et prix de ligne écrits
+    (« 1 KT (5 €) ») doivent être des multiples de 10 €. Sinon, pas de fiche : un message explique quoi
+    corriger, comme pour une information manquante (le franchisé renvoie la commande, ou la corrige avec
+    ✏️ Corriger). L'exemple du modèle passe à « 1 coca 10 ».

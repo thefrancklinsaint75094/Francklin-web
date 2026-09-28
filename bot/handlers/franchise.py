@@ -9,7 +9,7 @@ from telegram import Update
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, relay
 from bot.services import broadcast, geocoding, lifecycle, transcription
-from bot.services import catalog, rules_extraction
+from bot.services import catalog, order_edit, rules_extraction
 from bot.services.rules_extraction import RuleExtractor
 from bot.services.extraction import (
     ExtractionParseError, ExtractionUnavailable, Extractor, looks_like_complement, to_order,
@@ -185,6 +185,10 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
     for index, order in enumerate(orders, start=1):
         if not order.valid:
             await messaging.reply(update, texts.missing_fields(order))
+            continue
+        problems = order_edit.price_problems(order.price, order.products)
+        if problems:
+            await messaging.reply(update, texts.price_not_round(order, problems))
             continue
         try:
             geo = await geocoding.geocode(order.address)

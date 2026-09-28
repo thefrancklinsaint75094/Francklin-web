@@ -116,12 +116,13 @@ Les franchisés peuvent écrire leurs commandes selon ce modèle, lu sans IA dan
 ```
 12 rue de Rivoli 75004 Paris
 2 vodka 60
-1 coca 5
+1 coca 10
 
 Digicode 45A32, 3e étage
 ```
 
-1re ligne l'adresse ; une ligne par produit : **quantité, produit, prix total de la ligne** ; une ligne vide,
+1re ligne l'adresse ; une ligne par produit : **quantité, produit, prix total de la ligne** (toujours un
+multiple de 10 €) ; une ligne vide,
 puis le commentaire (vu par le livreur seulement). Le bot fait le total. `/modele` le rappelle.
 
 Le dispatch gère le catalogue avec `/produits` (bouton ➕ pour ajouter, 🗑 pour supprimer) ou
@@ -135,6 +136,9 @@ Coca-Cola : coca
 Le bot reconnaît le produit malgré les majuscules, accents, pluriels, contenances (« 70cl ») et petites
 fautes, et affiche le nom du catalogue sur la fiche. Un produit inconnu ne bloque pas la commande : la
 fiche porte « ⚠️ Produit pas dans le catalogue ». Les franchisés voient la liste avec `/produits`.
+
+**Prix de 10 en 10 €** : une commande dont le total, ou le prix d'une ligne, n'est pas un multiple de 10 €
+est refusée avec un message qui dit quoi corriger ; le franchisé la renvoie avec le bon prix.
 
 Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002_products.sql`.
 

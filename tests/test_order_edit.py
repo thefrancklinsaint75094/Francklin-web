@@ -66,3 +66,11 @@ def test_missing_prices_and_same():
     assert oe.missing_prices(lines) == ["KT"]
     assert oe.same(lines, [dict(l) for l in lines])
     assert not oe.same(lines, lines[:1])
+
+
+def test_franchise_price_problems():
+    assert oe.price_problems(60, "2 vodka") == []
+    assert oe.price_problems(65, "2 vodka") == ["total 65 €"]
+    assert oe.price_problems(30, "1 DIV (15 €) + 1 KT (15 €)") == ["1 DIV (15 €)", "1 KT (15 €)"]
+    assert oe.price_problems(90, "2 DIV (60 €) + 1 KT (30 €)") == []
+    assert oe.price_problems(12.5, "1 KT") == ["total 12,50 €"]

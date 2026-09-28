@@ -35,9 +35,9 @@ FAR = (49.40, 2.35)                # > 25 km
 RIVOLI = {"address": "12 rue de Rivoli, 75004 Paris", "address_detail": "digicode 45A32",
           "products": "2 vodka + coca", "price": 60, "requested_time": None}
 OBERKAMPF = {"address": "8 rue Oberkampf, 75011 Paris", "address_detail": None,
-             "products": "1 jack daniels", "price": 45, "requested_time": "vers 23h"}
+             "products": "1 jack daniels", "price": 50, "requested_time": "vers 23h"}
 MONTREUIL = {"address": "12 rue de Paris, Montreuil", "address_detail": "code 1234B",
-             "products": "2 rosé + glace", "price": 38, "requested_time": None}
+             "products": "2 rosé + glace", "price": 40, "requested_time": None}
 
 EXTRACTIONS = {
     "rivoli": [RIVOLI],
@@ -48,6 +48,7 @@ EXTRACTIONS = {
     "charenton": [{**RIVOLI, "address": "rue de Charenton, 75012 Paris"}],
     "introuvable": [{**RIVOLI, "address": "99 rue qui n'existe pas"}],
     "cher": [{**RIVOLI, "price": 2500}],
+    "pas rond": [{**RIVOLI, "price": 65}],
     "bonjour": [],
     "le digicode c'est 45B en fait": [{"address": None, "address_detail": "digicode 45B", "products": None,
                                        "price": None, "requested_time": None}],
@@ -564,15 +565,15 @@ async def test_recap_journal_csv(h):
     await h.text(DISPATCH, "/recap")
     recap = h.tg.last(DISPATCH).text
     assert "📊 Récap nuit du" in recap
-    assert "Livreur 1 — 2 courses — 105 €" in recap
-    assert "Total : 2 courses — 105 €" in recap
+    assert "Livreur 1 — 2 courses — 110 €" in recap
+    assert "Total : 2 courses — 110 €" in recap
     assert "En attente : 1 · En cours : 0" in recap
 
     await h.text(DISPATCH, "/journal")
     journal = h.tg.find(DISPATCH, "📋 Journal nuit du").text
     assert "2 courses livrées" in journal
     assert f"#{c1['id']} · Franchisé 1 → Livreur 1 · 12 Rue de Rivoli 75004 Paris · 60 €" in journal
-    assert "Total : 105 €" in journal
+    assert "Total : 110 €" in journal
     assert len(h.tg.documents(DISPATCH)) == 1
 
     csv_bytes = dispatch_h.build_csv(await db.list_delivered_between(now_utc() - timedelta(days=1), now_utc()),
@@ -597,7 +598,7 @@ async def test_encours_and_overrides(h):
 
     await h.text(DISPATCH, "/encours")
     enc = h.tg.last(DISPATCH)
-    assert "⏳ En attente (1)" in enc.text and f"#{c2['id']} — Franchisé 2 — Paris 11e — 45 € — vague 1" in enc.text
+    assert "⏳ En attente (1)" in enc.text and f"#{c2['id']} — Franchisé 2 — Paris 11e — 50 € — vague 1" in enc.text
     assert f"#{c1['id']} — Franchisé 1 → Livreur 1 — Paris 4e — 60 € — depuis 0 min" in enc.text
     assert "📍 Livreurs en service : 1 / 2" in enc.text
 
@@ -845,9 +846,9 @@ async def test_catalog_from_bot_and_model_order(h, monkeypatch, test_config):
     assert "Vodka Absolut" in h.tg.last(F1).text and "🗑" not in h.tg.last(F1).text
 
     # Commande au format du modèle.
-    await h.text(F1, "12 rue de Rivoli 75004 Paris\n2 abso 60\n1 cocas 5\n1 ricard 25\n\nDigicode 45A32, 3e étage")
+    await h.text(F1, "12 rue de Rivoli 75004 Paris\n2 abso 60\n1 cocas 10\n1 ricard 20\n\nDigicode 45A32, 3e étage")
     card = h.tg.last(F1)
-    assert "🍾 2 Vodka Absolut (60 €) + 1 Coca-Cola (5 €) + 1 ricard (25 €)" in card.text
+    assert "🍾 2 Vodka Absolut (60 €) + 1 Coca-Cola (10 €) + 1 ricard (20 €)" in card.text
     assert "💶 90 €" in card.text
     assert "🔑 Digicode 45A32, 3e étage" in card.text
     assert "⚠️ Produit pas dans le catalogue : « ricard »" in card.text
@@ -999,3 +1000,16 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
                                  {"produit": "coca", "qte": 1, "prix": 20.0},
                                  {"produit": "DIV", "qte": 1, "prix": 20.0}]
     assert f"✅ #{course['id']} — livrée — Livreur 1 — 130 €" in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
+
+
+async def test_franchise_order_price_must_be_multiple_of_ten(h):
+    await h.text(DISPATCH, "/start")
+    await register(h, F1, "franchise", "Bar du Coin")
+    await h.text(F1, "pas rond")
+    msg = h.tg.last(F1).text.replace("\xa0", " ")
+    assert msg.startswith("⚠️ Les prix vont de 10 en 10 € : total 65 € — pas possible pour : 12 rue de Rivoli")
+    assert not h.tg.last(F1).buttons  # aucune fiche à confirmer
+    assert await db.list_courses_by_status("pending") == []
+    # Le bon prix passe.
+    await h.text(F1, "rivoli")
+    assert "draft_confirm:" in h.tg.last(F1).buttons[0][1]
