@@ -58,7 +58,9 @@ WELCOME_LIVREUR = (
     "/pause — te retirer temporairement\n"
     "/macourse — revoir ta course en cours\n\n"
     "Tu ne reçois que les courses proches de toi. Une seule à la fois — appuie sur « Bientôt libre » "
-    "quand tu termines pour enchaîner."
+    "quand tu termines pour enchaîner.\n\n"
+    "Le client prend autre chose ? « ✏️ Modifier la commande » sur ta course : ➖ / ➕ pour les quantités, "
+    "➕ Ajouter un produit pour choisir dans la liste, et les boutons de prix. Rien à taper."
 )
 
 WELCOME_DISPATCH = (
@@ -176,12 +178,18 @@ def out_of_zone(where: str) -> str:
     return f"Cette adresse est hors zone ({esc(where)}). Je ne peux pas la prendre."
 
 
-def order_lines(data: dict, price_suffix: str = "") -> list[str]:
-    """Bloc 📍 🔑 🍾 💶 🕐 commun à la fiche franchisé et à la fiche complète livreur."""
+def order_lines(data: dict, price_suffix: str = "", products_list: bool = False) -> list[str]:
+    """Bloc 📍 🔑 🍾 💶 🕐 commun à la fiche franchisé et à la fiche complète livreur.
+    products_list : un produit par ligne (fiche du livreur)."""
     lines = [f"📍 {esc(data['address'])}"]
     if data.get("address_detail"):
         lines.append(f"🔑 {esc(_cap(data['address_detail']))}")
-    lines.append(f"🍾 {esc(data['products'])}")
+    parts = [p.strip() for p in str(data["products"]).split(" + ") if p.strip()]
+    if products_list and len(parts) > 1:
+        lines.append("🍾 Produits :")
+        lines += [f"   • {esc(p)}" for p in parts]
+    else:
+        lines.append(f"🍾 {esc(data['products'])}")
     lines.append(f"💶 {eur(data['price'])}{price_suffix}")
     if data.get("requested_time"):
         lines.append(f"🕐 {esc(data['requested_time'])}")
@@ -331,7 +339,7 @@ def proposal_withdrawn(course_id: int) -> str:
 
 def full_fiche(course: dict, franchise: dict) -> str:
     lines = [f"🚴 Course #{course['id']} — c'est pour toi", ""]
-    lines += order_lines(course, price_suffix=" à encaisser")
+    lines += order_lines(course, price_suffix=" à encaisser", products_list=True)
     who = esc(franchise.get("display_name") or "Franchisé")
     if franchise.get("telegram_username"):
         who += f" — @{esc(franchise['telegram_username'])}"
@@ -365,6 +373,61 @@ def forced_delivered_for_livreur(course_id: int) -> str:
 
 def stuck_for_livreur(course_id: int) -> str:
     return f"⏰ Tu as toujours la course #{course_id} en cours — appuie sur Livré si c'est fait."
+
+
+# ================================================================ modification de la commande (livreur)
+
+def order_editor(course_id: int, lines: list[dict], sel: int | None = None) -> str:
+    out = [f"✏️ <b>Course #{course_id} — modifier la commande</b>", ""]
+    if not lines:
+        out.append("Aucun produit. Ajoute-en avec ➕ Ajouter un produit.")
+    for i, line in enumerate(lines):
+        price = eur(line["x"]) if float(line["x"]) > 0 else "⚠️ prix ?"
+        mark = "  ◀️" if sel == i else ""
+        out.append(f"{i + 1}. {line['q']} × {esc(line['p'])} — {price}{mark}")
+    out += ["", f"💶 <b>Total : {eur(sum(float(l['x']) for l in lines))}</b>", ""]
+    if sel is not None and 0 <= sel < len(lines):
+        out.append(f"Prix de la ligne {sel + 1} ({esc(lines[sel]['p'])}) : ajuste avec les boutons, "
+                   "ou tape le prix (ex. 35). Puis ✅ OK.")
+    else:
+        out.append("➖ / ➕ : quantité. Touche un produit pour changer son prix. ✅ Valider quand c'est bon.")
+    return "\n".join(out)
+
+
+def order_picker(course_id: int, page: int, pages: int) -> str:
+    text = f"✏️ Course #{course_id} — choisis le produit à ajouter"
+    if pages > 1:
+        text += f" (page {page + 1}/{pages})"
+    return text
+
+
+ORDER_EDIT_NO_CATALOG = "Aucun produit dans le catalogue : demande au dispatch d'en ajouter (/produits)."
+ORDER_EDIT_EXPIRED = "Modification expirée : rouvre ✏️ Modifier la commande."
+ORDER_EDIT_UNCHANGED = "Aucun changement."
+ORDER_EDIT_EMPTY = "La commande doit garder au moins un produit."
+ORDER_EDIT_TOO_MANY = "Trop de produits sur cette commande."
+ORDER_EDIT_PRICE_HINT = "Tape seulement le prix de la ligne, par exemple 35."
+ORDER_EDIT_USE_BUTTONS = "Utilise les boutons de la commande en cours de modification (➖ ➕ ✅ Valider)."
+
+
+def order_edit_missing_price(names: list[str]) -> str:
+    return "Mets le prix de : " + ", ".join(names)[:180]
+
+
+def order_modified_for_franchise(course: dict, old_price, livreur_name: str) -> str:
+    lines = [f"✏️ Course #{course['id']} modifiée par {esc(livreur_name)} sur place", "",
+             f"🍾 {esc(course['products'])}",
+             f"💶 {eur(course['price'])} (avant : {eur(old_price)})"]
+    return "\n".join(lines)
+
+
+def d_order_modified(course: dict, livreur: dict, old_products: str, old_price) -> str:
+    return (
+        f"✏️ #{course['id']} — modifiée par {esc(livreur['display_name'])} — "
+        f"{eur(old_price)} → {eur(course['price'])}\n"
+        f"avant : {esc(old_products)}\n"
+        f"après : {esc(course['products'])}"
+    )
 
 
 # ================================================================ relais
