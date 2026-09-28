@@ -9,9 +9,10 @@ from telegram import Update
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, relay
 from bot.services import broadcast, geocoding, lifecycle, transcription
+from bot.services import catalog, rules_extraction
 from bot.services.rules_extraction import RuleExtractor
 from bot.services.extraction import (
-    ExtractionParseError, ExtractionUnavailable, Extractor, looks_like_complement,
+    ExtractionParseError, ExtractionUnavailable, Extractor, looks_like_complement, to_order,
 )
 from bot.timeutil import iso, minutes_since, night_bounds, night_start_date, now_utc, parse_ts
 
@@ -144,7 +145,13 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
     dead_status = "correcting" if is_correction else "expired"
 
     try:
-        if image is not None:
+        template = None
+        if image is None:
+            # Modèle de commande (quantité produit prix) : lu sans IA, quel que soit le mode.
+            template = rules_extraction.parse_template(extract_input or raw, await catalog.load())
+        if template is not None:
+            orders = [to_order(d) for d in template]
+        elif image is not None:
             orders = await extractor().extract_image(*image)
         else:
             orders = await extractor().extract_text(extract_input or raw)
@@ -206,6 +213,7 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
             "lon": geo.lon,
             "has_housenumber": geo.has_housenumber,
             "header": f"Commande {index} sur {total}" if total > 1 else None,
+            "warnings": order.warnings,
         }
         dup = next((c for c in reversed(recent_courses)
                     if c["status"] not in db.CANCELLED_STATUSES and _norm(c["address"]) == _norm(geo.label)), None)
@@ -398,6 +406,23 @@ async def withdraw_yes(update: Update, context):
         await lifecycle.refresh_franchise_message(context, course, franchise=user)
         return texts.ALREADY_CLOSED, True
     return "Course retirée"
+
+
+# ================================================================ /modele, /produits
+
+async def modele(update: Update, context) -> None:
+    user = await common.actor(update)
+    if not await common.require(update, user, role="franchise"):
+        return
+    await messaging.reply(update, texts.MODEL_HELP)
+
+
+async def produits(update: Update, context) -> None:
+    """Liste des produits connus, en lecture seule pour le franchisé."""
+    user = await common.actor(update)
+    if not await common.require(update, user, role="franchise"):
+        return
+    await messaging.reply(update, texts.catalog_list(await db.list_products()))
 
 
 # ================================================================ /mescourses

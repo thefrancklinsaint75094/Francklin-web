@@ -127,3 +127,14 @@ def ban_confirm(user_id: str) -> M:
     return M([[B("Oui", callback_data=f"ban_yes:{user_id}"), B("Non", callback_data="op_cancel")]])
 
 
+
+
+def catalog(products: list[dict]) -> M:
+    rows = [[B("➕ Ajouter des produits", callback_data="prod_add")]]
+    for p in products:
+        rows.append([B(f"🗑 {p['name'][:50]}", callback_data=f"prod_del:{p['id']}")])
+    return M(rows)
+
+
+def catalog_cancel() -> M:
+    return M([[B("Annuler", callback_data="prod_cancel")]])

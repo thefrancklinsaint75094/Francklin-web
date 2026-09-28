@@ -54,6 +54,7 @@ class Order:
     price: float | None
     requested_time: str | None
     missing: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def valid(self) -> bool:
@@ -113,6 +114,7 @@ def to_order(item: dict) -> Order:
         products=_clean_str(item.get("products")),
         price=_clean_price(item.get("price")),
         requested_time=_clean_str(item.get("requested_time")),
+        warnings=list(item.get("warnings") or []),
     )
     if order.address is None:
         order.missing.append("address")

@@ -92,6 +92,14 @@ create table events (
   created_at      timestamptz not null default now()
 );
 
+create table products (
+  id          serial primary key,
+  name        text not null,                    -- nom affiché : « Vodka Absolut »
+  name_key    text not null unique,             -- nom normalisé, pour éviter les doublons
+  aliases     text[] not null default '{}',     -- autres façons de l'écrire : {absolut, abso}
+  created_at  timestamptz not null default now()
+);
+
 create index on courses (status);
 create index on courses (franchise_id, created_at);
 create index on courses (livreur_id, created_at);
@@ -106,3 +114,4 @@ alter table livreur_positions enable row level security;
 alter table broadcasts enable row level security;
 alter table messages enable row level security;
 alter table events enable row level security;
+alter table products enable row level security;

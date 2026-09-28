@@ -28,10 +28,15 @@ async def on_message(update: Update, context) -> None:
         else:
             await messaging.reply(update, texts.PENDING)
         return
-    if user["role"] == "dispatch":
-        await messaging.reply(update, texts.WELCOME_DISPATCH)
-        return
     state, payload = common.active_state(user)
+    if user["role"] == "dispatch":
+        if state == "adding_products" and update.message.text:
+            from bot.handlers import dispatch
+
+            await dispatch.save_products(update, user, update.message.text)
+        else:
+            await messaging.reply(update, texts.WELCOME_DISPATCH)
+        return
     if user["role"] == "franchise":
         await franchise.on_message(update, context, user, state, payload)
     else:

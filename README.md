@@ -107,6 +107,35 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 
 Dans les deux cas, le franchisé voit une fiche et la confirme avant que la course parte.
 
+### Modèle de commande et catalogue des produits
+
+Les franchisés peuvent écrire leurs commandes selon ce modèle, lu sans IA dans les deux modes :
+
+```
+12 rue de Rivoli 75004 Paris
+2 vodka 60
+1 coca 5
+
+Digicode 45A32, 3e étage
+```
+
+1re ligne l'adresse ; une ligne par produit : **quantité, produit, prix total de la ligne** ; une ligne vide,
+puis le commentaire (vu par le livreur seulement). Le bot fait le total. `/modele` le rappelle.
+
+Le dispatch gère le catalogue avec `/produits` (bouton ➕ pour ajouter, 🗑 pour supprimer) ou
+`/ajouter`, un produit par ligne, avec après « : » les autres façons de l'écrire :
+
+```
+Vodka Absolut : absolut, abso
+Coca-Cola : coca
+```
+
+Le bot reconnaît le produit malgré les majuscules, accents, pluriels, contenances (« 70cl ») et petites
+fautes, et affiche le nom du catalogue sur la fiche. Un produit inconnu ne bloque pas la commande : la
+fiche porte « ⚠️ Produit pas dans le catalogue ». Les franchisés voient la liste avec `/produits`.
+
+Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002_products.sql`.
+
 ## 7. Premier démarrage
 
 1. Toi (compte dispatch) : envoie `/start` au bot → « Dispatch actif ».

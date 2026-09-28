@@ -68,17 +68,29 @@ WELCOME_DISPATCH = (
     "/encours — courses en attente et en cours\n"
     "/users — tous les utilisateurs\n"
     "/exclure — retirer un accès\n"
-    "/reactiver — rendre un accès"
+    "/reactiver — rendre un accès\n"
+    "/produits — catalogue des produits (ajouter, supprimer)"
+)
+
+MODEL_HELP = (
+    "📝 <b>Modèle de commande</b>\n\n"
+    "<code>12 rue de Rivoli 75004 Paris\n"
+    "2 vodka 60\n"
+    "1 coca 5\n"
+    "\n"
+    "Digicode 45A32, 3e étage</code>\n\n"
+    "• 1re ligne : l'adresse, avec le code postal.\n"
+    "• Puis une ligne par produit : <b>quantité</b>, <b>produit</b>, <b>prix total</b> de la ligne.\n"
+    "• Une ligne vide, puis le commentaire : digicode, étage, consignes. Seul le livreur le verra.\n\n"
+    "Je fais le total. /produits — voir les produits connus"
 )
 
 WELCOME_FRANCHISE_RULES = (
     "✅ Tu es validé.\n\n"
     "Envoie-moi tes commandes en texte. Je te renvoie une fiche à confirmer, "
     "puis je trouve le livreur le plus proche.\n\n"
-    "Il me faut au minimum : l'adresse, les produits et le prix. "
-    "Le plus sûr : sépare-les par des virgules, avec le code postal et le signe €.\n"
-    "Exemple : 12 rue de Rivoli 75004, 2 vodka + coca, 60€, digicode 45A32\n\n"
-    "/mescourses — voir mes courses de la nuit"
+    + MODEL_HELP.split("\n\n", 1)[1].rsplit("\n\n", 1)[0]
+    + "\n\n/modele — revoir ce modèle\n/produits — produits connus\n/mescourses — voir mes courses de la nuit"
 )
 
 WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch": WELCOME_DISPATCH}
@@ -185,6 +197,8 @@ def draft_card(ex: dict, price_max: int) -> str:
         )
     if not ex.get("has_housenumber", True):
         lines.append("⚠️ Pas de numéro de rue trouvé — vérifie l'adresse")
+    for warning in ex.get("warnings") or []:
+        lines.append(esc(warning))
     if lines:
         lines.append("")
     body = order_lines(ex)
@@ -553,3 +567,48 @@ def banned_done(user: dict) -> str:
 
 def unbanned_done(user: dict) -> str:
     return f"✅ {esc(user.get('display_name'))} ({esc(user.get('real_name'))}) est réactivé."
+
+
+# ================================================================ catalogue
+
+CATALOG_ADD_PROMPT = (
+    "Envoie-moi les produits, <b>un par ligne</b>. Après « : », ajoute les autres façons "
+    "dont les franchisés l'écrivent.\n\n"
+    "<code>Vodka Absolut : absolut, abso\n"
+    "Coca-Cola : coca\n"
+    "Jack Daniel's : jack, jd\n"
+    "Red Bull</code>\n\n"
+    "Majuscules, accents, pluriels et contenances (70cl, 1L) sont ignorés automatiquement. "
+    "Un produit déjà connu est complété, pas dupliqué."
+)
+CATALOG_NOTHING = "Je n'ai trouvé aucun produit dans ton message."
+CATALOG_DELETED = "Produit supprimé."
+
+
+def catalog_list(products: list[dict], for_dispatch: bool = False) -> str:
+    if not products:
+        text = "📦 Catalogue vide pour l'instant."
+        return text + ("\n\nAjoute des produits avec le bouton ci-dessous." if for_dispatch else "")
+    lines = [f"📦 <b>Produits connus</b> ({len(products)})", ""]
+    for p in products:
+        line = f"• {esc(p['name'])}"
+        if p.get("aliases"):
+            line += f" — <i>{esc(', '.join(p['aliases']))}</i>"
+        lines.append(line)
+    if for_dispatch:
+        lines += ["", "🗑 sous un produit pour le supprimer."]
+    return "\n".join(lines)
+
+
+def catalog_summary(summary: dict) -> str:
+    lines = []
+    if summary["added"]:
+        lines.append(f"✅ Ajouté{'s' if len(summary['added']) > 1 else ''} : {esc(', '.join(summary['added']))}")
+    if summary["updated"]:
+        lines.append(f"✏️ Complété{'s' if len(summary['updated']) > 1 else ''} : {esc(', '.join(summary['updated']))}")
+    if summary["unchanged"]:
+        lines.append(f"= Déjà à jour : {esc(', '.join(summary['unchanged']))}")
+    for alias, others in summary["conflicts"]:
+        lines.append(f"⚠️ « {esc(alias)} » désigne aussi : {esc(', '.join(others))} — "
+                     "le bot demandera de préciser.")
+    return "\n".join(lines) or CATALOG_NOTHING
