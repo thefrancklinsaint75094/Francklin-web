@@ -188,7 +188,7 @@ simple qui respecte le mur de confidentialité (§12).
 
 58. Bouton **✏️ Modifier la commande** sur la fiche du livreur, tant que la course est en cours (`assigned`).
     Tout se fait par boutons dans le même message : quantités ➖/➕, sélecteur des produits du catalogue,
-    prix de ligne par pas de ±1/5/10 €. Taper un prix reste possible pendant le réglage d'une ligne.
+    prix de ligne par pas de ±10/20/50 €. Taper un prix reste possible pendant le réglage d'une ligne.
 59. Le brouillon de modification est gardé dans l'état de conversation du livreur (`editing_order`,
     30 minutes), comme les autres états : il survit à un redémarrage. Un bouton d'un éditeur expiré remet la
     fiche. Les appuis d'un même livreur passent par son verrou : pas de modification perdue en tapant vite.
@@ -201,3 +201,7 @@ simple qui respecte le mur de confidentialité (§12).
     assumée au principe « un seul message par course »). Le dispatch est prévenu ; un événement
     `course_modified` garde l'avant et l'après.
 63. Fiche du livreur : un produit par ligne quand la commande en a plusieurs, plus lisible sur place.
+64. **Prix de 10 en 10 €** (règle de l'exploitant) dans l'éditeur du livreur : boutons ±10/20/50 €, prix tapé
+    refusé s'il n'est pas un multiple de 10, prix recalculé après ➖/➕ arrondi à 10 € près, et « Valider »
+    refusé si une ligne modifiée garde un prix hors pas. Une commande ouverte puis validée sans changement
+    n'est pas contrôlée (rien n'est enregistré).

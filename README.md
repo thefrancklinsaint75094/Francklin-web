@@ -143,10 +143,12 @@ Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002
 Sur place, le client prend parfois plus, moins ou autre chose. Sur sa course, le livreur appuie sur
 **✏️ Modifier la commande** et corrige tout avec des boutons, sans rien taper :
 
-- **➖ / ➕** sur chaque produit : la quantité change et le prix de la ligne suit (même prix à l'unité) ;
+- **➖ / ➕** sur chaque produit : la quantité change et le prix de la ligne suit (même prix à l'unité,
+  arrondi à 10 €) ;
   à 0, le produit disparaît ;
 - **➕ Ajouter un produit** : la liste du catalogue s'affiche, un appui ajoute le produit ;
-- toucher un produit ouvre son **prix** : boutons −10, −5, −1, +1, +5, +10 (ou taper le prix, au choix) ;
+- toucher un produit ouvre son **prix** : boutons −50, −20, −10, +10, +20, +50 € (ou taper le prix, au choix) ;
+  les prix vont toujours de 10 en 10 € ;
 - **✅ Valider** enregistre, **↩️ Annuler** ne change rien.
 
 À la validation, la course prend les nouveaux produits et le nouveau total (« à encaisser »), le franchisé et

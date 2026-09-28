@@ -348,13 +348,16 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
     lines = payload["lines"]
     if not lines:
         return texts.ORDER_EDIT_EMPTY, True
-    missing = order_edit.missing_prices(lines)
-    if missing:
-        return texts.order_edit_missing_price(missing), True
     if order_edit.same(lines, payload.get("orig") or []):
         await db.clear_state(user["id"])
         await _back_to_card(context, chat_id, payload["msg"], course)
         return texts.ORDER_EDIT_UNCHANGED
+    missing = order_edit.missing_prices(lines)
+    if missing:
+        return texts.order_edit_missing_price(missing), True
+    off = order_edit.off_step_prices(lines)
+    if off:
+        return texts.order_edit_off_step(off), True
     fields = {"products": order_edit.products_text(lines), "price": order_edit.total(lines)}
     updated = await db.update_course_if_status(course["id"], ["assigned"], fields, livreur_id=user["id"])
     await db.clear_state(user["id"])
@@ -394,7 +397,7 @@ async def _edit_typed_price(update: Update, context, user: dict, payload: dict) 
         if sel is None:
             await messaging.reply(update, texts.ORDER_EDIT_USE_BUTTONS)
             return
-        if price is None:
+        if price is None or not order_edit.valid_price(price):
             await messaging.reply(update, texts.ORDER_EDIT_PRICE_HINT)
             return
         payload["lines"] = order_edit.set_price(payload["lines"], sel, price)

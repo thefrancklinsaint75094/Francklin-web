@@ -18,6 +18,9 @@ def test_quantity_keeps_unit_price_and_zero_removes_line():
     lines = [{"p": "DIV", "q": 2, "x": 60.0}, {"p": "KT", "q": 1, "x": 5.0}]
     assert oe.change_qty(lines, 0, 1)[0] == {"p": "DIV", "q": 3, "x": 90.0}
     assert oe.change_qty(lines, 0, -1)[0] == {"p": "DIV", "q": 1, "x": 30.0}
+    # Prix unitaire qui ne tombe pas rond : arrondi au multiple de 10 €.
+    assert oe.change_qty([{"p": "KT", "q": 3, "x": 50.0}], 0, -1)[0]["x"] == 30.0
+    assert oe.change_qty([{"p": "KT", "q": 1, "x": 10.0}], 0, 1)[0]["x"] == 20.0
     assert oe.change_qty(lines, 1, -1) == [{"p": "DIV", "q": 2, "x": 60.0}]
     assert lines[0]["q"] == 2  # l'original n'est pas modifié
     assert oe.change_qty(lines, 9, 1) == lines
@@ -31,15 +34,21 @@ def test_add_product_new_or_existing():
     assert idx == 0 and again == [{"p": "DIV", "q": 3, "x": 90.0}]
 
 
-def test_prices_by_buttons_and_typed():
+def test_prices_by_buttons_of_ten_and_typed():
+    assert oe.PRICE_STEPS == (-50, -20, -10, 10, 20, 50)
     lines = [{"p": "KT", "q": 1, "x": 0.0}]
-    lines = oe.change_price(lines, 0, 10)
-    lines = oe.change_price(lines, 0, -1)
-    assert lines[0]["x"] == 9.0
-    assert oe.change_price(lines, 0, -50)[0]["x"] == 0.0
-    assert oe.set_price(lines, 0, 12.5)[0]["x"] == 12.5
-    assert [oe.parse_price(t) for t in ("35", "12,50 €", "7e", " 40 euros", "abc", "3 DIV")] == [
-        35.0, 12.5, 7.0, 40.0, None, None]
+    lines = oe.change_price(lines, 0, 50)
+    lines = oe.change_price(lines, 0, 20)
+    lines = oe.change_price(lines, 0, -10)
+    assert lines[0]["x"] == 60.0
+    assert oe.change_price(lines, 0, -50)[0]["x"] == 10.0
+    assert oe.change_price(lines, 0, -100)[0]["x"] == 0.0
+    assert oe.set_price(lines, 0, 30)[0]["x"] == 30.0
+    assert [oe.parse_price(t) for t in ("30", "12,50 €", "70e", " 40 euros", "abc", "3 DIV")] == [
+        30.0, 12.5, 70.0, 40.0, None, None]
+    assert [oe.valid_price(v) for v in (10, 30.0, 120, 0, 5, 35, 12.5)] == [
+        True, True, True, False, False, False, False]
+    assert oe.off_step_prices([{"p": "A", "q": 1, "x": 30.0}, {"p": "B", "q": 1, "x": 5.0}]) == ["B"]
 
 
 def test_products_text_round_trips_through_google_sheets():
