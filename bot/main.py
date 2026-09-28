@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import traceback
 
 from telegram import BotCommand, LinkPreviewOptions, Update
@@ -18,7 +19,10 @@ log = logging.getLogger("bot")
 
 
 def setup_logging() -> None:
-    logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s %(message)s", level=logging.INFO)
+    # stdout (et non stderr) : Railway classe sinon chaque ligne comme une erreur.
+    logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s %(message)s", level=logging.INFO,
+                        stream=sys.stdout)
+    logging.getLogger("apscheduler").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpx2").setLevel(logging.WARNING)
 
