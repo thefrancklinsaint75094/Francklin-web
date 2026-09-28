@@ -883,8 +883,9 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     await h.press(L1, h.tg.last(L1), "course_take:")
     await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
     await asyncio.gather(*list(sheets._tasks))
-    assert [(r["numero"], r["franchise"], r["livreur"], r["prix"]) for r in sent] == [
-        (course["id"], "Franchisé 1", "Livreur 1", 60.0)]
+    assert [(r["numero"], r["vendeur"], r["livreur"], r["statut"], r["prix"]) for r in sent] == [
+        (course["id"], "Franchisé 1", "Livreur 1", "OK", 60.0)]
+    assert sum(line["prix"] or 0 for line in sent[0]["lignes"]) == 60.0
 
     sent.clear()
     await h.text(DISPATCH, "/synchro")

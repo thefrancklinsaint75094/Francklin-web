@@ -165,3 +165,17 @@ simple qui respecte le mur de confidentialité (§12).
     `sheet_error` ; `/synchro` renvoie la nuit, le script ignorant les courses déjà présentes.
 53. La rétention de 90 jours (§15) ne s'applique pas à la feuille : les compléments (digicodes) y restent
     tant que l'exploitant ne les efface pas.
+52. **Feuille existante de l'exploitant** (« Dispatch », un onglet par jour, 40 lignes de commande, 3 produits
+    par ligne, totaux au statut « OK ») : le script écrit dans ces onglets plutôt que dans un onglet « Courses »
+    à part. L'onglet est celui de la nuit (même découpage que le récap). Une course livrée a le statut « OK » ;
+    le mode de paiement, inconnu du bot, reste vide.
+53. Le script est un projet **autonome** (script.google.com) qui ouvre la feuille par son identifiant : sur
+    téléphone, le lien de la feuille ouvre l'appli Sheets, qui n'a pas le menu Extensions.
+54. Noms : les listes de la feuille (PNO, Livreur A…) ne correspondent pas aux noms du bot. Une table
+    PARAMETRES!Q:R, modifiable dans l'appli Sheets, fait la correspondance (nom du bot ou vrai nom → nom de la
+    feuille). Sans correspondance, le nom du bot est écrit et se corrige avec le menu déroulant.
+55. Produits : le bot redécoupe le texte des produits (« 2 DIV (60 €) + 1 KT (5 €) ») et met le nom exact du
+    catalogue. Sans prix par ligne (commande en texte libre), le total va sur le premier produit : le total de
+    la feuille reste juste.
+56. Anti-doublon par une note « Bot #142 » sur la cellule Vendeur, invisible dans le tableau : pas de colonne
+    ajoutée à la feuille.
