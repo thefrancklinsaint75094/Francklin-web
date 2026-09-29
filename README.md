@@ -99,6 +99,7 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `BOXES` | non | `Box 1,Box 2,Box 3` | box proposés au ravitailleur (noms du tableau Rechargement) |
 | `ARRIVAL_NOTIFY_METERS` | non | `500` | alerte « le livreur arrive » sous cette distance (0 = désactivé) |
 | `ARRIVAL_NOTIFY_MINUTES` | non | `5` | … ou sous ce nombre de minutes estimées (0 = désactivé) |
+| `STOCK_ALERTS` | non | `1` | alertes de stock du livreur (lu dans SOLDES du tableau Rechargement) ; `0` pour couper |
 
 ---
 
@@ -153,6 +154,19 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 `ARRIVAL_NOTIFY_METERS` (500 m) de l'adresse **ou** à moins de `ARRIVAL_NOTIFY_MINUTES` (5 min). Le temps est
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
+
+### Alertes de stock du livreur
+
+Le bot lit le stock du livreur dans l'onglet **SOLDES** du tableau Rechargement (chargé − repris − vendu OK,
+saisies à la main comprises), par le script Google (action `stock`, noms via PARAMETRES J/K) :
+
+- **à l'attribution** : « ⚠️ Stock — course #142 : • Ce sont les 2 derniers US de Livreur 1 (Livreur A) », ou
+  « n'a que 1 US pour 2 commandés », ou « n'a plus de US sur lui » ;
+- **à la livraison** : « 📭 Livreur 1 (Livreur A) n'a plus de US sur lui (course #142 livrée) ». Le stock est lu
+  avant d'envoyer la vente à la feuille, puis la quantité livrée est déduite.
+
+Prévenus : le franchisé de la course, le livreur, les ravitailleurs et le dispatch. Sans réponse du script (ou
+livreur absent de SOLDES), pas d'alerte : la course n'est jamais bloquée.
 
 ### Pouvoirs des admins (dispatch et franchisés)
 

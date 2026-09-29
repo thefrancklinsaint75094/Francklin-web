@@ -77,6 +77,7 @@ class Config:
     boxes: tuple[str, ...] = ("Box 1", "Box 2", "Box 3")
     arrival_notify_meters: int = 500
     arrival_notify_minutes: int = 5
+    stock_alerts: bool = True
 
     @property
     def uses_ai(self) -> bool:
@@ -118,6 +119,7 @@ class Config:
             boxes=boxes or ("Box 1",),
             arrival_notify_meters=_int("ARRIVAL_NOTIFY_METERS", 500),
             arrival_notify_minutes=_int("ARRIVAL_NOTIFY_MINUTES", 5),
+            stock_alerts=(_raw("STOCK_ALERTS") or "1").lower() not in ("0", "non", "false", "off"),
         )
         if cfg.extraction_mode == "ia" and not cfg.anthropic_api_key:
             raise ConfigError("EXTRACTION_MODE=ia demande ANTHROPIC_API_KEY")

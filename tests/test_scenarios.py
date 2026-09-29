@@ -1261,3 +1261,52 @@ async def test_franchise_and_dispatch_notified_when_livreur_arrives(h):
     await h.location(L1, 48.8556, 2.3578, edited=True, message_id=L1)
     assert sum(1 for t in h.tg.texts(F1) if t.startswith("📍 Livreur 1 arrive")) == 1
     assert len(await db.list_events(course["id"], "arrival_notified")) == 1
+
+
+async def test_stock_alerts_last_units_and_empty(h, monkeypatch, test_config):
+    """Commande de 2 US au livreur qui en a 2 : alerte « les 2 derniers » ; une fois livrée :
+    « n'a plus de US sur lui ». Stock lu dans le tableau Rechargement (simulé)."""
+    import dataclasses
+
+    from bot import config
+    from bot.services import sheets
+
+    config.set_config(dataclasses.replace(test_config, stock_alerts=True))
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    order_of_calls = []
+
+    async def fake_stock(livreur, client=None):
+        order_of_calls.append("stock")
+        return {"US": 2, "DIV": 7}, "Livreur A"
+
+    async def fake_send(rows, client=None):
+        order_of_calls.append("vente")
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "fetch_stock", fake_stock)
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    await db.create_product("US", "us", [])
+    EXTRACTIONS["commande us"] = [{**RIVOLI, "products": "2 US", "price": 60}]
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "commande us")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await asyncio.gather(*list(sheets._tasks))
+
+    last = f"• Ce sont les 2 derniers US de Livreur 1 (Livreur A)"
+    for who in (F1, L1, R1, DISPATCH):
+        assert last in h.tg.find(who, "⚠️ Stock").text, who
+    assert h.tg.find(F1, "⚠️ Stock").text.startswith(f"⚠️ Stock — course #{course['id']}")
+
+    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await asyncio.gather(*list(sheets._tasks))
+    empty = f"📭 Livreur 1 (Livreur A) n'a plus de US sur lui (course #{course['id']} livrée)."
+    for who in (F1, L1, R1, DISPATCH):
+        assert h.tg.find(who, "📭").text.startswith(empty), who
+    # Stock lu avant l'envoi de la vente (sinon la vente pourrait déjà y être comptée).
+    assert order_of_calls == ["stock", "stock", "vente"]
+    assert [e["type"] for e in await db.list_events(course["id"], "stock_warning")] == ["stock_warning"]
+    assert len(await db.list_events(course["id"], "stock_empty")) == 1
+    del r1
