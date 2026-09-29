@@ -115,3 +115,24 @@ def test_line_prices_that_do_not_add_up_fall_back_to_total():
         {"produit": "KT", "qte": 1, "prix": ""},
     ]
     assert sheets.product_lines("1 DIV (12,50 €) + 1 KT (5 €)", 17.5)[0]["prix"] == 12.5
+
+
+async def test_login_page_is_explained(configured):
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(302, headers={"Location": "https://accounts.google.com/ServiceLogin?continue=x"})
+        return httpx.Response(200, text="<html><title>Google Accounts</title></html>")
+
+    async with client(handler) as c:
+        with pytest.raises(RuntimeError, match="Qui a accès : Tout le monde"):
+            await sheets.send_rows([ROW], client=c)
+
+
+async def test_other_html_page_shows_its_title(configured):
+    async with client(lambda r: httpx.Response(500, text="<html><title>Erreur interne</title></html>")) as c:
+        with pytest.raises(RuntimeError, match=r"HTTP 500\) : Erreur interne"):
+            await sheets.send_rows([ROW], client=c)
+    page = "<html><body>Authorization is required to perform that action.</body></html>"
+    async with client(lambda r: httpx.Response(200, text=page)) as c:
+        with pytest.raises(RuntimeError, match="doit être autorisé"):
+            await sheets.send_rows([ROW], client=c)
