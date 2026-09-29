@@ -298,3 +298,15 @@ simple qui respecte le mur de confidentialité (§12).
 88. Unicité : un nom porté par un autre utilisateur non exclu est refusé (🔒). Un exclu libère son nom.
     Liste vide (`LIVREUR_NAMES=-`) : ancien comportement « Livreur 1 », « Livreur 2 »…
 89. Les lignes déjà écrites dans les feuilles gardent l'ancien nom ; le livreur est prévenu de son nouveau nom.
+
+## Consultation du stock
+
+90. **`/stock`** (admins et ravitailleurs) : boutons par box, « Tous les box », « Livreurs » ; `/stock box 1`
+    répond directement. Lecture par le script (actions `stock_box` et `stock_livreurs`, même adresse et secret).
+91. Box : ORGA ④ tel que calculé par la feuille. Ses sorties vers les livreurs (③) sont des formules locales
+    au tableau Rechargement, donc immédiates ; le stock initial et les mouvements viennent du Compta par
+    IMPORTRANGE mais changent rarement. Le bot retire en plus les rechargements qu'il n'a pas encore écrits
+    (un chargement ôte au box ce qu'il donne au livreur, une reprise le lui rend).
+92. « Tous les box » ajoute les produits dont le total (box + livreurs) est sous le seuil d'ORGA ⑤.
+93. Livreurs : même calcul direct que pour les alertes (chargé net − ventes OK lues dans Dispatch), plus les
+    mouvements du bot pas encore écrits.

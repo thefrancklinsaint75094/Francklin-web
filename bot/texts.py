@@ -74,6 +74,7 @@ WELCOME_DISPATCH = (
     "/reactiver — rendre un accès\n"
     "/produits — catalogue des produits (ajouter, supprimer)\n"
     "/recharge — charger ou reprendre un livreur, cash récupéré\n"
+    "/stock — ce qui reste dans chaque box et chez les livreurs\n"
     "/synchro — renvoyer les courses de la nuit vers Google Sheets"
 )
 
@@ -101,7 +102,8 @@ WELCOME_FRANCHISE_RULES = (
 
 WELCOME_RAVITAILLEUR = (
     "✅ Tu es validé.\n\n"
-    "/recharge — charger un livreur, reprendre du stock ou noter le cash récupéré.\n\n"
+    "/recharge — charger un livreur, reprendre du stock ou noter le cash récupéré.\n"
+    "/stock — ce qui reste dans chaque box et chez les livreurs.\n\n"
     "Tout se fait par boutons : le livreur, chargement ou reprise, le box, les produits et les quantités, "
     "puis le cash. Chaque rechargement part dans le tableau Rechargement et le livreur est prévenu."
 )
@@ -113,7 +115,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /synchro · /exclure · /reactiver"
+    "/recap · /journal · /users · /recharge · /stock · /synchro · /exclure · /reactiver"
 )
 
 
@@ -638,6 +640,50 @@ def d_error(kind: str) -> str:
 
 
 CANNOT_BAN_SELF = "Tu ne peux pas t'exclure toi-même."
+
+STOCK_MENU = "📦 <b>Stock</b> — que veux-tu voir ?"
+
+
+def _qty_list(values: dict) -> tuple[list[str], list[str]]:
+    have = [f"{esc(p)} <b>{_n(q)}</b>" for p, q in values.items() if float(q or 0) > 0]
+    empty = [esc(p) for p, q in values.items() if float(q or 0) <= 0]
+    return have, empty
+
+
+def box_stock(name: str, values: dict) -> str:
+    have, empty = _qty_list(values)
+    lines = [f"📦 <b>{esc(name)}</b> — stock actuel", ""]
+    lines.append(" · ".join(have) if have else "Vide.")
+    if empty and have:
+        lines += ["", f"À 0 : {', '.join(empty)}"]
+    return "\n".join(lines)
+
+
+def boxes_overview(boxes: dict, totals: list[dict]) -> str:
+    lines = ["📦 <b>Tous les box</b> — stock actuel", ""]
+    for name, values in boxes.items():
+        have, _ = _qty_list(values)
+        lines.append(f"<b>{esc(name)}</b> : {' · '.join(have) if have else 'vide'}")
+    alerts = [t for t in totals if str(t.get("statut") or "").upper() in ("ALERTE", "RUPTURE")
+              and str(t.get("produit") or "").strip()]
+    if alerts:
+        lines += ["", "⚠️ <b>Sous le seuil</b> (box + livreurs)"]
+        for t in alerts:
+            icon = "🔴" if str(t["statut"]).upper() == "RUPTURE" else "🟠"
+            lines.append(f"{icon} {esc(t['produit'])} : {_n(t.get('total') or 0)} (seuil {_n(t.get('seuil') or 0)})")
+    return "\n".join(lines)
+
+
+def livreurs_stock(livreurs: dict) -> str:
+    lines = ["🚴 <b>Stock chez les livreurs</b>", ""]
+    for name, values in livreurs.items():
+        have, _ = _qty_list(values)
+        lines.append(f"<b>{esc(name)}</b> : {' · '.join(have) if have else 'rien'}")
+    return "\n".join(lines)
+
+
+def stock_unavailable(error: str) -> str:
+    return f"⚠️ Stock illisible pour l'instant : {esc(error[:200])}"
 
 
 def name_picker(user: dict) -> str:

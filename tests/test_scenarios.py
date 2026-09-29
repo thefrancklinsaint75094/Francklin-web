@@ -1416,3 +1416,58 @@ async def test_livreur_gets_sheet_name_chosen_by_admin(h, monkeypatch, test_conf
               "livreur_id": l1["id"], "address": "A", "products": "1 DIV", "price": 30}
     users = await db.get_users([course["franchise_id"], l1["id"]])
     assert sheets.row(course, users)["livreur"] == "Livreur X"
+
+
+async def test_stock_command_boxes_and_livreurs(h, monkeypatch):
+    """/stock : ce qui reste dans un box (feuille + rechargements pas encore écrits) et chez les livreurs."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_action(action, client=None):
+        if action == "stock_box":
+            return {"ok": True, "boxes": {"Box 1": {"DIV": 28, "US": 115, "KT": 0}, "Box 2": {}, "Box 3": {}},
+                    "totals": [{"produit": "KT", "total": 0, "seuil": 20, "statut": "RUPTURE"}]}
+        return {"ok": True, "livreurs": {"Livreur 1": {"US": 2}, "Livreur B": {}}}
+
+    async def sheet_down(rows, client=None):
+        raise RuntimeError("feuille injoignable")
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    monkeypatch.setattr(sheets, "send_rows", sheet_down)
+    div = await db.create_product("DIV", "div", [])
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+
+    # Un livreur n'y a pas accès.
+    await h.text(L1, "/stock")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    # Le ravitailleur charge 5 DIV depuis le Box 1 ; la feuille est injoignable (pas encore écrit).
+    await h.text(R1, "/recharge")
+    msg_id = h.tg.last(R1).message_id
+    for data in [f"rs_l:{l1['id']}", "rs_k:load", "rs_b:0", f"rs_pick:{div['id']}", "rs_q:0:1", "rs_q:0:1",
+                 "rs_q:0:1", "rs_q:0:1", "rs_ok"]:
+        await h.press_data(R1, h.tg.messages[(R1, msg_id)], data)
+    await asyncio.gather(*list(sheets._tasks))
+
+    # /stock box 1 : 28 dans la feuille − 5 chargés à l'instant = 23.
+    await h.text(R1, "/stock box 1")
+    box = h.tg.last(R1).text
+    assert "📦 <b>Box 1</b> — stock actuel" in box and "DIV <b>23</b>" in box and "US <b>115</b>" in box
+    assert "À 0 : KT" in box
+
+    # Menu : tous les box, puis livreurs (le livreur a reçu les 5 DIV en plus de la feuille).
+    await h.text(F1, "/stock")
+    menu = h.tg.last(F1)
+    assert menu.text == texts.STOCK_MENU
+    await h.press_data(F1, menu, "sv:all")
+    overview = h.tg.messages[(F1, menu.message_id)].text
+    assert "<b>Box 1</b> : DIV <b>23</b> · US <b>115</b>" in overview and "🔴 KT : 0 (seuil 20)" in overview
+    await h.press_data(F1, menu, "sv:liv")
+    livs = h.tg.messages[(F1, menu.message_id)].text
+    assert "<b>Livreur 1</b> : US <b>2</b> · DIV <b>5</b>" in livs and "<b>Livreur B</b> : rien" in livs
+    await h.press_data(F1, menu, "sv:box:1")
+    assert h.tg.messages[(F1, menu.message_id)].text.endswith("Vide.")
+    del r1
