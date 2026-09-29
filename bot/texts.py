@@ -80,7 +80,8 @@ WELCOME_DISPATCH = (
     "/caisse — cash à récupérer chez chaque livreur\n"
     "/depense — noter une dépense d'un livreur\n"
     "/synchro — renvoyer les courses de la nuit vers Google Sheets\n"
-    "/cloture — clôturer la semaine : archives dans Drive, remise à zéro des onglets"
+    "/close — débrief de la journée (la journée est finie)\n"
+    "/reset — remise à zéro de la semaine : archives dans Drive, onglets vidés"
 )
 
 MODEL_HELP = (
@@ -121,7 +122,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /cloture · /exclure · /reactiver"
+    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /close · /reset · /exclure · /reactiver"
 )
 
 
@@ -1104,13 +1105,13 @@ def cash_unavailable(error: str) -> str:
     return f"⚠️ Caisse illisible pour l'instant : {esc(error[:200])}"
 
 
-# ================================================================ clôture de la semaine
+# ================================================================ reset de la semaine (/reset)
 
-CLOTURE_CANCELLED = "Clôture annulée : rien n'a changé."
-CLOTURE_RUNNING = "Clôture déjà en cours…"
-CLOTURE_ALREADY = "La semaine vient déjà d'être clôturée."
-CLOTURE_IN_PROGRESS = "⏳ Clôture en cours : copie des 3 fichiers dans Drive, puis remise à zéro… (1 à 3 min)"
-CLOTURE_REMINDER = ("🗓 Nouvelle semaine : pense à /cloture — archive des 3 fichiers dans Drive, stock des box "
+CLOTURE_CANCELLED = "Reset annulé : rien n'a changé."
+CLOTURE_RUNNING = "Reset déjà en cours…"
+CLOTURE_ALREADY = "La semaine vient déjà d'être remise à zéro."
+CLOTURE_IN_PROGRESS = "⏳ Reset en cours : copie des 3 fichiers dans Drive, puis remise à zéro… (1 à 3 min)"
+CLOTURE_REMINDER = ("🗓 Nouvelle semaine : pense à /reset — archive des 3 fichiers dans Drive, stock des box "
                     "reporté, onglets Lundi → Dimanche remis à zéro.")
 
 
@@ -1120,7 +1121,7 @@ def _qty_text(values: dict) -> str:
 
 def cloture_precheck(open_courses: int, livreurs_stock: dict, cash_rows: list[dict], ravi: float | None,
                      tab: str) -> str:
-    lines = ["🗓 <b>Clôture de la semaine</b>", "",
+    lines = ["🗓 <b>Reset de la semaine</b>", "",
              "1. Copie des 3 fichiers dans Google Drive (dossier « Archives bot »).",
              "2. Le stock actuel des box devient le stock initial (COMPTA, onglet STOCK).",
              "3. Les onglets Lundi → Dimanche sont vidés (commandes, dépenses, rechargements), "
@@ -1141,12 +1142,12 @@ def cloture_precheck(open_courses: int, livreurs_stock: dict, cash_rows: list[di
     if open_courses:
         lines += ["", f"⚠️ {plural(open_courses, 'course')} en attente ou en cours : elles seront écrites "
                       "dans la nouvelle semaine une fois livrées."]
-    lines += ["", "L'archive garde tout. Clôturer maintenant ?"]
+    lines += ["", "L'archive garde tout. Remettre à zéro maintenant ?"]
     return "\n".join(lines)
 
 
 def cloture_done(result: dict, tab: str) -> str:
-    lines = ["✅ <b>Semaine clôturée</b>", "",
+    lines = ["✅ <b>Semaine remise à zéro</b>", "",
              f"🗄 Archive : <a href=\"{esc(result.get('archive') or '')}\">{esc(result.get('dossier') or 'Drive')}</a>"]
     initial = {box: values for box, values in (result.get("initial") or {}).items()}
     if initial:
@@ -1160,10 +1161,64 @@ def cloture_done(result: dict, tab: str) -> str:
 
 
 def cloture_failed(error: str) -> str:
-    return (f"⚠️ Clôture impossible : {esc(error[:250])}\n\n"
+    return (f"⚠️ Reset impossible : {esc(error[:250])}\n\n"
             "Si la copie dans Drive a échoué, rien n'a été effacé. Sinon, l'archive est dans le dossier "
             "« Archives bot » de Drive.")
 
 
 def cloture_unavailable(error: str) -> str:
-    return f"⚠️ Clôture impossible pour l'instant, feuilles illisibles : {esc(error[:200])}"
+    return f"⚠️ Reset impossible pour l'instant, feuilles illisibles : {esc(error[:200])}"
+
+
+# ================================================================ débrief de la journée (/close)
+
+def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelled: int, on_site: int,
+                still_open: int, livreurs: list, franchises: list, charges: float, payes: float, restocks: int,
+                recovered: float, cash_rows: list[dict] | None, alerts: list[dict] | None,
+                sheets_on: bool) -> str:
+    lines = [f"🔒 <b>Journée close — nuit du {esc(label)}</b>", ""]
+    if delivered:
+        lines.append(f"📦 <b>{plural(delivered, 'course')} livrée{'s' if delivered > 1 else ''} — {eur(total)}</b>")
+        modes = [f"💵 espèces {eur(pay.get('especes', 0))}", f"💳 virement {eur(pay.get('virement', 0))}"]
+        if pay.get(""):
+            modes.append(f"❔ sans mode {eur(pay[''])}")
+        lines.append("   " + " · ".join(modes))
+    else:
+        lines.append("📦 Aucune course livrée.")
+    if cancelled or on_site:
+        lines.append(f"   ❌ {cancelled} annulée{'s' if cancelled > 1 else ''} · "
+                     f"🚪 {on_site} annulée{'s' if on_site > 1 else ''} sur place")
+    if still_open:
+        lines.append(f"   ⚠️ {plural(still_open, 'course')} encore ouverte{'s' if still_open > 1 else ''} (/encours)")
+
+    if livreurs:
+        lines += ["", "🚴 <b>Par livreur</b>"]
+        for name, s in livreurs:
+            text = f"• {esc(name)} — {plural(s['n'], 'course')} — {eur(s['total'])}"
+            if s["n"]:
+                text += f" (💵 {eur(s['especes'])} · 💳 {eur(s['virement'])})"
+            if s["depenses"]:
+                text += f" — 🧾 {eur(s['depenses'])}"
+            lines.append(text)
+    if franchises:
+        lines += ["", "🏪 <b>Par franchisé</b>"]
+        lines += [f"• {esc(name)} — {plural(s['n'], 'course')} — {eur(s['total'])}" for name, s in franchises]
+
+    lines += ["", f"🧾 Dépenses : {eur(charges + payes)} (charges {eur(charges)} · payes {eur(payes)})",
+              f"📦 Rechargements : {restocks} — cash récupéré {eur(recovered)}"]
+
+    if sheets_on:
+        lines += ["", "💶 <b>Cash à récupérer</b> (semaine)"]
+        if cash_rows is None:
+            lines.append("   illisible pour l'instant (/caisse)")
+        elif cash_rows:
+            lines += [f"• {esc(r['nom'])} : {eur(r['cash'])}" for r in cash_rows]
+        else:
+            lines.append("   rien, tout est récupéré ✅")
+        if alerts:
+            lines += ["", "⚠️ <b>Stock sous le seuil</b>"]
+            for t in alerts:
+                icon = "🔴" if str(t["statut"]).upper() == "RUPTURE" else "🟠"
+                lines.append(f"{icon} {esc(t['produit'])} : {_n(t.get('total') or 0)} (seuil {_n(t.get('seuil') or 0)})")
+    lines += ["", "✅ Journée terminée. Bon repos !"]
+    return "\n".join(lines)

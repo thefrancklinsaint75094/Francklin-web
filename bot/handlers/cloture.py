@@ -1,7 +1,7 @@
-"""/cloture : clôture de la semaine dans les feuilles (admins).
+"""/reset (ancien nom : /cloture) : remise à zéro de la semaine dans les feuilles (admins).
 
 1. Vérification : courses encore ouvertes, stock encore chez les livreurs (reporté), cash pas
-   encore récupéré et reste chez le ravitailleur (remis à zéro) — puis « ✅ Clôturer ».
+   encore récupéré et reste chez le ravitailleur (remis à zéro) — puis « ✅ Reset de la semaine ».
 2. Le script archive les 3 fichiers dans Drive, reporte le stock des box en stock initial,
    vide la semaine et reporte le stock des livreurs (voir integrations/google_sheets/Code.gs).
 
@@ -72,7 +72,7 @@ async def action(update: Update, context):
             await messaging.edit_markup(context.bot, chat_id, msg_id, None)
             return texts.CLOTURE_ALREADY, True
         await messaging.edit(context.bot, chat_id, msg_id, texts.CLOTURE_IN_PROGRESS)
-        label = f"Clôture du {to_paris(now_utc()):%Y-%m-%d %Hh%M}"
+        label = f"Reset du {to_paris(now_utc()):%Y-%m-%d %Hh%M}"
         tab = sheets.day_tab(now_utc())
         result = await sheets.fetch_action("cloture", payload={"onglet": tab, "libelle": label}, timeout=TIMEOUT)
         if not result or not result.get("ok"):

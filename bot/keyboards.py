@@ -353,4 +353,4 @@ def cash_overview(rows: list[dict]) -> M:
 
 
 def cloture_confirm() -> M:
-    return M([[B("✅ Clôturer la semaine", callback_data="cl_go")], [B("❌ Annuler", callback_data="cl_x")]])
+    return M([[B("✅ Reset de la semaine", callback_data="cl_go")], [B("❌ Annuler", callback_data="cl_x")]])
