@@ -56,7 +56,8 @@ create table courses (
   created_at      timestamptz not null default now(),
   assigned_at     timestamptz,
   delivered_at    timestamptz,
-  closed_at       timestamptz
+  closed_at       timestamptz,
+  payment         text check (payment in ('especes','virement'))   -- mode de paiement à la livraison
 );
 
 create table livreur_positions (
@@ -112,6 +113,19 @@ create table restocks (
   created_at  timestamptz not null default now()
 );
 
+create table expenses (
+  id          serial primary key,
+  livreur_id  uuid not null references users(id),
+  by_user_id  uuid not null references users(id),     -- livreur lui-même ou admin
+  kind        text not null check (kind in ('charges','paye')),  -- à tes frais / avance sur paye
+  amount      numeric(8,2) not null check (amount > 0),
+  motif       text,
+  created_at  timestamptz not null default now()
+);
+
+create index on expenses (created_at);
+create index on expenses (livreur_id);
+create index on expenses (by_user_id);
 create index on restocks (created_at);
 create index on restocks (livreur_id);
 create index on restocks (by_user_id);
@@ -131,3 +145,4 @@ alter table messages enable row level security;
 alter table events enable row level security;
 alter table products enable row level security;
 alter table restocks enable row level security;
+alter table expenses enable row level security;

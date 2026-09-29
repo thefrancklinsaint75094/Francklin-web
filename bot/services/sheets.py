@@ -28,6 +28,7 @@ TIMEOUT = 20.0
 RETRY_DELAY = 2.0
 JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 STATUT_LIVRE = "OK"
+PAYMENT_SHEET = {"especes": "Espèces", "virement": "Virement"}   # valeurs de la liste « Paiement » de la feuille
 _tasks: set[asyncio.Task] = set()
 
 LINE_PRICE_RE = re.compile(r"\s*\((\d+(?:[.,]\d+)?)\s*€\)\s*$")
@@ -103,6 +104,7 @@ def row(course: dict, users: dict[str, dict], catalog=None) -> dict:
         "livreur": livreur.get("display_name", ""),
         "livreur_nom": livreur.get("real_name") or "",
         "statut": STATUT_LIVRE,
+        "paiement": PAYMENT_SHEET.get(course.get("payment") or "", ""),
         "adresse": course["address"],
         "lignes": product_lines(course["products"], total, catalog),
         "prix": total,
@@ -155,6 +157,41 @@ def push_restock_later(restock: dict) -> None:
     task = asyncio.get_running_loop().create_task(push_restock(dict(restock)))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
+
+
+def expense_row(expense: dict, users: dict[str, dict]) -> dict:
+    """Dépense d'un livreur pour la zone DÉPENSES LIVREURS de l'onglet de la nuit (feuille Dispatch)."""
+    from bot.services import cash
+
+    livreur = users.get(expense["livreur_id"], {})
+    return {
+        "type": "depense",
+        "numero": expense["id"],
+        "onglet": day_tab(expense["created_at"]),
+        "heure": to_paris(parse_ts(expense["created_at"])).strftime("%H:%M"),
+        "livreur": livreur.get("display_name", ""),
+        "livreur_nom": livreur.get("real_name") or "",
+        "depense": cash.KIND_SHEET.get(expense["kind"], ""),
+        "montant": round(float(expense["amount"]), 2),
+        "motif": expense.get("motif") or "",
+    }
+
+
+async def push_expense(expense: dict) -> bool:
+    """Ajoute une dépense à la feuille Dispatch. True si elle y est. Ne lève jamais d'exception."""
+    if not enabled():
+        return False
+    try:
+        users = await db.get_users([expense["livreur_id"]])
+        await send_rows([expense_row(expense, users)])
+        return True
+    except Exception as exc:  # noqa: BLE001 — la feuille ne doit jamais bloquer la dépense
+        log.warning("Dépense D#%s non envoyée à Google Sheets : %s", expense.get("id"), exc)
+        try:
+            await db.log_event("sheet_error", payload={"expense_id": expense.get("id"), "error": str(exc)[:300]})
+        except Exception:  # noqa: BLE001
+            pass
+        return False
 
 
 async def load_catalog():
@@ -265,15 +302,17 @@ async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) ->
             await client.aclose()
 
 
-async def fetch_action(action: str, client: httpx.AsyncClient | None = None) -> dict | None:
-    """Appelle une action de lecture du script (stock_box, stock_livreurs). None si illisible."""
+async def fetch_action(action: str, client: httpx.AsyncClient | None = None, payload: dict | None = None,
+                       timeout: float = STOCK_TIMEOUT) -> dict | None:
+    """Appelle une action du script (stock_box, stock_livreurs, cash_livreurs, cloture).
+    None sans script ; {"ok": False, "error": …} si la réponse est illisible ou refusée."""
     url, secret = webhook()
     if not (url and secret):
         return None
     own = client is None
     client = client or httpx.AsyncClient(follow_redirects=True)
     try:
-        resp = await client.post(url, json={"secret": secret, "action": action}, timeout=STOCK_TIMEOUT)
+        resp = await client.post(url, json={**(payload or {}), "secret": secret, "action": action}, timeout=timeout)
         try:
             data = resp.json()
         except ValueError:

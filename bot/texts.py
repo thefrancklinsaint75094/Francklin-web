@@ -56,7 +56,9 @@ WELCOME_LIVREUR = (
     "✅ Tu es validé.\n\n"
     "/dispo — te mettre en service (tu partageras ta position en direct)\n"
     "/pause — te retirer temporairement\n"
-    "/macourse — revoir ta course en cours\n\n"
+    "/macourse — revoir ta course en cours\n"
+    "/depense — noter une dépense (essence, repas…) ou une avance sur ta paye\n"
+    "/macaisse — le cash que tu dois remettre\n\n"
     "Tu ne reçois que les courses proches de toi. Une seule à la fois — appuie sur « Bientôt libre » "
     "quand tu termines pour enchaîner.\n\n"
     "Le client prend autre chose ? « ✏️ Modifier la commande » sur ta course : ➖ / ➕ pour les quantités, "
@@ -75,7 +77,10 @@ WELCOME_DISPATCH = (
     "/produits — catalogue des produits (ajouter, supprimer)\n"
     "/recharge — charger ou reprendre un livreur, cash récupéré\n"
     "/stock — ce qui reste dans chaque box et chez les livreurs\n"
-    "/synchro — renvoyer les courses de la nuit vers Google Sheets"
+    "/caisse — cash à récupérer chez chaque livreur\n"
+    "/depense — noter une dépense d'un livreur\n"
+    "/synchro — renvoyer les courses de la nuit vers Google Sheets\n"
+    "/cloture — clôturer la semaine : archives dans Drive, remise à zéro des onglets"
 )
 
 MODEL_HELP = (
@@ -103,7 +108,8 @@ WELCOME_FRANCHISE_RULES = (
 WELCOME_RAVITAILLEUR = (
     "✅ Tu es validé.\n\n"
     "/recharge — charger un livreur, reprendre du stock ou noter le cash récupéré.\n"
-    "/stock — ce qui reste dans chaque box et chez les livreurs.\n\n"
+    "/stock — ce qui reste dans chaque box et chez les livreurs.\n"
+    "/caisse — cash à récupérer chez chaque livreur (💶 Récupérer).\n\n"
     "Tout se fait par boutons : le livreur, chargement ou reprise, le box, les produits et les quantités, "
     "puis le cash. Chaque rechargement part dans le tableau Rechargement et le livreur est prévenu."
 )
@@ -115,7 +121,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /stock · /synchro · /exclure · /reactiver"
+    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /cloture · /exclure · /reactiver"
 )
 
 
@@ -379,8 +385,17 @@ def full_fiche(course: dict, franchise: dict) -> str:
     return "\n".join(lines)
 
 
+PAYMENT_LABEL = {"especes": "💵 espèces", "virement": "💳 virement"}
+PAYMENT_PROMPT = "Le client a payé comment ?"
+
+
+def _pay(course: dict) -> str:
+    label = PAYMENT_LABEL.get(course.get("payment") or "")
+    return f" · {label}" if label else ""
+
+
 def delivered_for_livreur(course: dict) -> str:
-    return f"✅ Course #{course['id']} livrée — {eur(course['price'])} encaissés."
+    return f"✅ Course #{course['id']} livrée — {eur(course['price'])} encaissés{_pay(course)}."
 
 
 def livreur_cancelled(course_id: int) -> str:
@@ -595,7 +610,7 @@ def d_taken(course: dict, franchise: dict, livreur: dict) -> str:
 
 
 def d_delivered(course: dict, livreur: dict, far_label: str | None = None) -> str:
-    text = f"✅ #{course['id']} — livrée — {esc(livreur['display_name'])} — {eur(course['price'])}"
+    text = f"✅ #{course['id']} — livrée — {esc(livreur['display_name'])} — {eur(course['price'])}{_pay(course)}"
     if far_label:
         text += f"\n⚠️ livré à {far_label} de l'adresse"
     return text
@@ -738,6 +753,16 @@ def stock_empty_alert(course: dict, livreur: dict, sheet_name: str, products: li
     return f"📭 {who} n'a plus de {what} sur lui (course #{course['id']} livrée). Pense à le recharger (/recharge)."
 
 
+def stock_dispatch_alert(course: dict, short: list[tuple[dict, list[tuple[str, int, float]]]]) -> str:
+    """Aucun livreur éligible n'a tout ce que demande la course."""
+    lines = [f"⚠️ Course #{course['id']} ({esc(course['district'])}) : aucun livreur en service n'a tout en stock."]
+    for livreur, missing in short[:6]:
+        what = ", ".join(f"{_n(have)}/{need} {esc(p)}" for p, need, have in missing)
+        lines.append(f"• {esc(livreur.get('display_name') or '?')} : {what}")
+    lines.append("La course part quand même au plus proche. Pense à recharger (/recharge).")
+    return "\n".join(lines)
+
+
 def arrival_for_franchise(course: dict, livreur: dict, distance_label: str, minutes: int) -> str:
     return (f"📍 {esc(livreur.get('display_name') or 'Le livreur')} arrive — course #{course['id']} : "
             f"à {distance_label} (≈ {minutes} min)\n{course_summary(course)}")
@@ -826,7 +851,7 @@ def journal_header(label: str, count: int) -> str:
 def journal_line(time_label: str, course: dict, franchise_name: str, livreur_name: str) -> str:
     return (
         f"{time_label} · #{course['id']} · {esc(franchise_name)} → {esc(livreur_name)} · "
-        f"{esc(course['address'])} · {eur(course['price'])}"
+        f"{esc(course['address'])} · {eur(course['price'])}{_pay(course)}"
     )
 
 
@@ -961,15 +986,184 @@ def catalog_summary(summary: dict) -> str:
 SHEETS_DISABLED = "Google Sheets n'est pas encore relié au bot."
 
 
-def sheets_synced(total: int, added: int, restocks: int = 0) -> str:
-    if total == 0 and restocks == 0:
+def sheets_synced(total: int, added: int, restocks: int = 0, expenses: int = 0) -> str:
+    if total == 0 and restocks == 0 and expenses == 0:
         return "📗 Aucune course livrée ni rechargement cette nuit : rien à envoyer."
     what = [plural(total, "course")] if total else []
     if restocks:
         what.append(plural(restocks, "rechargement"))
+    if expenses:
+        what.append(plural(expenses, "dépense"))
     return (f"📗 Google Sheets à jour : {added} ajout{'s' if added > 1 else ''} sur "
-            f"{' et '.join(what)} de la nuit.")
+            f"{', '.join(what[:-1]) + ' et ' + what[-1] if len(what) > 1 else what[0]} de la nuit.")
 
 
 def sheets_failed(error: str) -> str:
     return f"⚠️ Envoi à Google Sheets impossible : {esc(error[:200])}"
+
+
+# ================================================================ caisse : dépenses et cash des livreurs
+
+EXPENSE_KIND_LABEL = {"charges": "🧾 Charges (à ses frais)", "paye": "💸 Avance sur paye"}
+EXPENSE_CHOOSE_LIVREUR = "🧾 <b>Dépense</b> — pour quel livreur ?"
+EXPENSE_EXPIRED = "Dépense expirée : relance /depense."
+EXPENSE_CANCELLED = "Dépense annulée."
+EXPENSE_ZERO = "Indique d'abord un montant."
+EXPENSE_AMOUNT_HINT = "Tape seulement le montant, par exemple 35 ou 12,50."
+EXPENSE_USE_BUTTONS = "Utilise les boutons de la dépense en cours (ou ❌ Annuler)."
+CASH_NOT_LINKED = "La caisse se lit dans Google Sheets, qui n'est pas relié."
+
+
+def _expense_head(payload: dict) -> str:
+    head = f"🧾 <b>Dépense — {esc(payload.get('livreur_name') or '?')}</b>"
+    if payload.get("kind"):
+        head += f"\n{EXPENSE_KIND_LABEL[payload['kind']]}"
+    return head
+
+
+def expense_step(payload: dict) -> str:
+    step = payload.get("step")
+    head = _expense_head(payload)
+    if step == "kind":
+        return (f"{head}\n\nQuel type ?\n• Charges : essence, repas, parking… à ses frais\n"
+                "• Paye : avance sur sa paye")
+    amount = f"💶 Montant : <b>{eur(payload.get('amount') or 0)}</b>"
+    if step == "amount":
+        return f"{head}\n\n{amount}\n\nRègle le montant avec les boutons ou tape-le (ex : 35), puis ➡️ Suivant."
+    motif = payload.get("motif") or "—"
+    if step == "motif":
+        return f"{head}\n\n{amount}\n\nMotif ? Choisis ou tape-le (facultatif)."
+    return f"{head}\n\n{amount}\n📝 Motif : {esc(motif)}\n\nTout est bon ?"
+
+
+def _expense_line(expense: dict) -> str:
+    text = f"{EXPENSE_KIND_LABEL[expense['kind']]} — {eur(expense['amount'])}"
+    if expense.get("motif"):
+        text += f" — {esc(expense['motif'])}"
+    return text
+
+
+def expense_done(expense: dict, livreur_name: str) -> str:
+    return f"✅ Dépense #D{expense['id']} enregistrée — {esc(livreur_name)}\n{_expense_line(expense)}"
+
+
+def expense_for_livreur(expense: dict, by: dict) -> str:
+    return (f"🧾 Dépense notée pour toi par {esc(by.get('display_name') or '?')} (#D{expense['id']})\n"
+            f"{_expense_line(expense)}")
+
+
+def d_expense(expense: dict, by: dict, livreur: dict) -> str:
+    who = esc(livreur["display_name"])
+    if by["id"] != livreur["id"]:
+        who = f"{esc(by['display_name'])} → {who}"
+    return f"🧾 D#{expense['id']} — {who} — {_expense_line(expense)}"
+
+
+def _cash_detail(row: dict) -> str:
+    parts = [f"espèces {eur(row['especes'])}"]
+    if row.get("depenses"):
+        parts.append(f"− dépenses {eur(row['depenses'])}")
+    if row.get("recupere"):
+        parts.append(f"− récupéré {eur(row['recupere'])}")
+    if row.get("en_vol"):
+        sign = "+" if row["en_vol"] > 0 else "−"
+        parts.append(f"{sign} {eur(abs(row['en_vol']))} pas encore dans la feuille")
+    return " ".join(parts)
+
+
+def cash_overview(rows: list[dict]) -> str:
+    lines = ["💶 <b>Caisse des livreurs</b> — cash à récupérer", ""]
+    total = 0.0
+    for row in rows:
+        total += max(0.0, row["cash"])
+        lines.append(f"<b>{esc(row['nom'])}</b> : {eur(row['cash'])}")
+        lines.append(f"   {_cash_detail(row)}")
+        if row.get("virement"):
+            lines.append(f"   💳 virements : {eur(row['virement'])}")
+    if not rows:
+        lines.append("Aucun livreur.")
+    lines += ["", f"Total à récupérer : <b>{eur(total)}</b>"]
+    return "\n".join(lines)
+
+
+def my_cash(row: dict) -> str:
+    lines = [f"💶 <b>Ta caisse — {esc(row['nom'])}</b>", "",
+             f"Espèces encaissées : {eur(row['especes'])}",
+             f"Dépenses et avances : − {eur(row['depenses'])}",
+             f"Déjà remis : − {eur(row['recupere'])}"]
+    if row.get("en_vol"):
+        sign = "+" if row["en_vol"] > 0 else "−"
+        lines.append(f"Pas encore dans la feuille : {sign} {eur(abs(row['en_vol']))}")
+    lines += ["", f"<b>À remettre : {eur(row['cash'])}</b>"]
+    if row.get("virement"):
+        lines.append(f"💳 Virements (pour info) : {eur(row['virement'])}")
+    return "\n".join(lines)
+
+
+def cash_unavailable(error: str) -> str:
+    return f"⚠️ Caisse illisible pour l'instant : {esc(error[:200])}"
+
+
+# ================================================================ clôture de la semaine
+
+CLOTURE_CANCELLED = "Clôture annulée : rien n'a changé."
+CLOTURE_RUNNING = "Clôture déjà en cours…"
+CLOTURE_ALREADY = "La semaine vient déjà d'être clôturée."
+CLOTURE_IN_PROGRESS = "⏳ Clôture en cours : copie des 3 fichiers dans Drive, puis remise à zéro… (1 à 3 min)"
+CLOTURE_REMINDER = ("🗓 Nouvelle semaine : pense à /cloture — archive des 3 fichiers dans Drive, stock des box "
+                    "reporté, onglets Lundi → Dimanche remis à zéro.")
+
+
+def _qty_text(values: dict) -> str:
+    return " · ".join(f"{_n(q)} {esc(p)}" for p, q in values.items() if q)
+
+
+def cloture_precheck(open_courses: int, livreurs_stock: dict, cash_rows: list[dict], ravi: float | None,
+                     tab: str) -> str:
+    lines = ["🗓 <b>Clôture de la semaine</b>", "",
+             "1. Copie des 3 fichiers dans Google Drive (dossier « Archives bot »).",
+             "2. Le stock actuel des box devient le stock initial (COMPTA, onglet STOCK).",
+             "3. Les onglets Lundi → Dimanche sont vidés (commandes, dépenses, rechargements), "
+             "ainsi que MOUVEMENTS et RAVI.",
+             f"4. Le stock encore chez les livreurs est reporté (onglet {esc(tab)} du Rechargement).", ""]
+    carried = [(name, values) for name, values in livreurs_stock.items() if any(q for q in values.values())]
+    if carried:
+        lines.append("📦 Reporté :")
+        lines += [f"• {esc(name)} : {_qty_text(values)}" for name, values in carried]
+    else:
+        lines.append("📦 Aucun stock chez les livreurs.")
+    unpaid = [r for r in cash_rows if abs(r["cash"]) >= 0.01]
+    if unpaid:
+        lines += ["", "⚠️ Cash pas encore récupéré (remis à zéro — récupère-le avant avec /caisse) :"]
+        lines += [f"• {esc(r['nom'])} : {eur(r['cash'])}" for r in unpaid]
+    if ravi is not None and abs(ravi) >= 0.01:
+        lines += ["", f"⚠️ Reste chez le ravitailleur : {eur(ravi)} (remis à zéro, garde-en trace)"]
+    if open_courses:
+        lines += ["", f"⚠️ {plural(open_courses, 'course')} en attente ou en cours : elles seront écrites "
+                      "dans la nouvelle semaine une fois livrées."]
+    lines += ["", "L'archive garde tout. Clôturer maintenant ?"]
+    return "\n".join(lines)
+
+
+def cloture_done(result: dict, tab: str) -> str:
+    lines = ["✅ <b>Semaine clôturée</b>", "",
+             f"🗄 Archive : <a href=\"{esc(result.get('archive') or '')}\">{esc(result.get('dossier') or 'Drive')}</a>"]
+    initial = {box: values for box, values in (result.get("initial") or {}).items()}
+    if initial:
+        lines.append("📦 Stock initial des box :")
+        lines += [f"• {esc(box)} : {_qty_text(values) or 'vide'}" for box, values in initial.items()]
+    reports = result.get("reports") or {}
+    if reports:
+        lines.append(f"🚴 Reporté chez les livreurs (onglet {esc(tab)}) :")
+        lines += [f"• {esc(name)} : {_qty_text(values)}" for name, values in reports.items()]
+    return "\n".join(lines)
+
+
+def cloture_failed(error: str) -> str:
+    return (f"⚠️ Clôture impossible : {esc(error[:250])}\n\n"
+            "Si la copie dans Drive a échoué, rien n'a été effacé. Sinon, l'archive est dans le dossier "
+            "« Archives bot » de Drive.")
+
+
+def cloture_unavailable(error: str) -> str:
+    return f"⚠️ Clôture impossible pour l'instant, feuilles illisibles : {esc(error[:200])}"

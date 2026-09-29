@@ -13,7 +13,7 @@ import pytest
 
 from bot import config, db
 
-TABLES = ["restocks", "events", "messages", "broadcasts", "livreur_positions", "courses", "drafts", "users", "products"]
+TABLES = ["expenses", "restocks", "events", "messages", "broadcasts", "livreur_positions", "courses", "drafts", "users", "products"]
 
 TEST_CONFIG = config.Config(
     telegram_bot_token="123:test",

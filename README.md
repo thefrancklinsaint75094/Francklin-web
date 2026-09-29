@@ -205,8 +205,8 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
 - **👤 Attribuer** une course en attente à un livreur précis (dans `/encours`, ou sur le message de course du
   franchisé) : le livreur reçoit directement sa fiche ;
 - sur son message de course, le franchisé a aussi **✏️ Modifier** et **📦 Livrée** ;
-- toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/synchro`,
-  `/exclure`, `/reactiver`, `/produits`.
+- toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/stock`,
+  `/caisse`, `/depense`, `/synchro`, `/cloture`, `/exclure`, `/reactiver`, `/produits`.
 
 Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
@@ -248,12 +248,60 @@ est Vendeur = « TOTAL » compte comme vide, et après chaque écriture les case
 
 Chaque course livrée va dans l'onglet de sa nuit (livrée à 2h dans la nuit de lundi à mardi → « Lundi »),
 sur la première ligne vide entre 2 et 41 : Vendeur « TOTAL », Livreur, Statut « OK », Adresse, puis jusqu'à 3 produits
-avec leur quantité et leur prix (au-delà, la suite va sur la ligne vide suivante). Paiement reste vide, le bot
-ne le connaît pas. Le digicode et le commentaire ne vont jamais dans la feuille.
+avec leur quantité et leur prix (au-delà, la suite va sur la ligne vide suivante). Paiement : « Espèces » ou
+« Virement », choisi par le livreur à la livraison. Le digicode et le commentaire ne vont jamais dans la feuille.
 
 Le numéro de course est gardé dans une note sur la cellule Vendeur : le script n'écrit jamais deux fois la même
 course et ne touche pas aux lignes remplies à la main. `/synchro` (dispatch) renvoie les courses de la nuit,
 sans risque de doublon. Si un onglet est plein, le dispatch le voit dans la réponse de `/synchro`.
+
+### Paiement à la livraison
+
+Quand le livreur appuie sur **📦 Livré**, le bot demande **💵 Espèces** ou **💳 Virement** (↩️ Retour pour revenir
+à la fiche). Un admin qui marque une course livrée choisit aussi le mode. Le mode est enregistré, affiché au
+dispatch et dans le journal (colonne « paiement » du CSV), et écrit dans la colonne **Paiement** de la feuille.
+
+### Caisse des livreurs (`/depense`, `/caisse`, `/macaisse`)
+
+- **`/depense`** (livreur pour lui-même, admin pour un livreur) : **🧾 Charges** (essence, repas… à ses frais)
+  ou **💸 Avance sur paye**, puis le montant (boutons ±5/±10/±50 € ou montant tapé, centimes acceptés), puis le
+  motif (boutons ou texte, facultatif), puis ✅ Enregistrer. La dépense s'écrit dans la zone **DÉPENSES
+  LIVREURS** (lignes 46 à 57) de l'onglet de la nuit ; le dispatch (ou le livreur, si c'est un admin qui saisit)
+  est prévenu.
+- **`/caisse`** (admins et ravitailleurs) : cash à récupérer chez chaque livreur = ventes OK en espèces −
+  dépenses − cash déjà récupéré, calculé **en direct** par le script (comme SOLDES ④, sans attendre les
+  IMPORTRANGE), plus les mouvements du bot pas encore écrits. **💶 Récupérer** ouvre `/recharge` en « cash
+  seulement », prérempli avec le montant dû.
+- **`/macaisse`** (livreur) : ce qu'il doit remettre, avec le détail.
+
+### Dispatch selon le stock
+
+Avec `STOCK_ALERTS=1`, une course part **d'abord aux livreurs qui ont tout en stock** (stock de la feuille +
+mouvements en vol − leurs autres courses en cours), puis à ceux dont le stock est inconnu, puis aux autres — la
+distance départage dans chaque groupe. Si **aucun** livreur éligible n'a tout, la course part quand même au plus
+proche et les ravitailleurs et le dispatch reçoivent une alerte (une fois par course) avec ce qui manque. Les
+produits absents des colonnes de la feuille (coca…) sont ignorés. Le stock des livreurs est relu au plus une
+fois par minute.
+
+### Clôture de la semaine (`/cloture`)
+
+Pour les admins, le lundi matin (rappel automatique au dispatch le lundi à 6h05). Le bot montre d'abord ce qui
+va se passer : stock encore chez les livreurs (**reporté**), cash pas encore récupéré et reste chez le
+ravitailleur (**remis à zéro** : récupère-les avant), courses encore ouvertes. Puis **✅ Clôturer la semaine** :
+
+1. copie des 3 fichiers dans Google Drive, dossier **Archives bot / Clôture du …** (si la copie échoue, rien
+   n'est effacé) ;
+2. le stock actuel des box (ORGA ④) devient le **stock initial** (COMPTA, onglet STOCK, colonnes B à P) ;
+3. remise à zéro : lignes de commande et dépenses des 7 onglets de la feuille Dispatch (Vendeur repasse à
+   TOTAL), lignes des 7 onglets du tableau Rechargement, MOUVEMENTS et RAVI du COMPTA ;
+4. le stock encore chez chaque livreur est reporté par une ligne « Report clôture » (sans box) dans l'onglet
+   du jour du tableau Rechargement.
+
+Il faut `COMPTA_SPREADSHEET_ID` dans le script et l'accès à Google Drive : après avoir collé le script, choisis
+la fonction **autoriser**, **▶ Exécuter**, accepte, puis **Déployer → Gérer les déploiements → ✏️ → Version :
+Nouvelle version** (l'adresse `/exec` ne change pas).
+
+Base créée avant ces fonctions : exécuter une fois `sql/migrations/005_payment_expenses.sql`.
 
 ### Rechargement des livreurs (ravitailleur)
 
@@ -352,8 +400,10 @@ bot/
   messaging.py       envois/éditions sûrs (bot bloqué, message trop ancien…)
   timeutil.py        heure de Paris, découpage des nuits
   jobs.py            tâches planifiées
-  handlers/          onboarding, franchise, livreur, dispatch, relay, location, messages (aiguillage), common
-  services/          extraction, geocoding, transcription, distance, broadcast, lifecycle
+  handlers/          onboarding, franchise, livreur, dispatch, relay, location, restock, stock_view, cash,
+                     cloture, messages (aiguillage), common
+  services/          extraction, geocoding, transcription, distance, broadcast, lifecycle, sheets, stock,
+                     cash, restock, arrival, order_edit, names
 sql/schema.sql       schéma à exécuter une fois
 tests/               tests unitaires + verrou + scénarios de bout en bout
 DECISIONS.md         choix faits là où la spécification ne tranchait pas

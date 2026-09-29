@@ -16,7 +16,7 @@ from telegram.ext import (
 from bot import config, db, jobs, messaging, texts
 from bot.config import PARIS
 from bot.handlers import (
-    common, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
+    cash, cloture, common, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
 )
 
 log = logging.getLogger("bot")
@@ -136,6 +136,10 @@ def register_handlers(app: Application) -> None:
     cmd("recharge", restock.recharge)
     cmd("livreurs", dispatch.livreurs)
     cmd("stock", stock_view.stock_cmd)
+    cmd("depense", cash.depense)
+    cmd("caisse", cash.caisse)
+    cmd("macaisse", cash.macaisse)
+    cmd("cloture", cloture.cloture)
 
     callbacks = [
         (r"^role:", onboarding.choose_role),
@@ -150,6 +154,7 @@ def register_handlers(app: Application) -> None:
         (r"^fw_no:", franchise.withdraw_no),
         (r"^course_take:", livreur.take),
         (r"^course_deliver:", livreur.deliver),
+        (r"^pay(_back)?:", livreur.pay),
         (r"^livreur_soon_free$", livreur.soon_free),
         (r"^course_livreur_cancel:", livreur.cancel_ask),
         (r"^lc_yes:", livreur.cancel_yes),
@@ -162,6 +167,9 @@ def register_handlers(app: Application) -> None:
         (r"^assign:", dispatch.assign_ask),
         (r"^assign_to:", dispatch.assign_do),
         (r"^sv:", stock_view.show),
+        (r"^dp_", cash.action),
+        (r"^cs_", cash.cash_action),
+        (r"^cl_(go|x)$", cloture.action),
         (r"^sname:", dispatch.name_ask),
         (r"^sname_set:", dispatch.name_set),
         (r"^sname_done:", dispatch.name_done),

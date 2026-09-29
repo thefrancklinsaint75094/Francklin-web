@@ -131,9 +131,36 @@ async def deliver(update: Update, context):
         return "Déjà livrée."
     if course["status"] != "assigned":
         return texts.COURSE_FINISHED, True
-    if course.get("livreur_message_id") != update.callback_query.message.message_id:
-        course["livreur_message_id"] = update.callback_query.message.message_id
-    updated = await lifecycle.deliver(context, course)
+    # Le client a payé comment ? Le choix valide la livraison.
+    await messaging.edit_markup(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                                keyboards.payment_choice(course["id"]))
+    return texts.PAYMENT_PROMPT
+
+
+@common.callback
+async def pay(update: Update, context):
+    """pay:<course>:e|v (espèces / virement) → livraison ; pay_back:<course> → retour à la fiche."""
+    user = await _livreur(update)
+    if user is None:
+        return None
+    parts = (update.callback_query.data or "").split(":")
+    course = await db.get_course(int(parts[1]))
+    if course is None or course.get("livreur_id") != user["id"]:
+        return texts.COURSE_FINISHED, True
+    if course["status"] == "delivered":
+        return "Déjà livrée."
+    if course["status"] != "assigned":
+        return texts.COURSE_FINISHED, True
+    message_id = update.callback_query.message.message_id
+    if parts[0] == "pay_back":
+        await messaging.edit_markup(context.bot, update.effective_chat.id, message_id,
+                                    keyboards.livreur_course(course["id"]))
+        return None
+    payment = lifecycle.PAYMENTS.get(parts[2] if len(parts) > 2 else "")
+    if payment is None:
+        return None
+    course["livreur_message_id"] = message_id
+    updated = await lifecycle.deliver(context, course, payment=payment)
     if updated is None:
         return "Déjà livrée."
     return "Livrée ✅"

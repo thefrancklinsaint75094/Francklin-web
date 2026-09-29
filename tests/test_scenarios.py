@@ -83,6 +83,17 @@ async def h(database, monkeypatch):
     from bot.services import stock as stock_service
 
     stock_service._inflight.clear()
+    stock_service._sheet_cache = None
+    stock_service._dispatch_alerted.clear()
+    from bot.handlers import cloture as cloture_h
+
+    cloture_h._last_done = None
+    from bot.services import sheets
+
+    async def no_script(action, client=None):   # jamais d'appel réseau : chaque test simule le script
+        return {"ok": False, "error": "script non simulé"}
+
+    monkeypatch.setattr(sheets, "fetch_action", no_script)
     harness = await Harness.create()
     yield harness
     await harness.close()
@@ -289,6 +300,13 @@ async def test_photo_order(h):
 
 # ====================================================================== étape 3
 
+async def deliver_course(h, tg_id, msg, pay="e"):
+    """📦 Livré puis choix du paiement (e : espèces, v : virement)."""
+    course_id = msg.data("course_deliver:").split(":")[1]
+    await h.press(tg_id, msg, "course_deliver:")
+    await h.press_data(tg_id, h.tg.messages[(tg_id, msg.message_id)], f"pay:{course_id}:{pay}")
+
+
 async def go_on_duty(h, tg_id, pos):
     await h.text(tg_id, "/dispo")
     await h.location(tg_id, *pos, message_id=tg_id)
@@ -330,12 +348,13 @@ async def test_dispo_broadcast_take_and_deliver(h):
     await h.text(L1, "/macourse")
     assert h.tg.last(L1).text.startswith(f"🚴 Course #{course['id']}")
 
-    await h.press(L1, fiche, "course_deliver:")
+    await deliver_course(h, L1, fiche)
     delivered = await db.get_course(course["id"])
     assert delivered["status"] == "delivered" and delivered["delivered_distance_m"] is not None
     assert "✅ Course" in h.tg.last(L1).text or "livrée" in h.tg.messages[(L1, fiche.message_id)].text
     assert "— livrée à" in h.tg.find(F1, f"Course #{course['id']} — livrée").text
-    assert f"✅ #{course['id']} — livrée — Livreur 1 — 60 €" in h.tg.texts(DISPATCH)
+    assert f"✅ #{course['id']} — livrée — Livreur 1 — 60 € · 💵 espèces" in [
+        x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
     # Double « Livré » : sans effet.
     await h.press_data(L1, fiche, f"course_deliver:{course['id']}")
     assert h.tg.answers()[-1]["text"] == "Déjà livrée."
@@ -414,7 +433,7 @@ async def test_one_course_at_a_time_and_soon_free(h):
     assert all("🆕" not in t for t in h.tg.texts(L1)[-3:])
     # Livraison de la première : soon_free retombe.
     fiche1 = h.tg.find(L1, f"🚴 Course #{c1['id']}")
-    await h.press(L1, fiche1, "course_deliver:")
+    await deliver_course(h, L1, fiche1)
     assert (await db.get_user(l1["id"]))["soon_free"] is False
     del c3
 
@@ -551,7 +570,7 @@ async def test_relay_both_ways(h):
     await h.voice(F1)
     assert h.tg.last(F1).text == texts.WRITE_TEXT
     # Course livrée : relais fermé.
-    await h.press(L1, fiche, "course_deliver:")
+    await deliver_course(h, L1, fiche)
     await h.press_data(F1, relayed, f"relay_start:{course['id']}")
     assert h.tg.last(F1).text == texts.COURSE_FINISHED
     assert len(await db._t("messages").select("*").execute().__await__().__next__() if False else
@@ -563,10 +582,10 @@ async def test_recap_journal_csv(h):
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     c2 = await order(h, F2, "oberkampf")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"))
     await go_on_duty(h, L2, REPUBLIQUE)
     c3 = await order(h, F1, "deux")
 
@@ -589,8 +608,9 @@ async def test_recap_journal_csv(h):
     assert csv_bytes.startswith("﻿".encode())
     rows = list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig")), delimiter=";"))
     assert rows[0] == ["numero", "date_livraison", "heure_livraison", "franchise", "livreur", "adresse",
-                       "complement", "produits", "prix"]
+                       "complement", "produits", "prix", "paiement"]
     assert rows[1][0] == str(c1["id"]) and rows[1][6] == "digicode 45A32" and rows[1][8] == "60,00"
+    assert rows[1][9] == "Espèces"
 
     await h.press(DISPATCH, h.tg.find(DISPATCH, "📊 Récap"), "recap_prev:")
     assert "aucune course livrée" in h.tg.last(DISPATCH).text
@@ -757,7 +777,7 @@ async def test_retention_scrubs_old_data(h):
     await h.press(L1, h.tg.last(L1), "course_take:")
     await h.press(L1, h.tg.find(L1, "c'est pour toi"), "relay_start:")
     await h.text(L1, "je suis en bas")
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     old = iso(now_utc() - timedelta(days=91))
     await db.update_course(course["id"], {"closed_at": old})
     await db._t("drafts").update({"created_at": old}).gte("created_at", "1970-01-01").execute()
@@ -892,7 +912,7 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     await asyncio.gather(*list(sheets._tasks))
     assert [(r["numero"], r["vendeur"], r["livreur"], r["statut"], r["prix"]) for r in sent] == [
         (course["id"], "Franchisé 1", "Livreur 1", "OK", 60.0)]
@@ -901,6 +921,51 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     sent.clear()
     await h.text(DISPATCH, "/synchro")
     assert "Google Sheets à jour" in h.tg.last(DISPATCH).text and len(sent) == 1
+
+
+async def test_payment_mode_at_delivery(h, monkeypatch):
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    fiche = h.tg.find(L1, "c'est pour toi")
+
+    # 📦 Livré → choix du paiement ; ↩️ Retour rend la fiche intacte.
+    await h.press(L1, fiche, "course_deliver:")
+    assert h.tg.answers()[-1]["text"] == texts.PAYMENT_PROMPT
+    ask = h.tg.messages[(L1, fiche.message_id)]
+    assert [d for _, d in ask.buttons] == [f"pay:{course['id']}:e", f"pay:{course['id']}:v",
+                                           f"pay_back:{course['id']}"]
+    assert (await db.get_course(course["id"]))["status"] == "assigned"
+    await h.press_data(L1, ask, f"pay_back:{course['id']}")
+    assert any(d.startswith("course_deliver:") for _, d in h.tg.messages[(L1, fiche.message_id)].buttons)
+
+    await deliver_course(h, L1, h.tg.messages[(L1, fiche.message_id)], pay="v")
+    delivered = await db.get_course(course["id"])
+    assert delivered["status"] == "delivered" and delivered["payment"] == "virement"
+    assert "💳 virement" in h.tg.find(DISPATCH, f"✅ #{course['id']} — livrée").text
+    await asyncio.gather(*list(sheets._tasks))
+    assert [r["paiement"] for r in sent] == ["Virement"]
+
+    # L'admin marque une course livrée en choisissant le mode de paiement.
+    c2 = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c2['id']}"), "course_take:")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"force_deliver:{c2['id']}")
+    confirm = h.tg.last(DISPATCH)
+    assert f"fy:deliver:{c2['id']}:e" in [d for _, d in confirm.buttons]
+    await h.press_data(DISPATCH, confirm, f"fy:deliver:{c2['id']}:v")
+    assert (await db.get_course(c2["id"]))["payment"] == "virement"
 
 
 async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
@@ -1000,6 +1065,7 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     await h.press(L1, screen(), "order_edit:")
     await h.press_data(L1, screen(), "oe_s:0")
     await h.press_data(L1, card, f"course_deliver:{course['id']}")
+    await h.press_data(L1, card, f"pay:{course['id']}:e")
     await h.text(L1, "5")
     assert h.tg.last(L1).text == texts.COURSE_FINISHED
     assert (await db.get_user(l1["id"]))["conversation_state"] is None
@@ -1009,7 +1075,7 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     assert sent[0]["lignes"] == [{"produit": "vodka", "qte": 3, "prix": 90.0},
                                  {"produit": "coca", "qte": 1, "prix": 20.0},
                                  {"produit": "DIV", "qte": 1, "prix": 20.0}]
-    assert f"✅ #{course['id']} — livrée — Livreur 1 — 130 €" in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
+    assert f"✅ #{course['id']} — livrée — Livreur 1 — 130 € · 💵 espèces" in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
 
 
 async def test_franchise_order_price_must_be_multiple_of_ten(h):
@@ -1303,7 +1369,7 @@ async def test_stock_alerts_last_units_and_empty(h, monkeypatch, test_config):
         assert last in h.tg.find(who, "⚠️ Stock").text, who
     assert h.tg.find(F1, "⚠️ Stock").text.startswith(f"⚠️ Stock — course #{course['id']}")
 
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     await asyncio.gather(*list(sheets._tasks))
     empty = f"📭 Livreur 1 (Livreur A) n'a plus de US sur lui (course #{course['id']} livrée)."
     for who in (F1, L1, R1, DISPATCH):
@@ -1355,11 +1421,11 @@ async def test_stock_computed_in_parallel_of_the_sheet(h, monkeypatch, test_conf
     assert f"• C'est le dernier US de Livreur 1 (Livreur A)" in h.tg.find(F2, "⚠️ Stock").text
 
     # Livraison de la 1re : la feuille est injoignable, la vente reste comptée par le bot.
-    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c1['id']}"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c1['id']}"))
     await asyncio.gather(*list(sheets._tasks))
     assert not [t for t in h.tg.texts(F1) if t.startswith("📭")]            # 3 − 2 = 1 : il en reste
     # Livraison de la 2e : feuille toujours à 3, mais le bot sait qu'il n'en reste qu'1 → épuisé.
-    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"))
     await asyncio.gather(*list(sheets._tasks))
     assert h.tg.find(F2, "📭").text.startswith("📭 Livreur 1 (Livreur A) n'a plus de US sur lui")
 
@@ -1471,3 +1537,237 @@ async def test_stock_command_boxes_and_livreurs(h, monkeypatch):
     await h.press_data(F1, menu, "sv:box:1")
     assert h.tg.messages[(F1, menu.message_id)].text.endswith("Vide.")
     del r1
+
+
+async def test_expenses_and_cash_to_collect(h, monkeypatch):
+    """/depense (livreur et admin), /caisse avec 💶 Récupérer (→ /recharge cash prérempli), /macaisse ;
+    le cash d'une livraison en espèces pas encore écrite dans la feuille est compté par le bot."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent, sheet_up = [], {"ok": True}
+
+    async def fake_send(rows, client=None):
+        if not sheet_up["ok"]:
+            raise RuntimeError("feuille injoignable")
+        sent.extend(rows)
+        return len(rows)
+
+    async def fake_action(action, client=None):
+        assert action == "cash_livreurs"
+        return {"ok": True, "livreurs": {"Livreur 1": {"especes": 910, "virement": 60, "depenses": 200,
+                                                       "recupere": 520, "cash": 190}}}
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await register(h, R1, "ravitailleur", "Sam")
+
+    def txt(m):
+        return m.text.replace("\xa0", " ")
+
+    # Le livreur note 25 € d'essence (boutons + motif tapé).
+    await h.text(L1, "/depense")
+    msg_id = h.tg.last(L1).message_id
+
+    def screen(tg=L1):
+        return h.tg.messages[(tg, msg_id)]
+
+    assert "Quel type ?" in screen().text
+    await h.press_data(L1, screen(), "dp_k:c")
+    await h.press_data(L1, screen(), "dp_n")
+    assert h.tg.answers()[-1]["text"] == texts.EXPENSE_ZERO
+    for d in ("dp_a:10", "dp_a:10", "dp_a:5"):
+        await h.press_data(L1, screen(), d)
+    assert "Montant : <b>25 €</b>" in txt(screen())
+    await h.press_data(L1, screen(), "dp_n")
+    await h.text(L1, "Essence")
+    assert "📝 Motif : Essence" in txt(screen())
+    await h.press_data(L1, screen(), "dp_ok")
+    assert "✅ Dépense #D" in screen().text
+    await asyncio.gather(*list(sheets._tasks))
+    assert [(r["type"], r["livreur"], r["depense"], r["montant"], r["motif"]) for r in sent] == [
+        ("depense", "Livreur 1", "Charges", 25.0, "Essence")]
+    assert "🧾 D#" in txt(h.tg.last(DISPATCH)) and "Charges (à ses frais) — 25 € — Essence" in txt(h.tg.last(DISPATCH))
+
+    # Avance sur paye, montant tapé, sans motif.
+    await h.text(L1, "/depense")
+    msg_id = h.tg.last(L1).message_id
+    await h.press_data(L1, screen(), "dp_k:p")
+    await h.text(L1, "12,50")
+    await h.press_data(L1, screen(), "dp_m:-1")
+    await h.press_data(L1, screen(), "dp_ok")
+    expenses = (await db._t("expenses").select("*").order("id").execute()).data
+    assert [(e["kind"], float(e["amount"]), e["motif"]) for e in expenses] == [
+        ("charges", 25.0, "Essence"), ("paye", 12.5, None)]
+
+    # Un admin la note pour le livreur : le livreur est prévenu.
+    await h.text(F1, "/depense")
+    msg_id = h.tg.last(F1).message_id
+    for d in (f"dp_l:{l1['id']}", "dp_k:c", "dp_a:50", "dp_n", "dp_m:1", "dp_ok"):
+        await h.press_data(F1, screen(F1), d)
+    assert "Dépense notée pour toi par Franchisé 1" in txt(h.tg.last(L1)) and "50 € — Parking" in txt(h.tg.last(L1))
+    assert (await db._t("expenses").select("*").eq("by_user_id", f1["id"]).execute()).data[0]["amount"] == 50
+
+    # Le ravitailleur ne note pas de dépense ; le livreur ne voit pas /caisse.
+    await h.text(R1, "/depense")
+    assert h.tg.last(R1).text == texts.NOT_FOR_YOU
+    await h.text(L1, "/caisse")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    # Livraison en espèces pendant que la feuille est injoignable : +60 € comptés par le bot.
+    await asyncio.gather(*list(sheets._tasks))
+    sheet_up["ok"] = False
+    await go_on_duty(h, L1, BASTILLE)
+    await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"), pay="e")
+    await asyncio.gather(*list(sheets._tasks))
+
+    await h.text(L1, "/macaisse")
+    mine = txt(h.tg.last(L1))
+    assert "Espèces encaissées : 910 €" in mine and "Pas encore dans la feuille : + 60 €" in mine
+    assert "<b>À remettre : 250 €</b>" in mine and "Virements (pour info) : 60 €" in mine
+
+    await h.text(R1, "/caisse")
+    caisse = h.tg.last(R1)
+    assert "<b>Livreur 1</b> : 250 €" in txt(caisse) and "Total à récupérer : <b>250 €</b>" in txt(caisse)
+    assert [d for _, d in caisse.buttons] == [f"cs_r:{l1['id']}", "cs_ref"]
+
+    # 💶 Récupérer : /recharge « cash seulement » prérempli avec 250 €, validé tel quel.
+    sheet_up["ok"] = True
+    await h.press_data(R1, caisse, f"cs_r:{l1['id']}")
+    editor = h.tg.messages[(R1, caisse.message_id)]
+    assert "💶 Cash récupéré : 250 €" in txt(editor)
+    await h.press_data(R1, editor, "rs_ok")
+    restocks = (await db._t("restocks").select("*").execute()).data
+    assert [(r["kind"], float(r["cash"])) for r in restocks] == [("cash", 250.0)]
+    assert "💶 Cash remis" in txt(h.tg.last(L1))
+
+
+async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
+    """Le plus proche n'a pas de US : la course part d'abord à celui qui en a. Personne n'en a assez :
+    la course part quand même au plus proche, ravitailleurs et dispatch sont prévenus une fois."""
+    import dataclasses
+
+    from bot import config
+    from bot.services import sheets
+
+    config.set_config(dataclasses.replace(test_config, stock_alerts=True, broadcast_wave_size=1))
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    reads = []
+
+    async def fake_action(action, client=None):
+        reads.append(action)
+        return {"ok": True, "livreurs": {"Livreur 1": {"US": 0, "DIV": 4}, "Livreur 2": {"US": 5, "DIV": 0}}}
+
+    async def fake_stock(livreur, client=None):
+        return None, livreur["display_name"]
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    monkeypatch.setattr(sheets, "fetch_stock", fake_stock)
+    await db.create_product("US", "us", [])
+    EXTRACTIONS["deux us"] = [{**RIVOLI, "products": "2 US", "price": 60}]
+    f1, f2, (l1, l2) = await setup_network(h)
+    await register(h, R1, "ravitailleur", "Sam")
+    await go_on_duty(h, L1, BASTILLE)       # le plus proche de Rivoli, mais 0 US
+    await go_on_duty(h, L2, REPUBLIQUE)
+
+    c1 = await order(h, F1, "deux us")
+    assert h.tg.last(L2).text.startswith(f"🆕 Course #{c1['id']}")
+    assert not [t for t in h.tg.texts(L1) if t.startswith(f"🆕 Course #{c1['id']}")]
+    assert not [t for t in h.tg.texts(R1) if "aucun livreur en service n'a tout" in t]
+    await h.press(L2, h.tg.last(L2), "course_take:")
+
+    # Livreur 2 est occupé ; Livreur 1 n'a pas de US : il reçoit quand même la course, alerte envoyée.
+    c2 = await order(h, F1, "deux us")
+    assert h.tg.last(L1).text.startswith(f"🆕 Course #{c2['id']}")
+    alert = h.tg.find(R1, f"⚠️ Course #{c2['id']}").text.replace("\xa0", " ")
+    assert "aucun livreur en service n'a tout en stock" in alert and "• Livreur 1 : 0/2 US" in alert
+    assert h.tg.find(DISPATCH, f"⚠️ Course #{c2['id']}")
+    assert reads == ["stock_livreurs"]      # feuille lue une fois, gardée une minute
+
+    # Nouvelle vague pour la même course : pas de deuxième alerte.
+    await broadcast.run_wave(h.context, c2["id"], advance=True)
+    assert len([t for t in h.tg.texts(R1) if t.startswith(f"⚠️ Course #{c2['id']}")]) == 1
+
+
+async def test_weekly_cloture(h, monkeypatch):
+    """/cloture : vérification (stock reporté, cash non récupéré, reste du ravitailleur), annulation,
+    clôture par le script (archives), double appui refusé, échec expliqué, rappel du lundi."""
+    from bot.handlers import cloture as cloture_h
+    from bot.services import sheets
+    from bot.services import stock as stock_service
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    calls = []
+    answer = {"cloture": {"ok": True, "archive": "https://drive.google.com/drive/folders/abc",
+                          "dossier": "Archives bot / Clôture du 2026-09-28 06h10",
+                          "initial": {"Box 1": {"DIV": 28, "US": 112}, "Box 2": {}},
+                          "reports": {"Livreur 1": {"DIV": 4, "US": 4}}}}
+
+    async def fake_action(action, client=None, payload=None, timeout=None):
+        calls.append((action, payload, timeout))
+        if action == "stock_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"DIV": 4, "US": 4, "KT": 0}, "Livreur 2": {"US": 0}}}
+        if action == "cash_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"especes": 350, "depenses": 200, "recupere": 100,
+                                                           "cash": 50}}, "ravitailleur": 70}
+        return answer[action]
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    f1, f2, (l1, l2) = await setup_network(h)
+
+    def txt(m):
+        return m.text.replace("\xa0", " ")
+
+    await h.text(L1, "/cloture")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    await h.text(DISPATCH, "/cloture")
+    check = h.tg.last(DISPATCH)
+    assert "🗓 <b>Clôture de la semaine</b>" in check.text
+    assert "• Livreur 1 : 4 DIV · 4 US" in txt(check) and "Livreur 2" not in txt(check).split("📦 Reporté")[1]
+    assert "⚠️ Cash pas encore récupéré" in txt(check) and "• Livreur 1 : 50 €" in txt(check)
+    assert "Reste chez le ravitailleur : 70 €" in txt(check)
+    assert [d for _, d in check.buttons] == ["cl_go", "cl_x"]
+    await h.press_data(DISPATCH, check, "cl_x")
+    assert h.tg.messages[(DISPATCH, check.message_id)].text == texts.CLOTURE_CANCELLED
+    assert [c[0] for c in calls] == ["stock_livreurs", "cash_livreurs"]
+
+    # Un franchisé (pleins pouvoirs) clôture ; le bot oublie les mouvements de l'ancienne semaine.
+    stock_service.add_inflight(l1["id"], "course:1", {"US": -1})
+    await h.text(F1, "/cloture")
+    check = h.tg.last(F1)
+    await h.press_data(F1, check, "cl_go")
+    done = h.tg.messages[(F1, check.message_id)]
+    action, payload, timeout = calls[-1]
+    assert action == "cloture" and payload["onglet"] in sheets.JOURS and payload["libelle"].startswith("Clôture du ")
+    assert timeout == cloture_h.TIMEOUT
+    assert "✅ <b>Semaine clôturée</b>" in done.text and 'href="https://drive.google.com/drive/folders/abc"' in done.text
+    assert "• Box 1 : 28 DIV · 112 US" in done.text and "• Box 2 : vide" in done.text
+    assert "• Livreur 1 : 4 DIV · 4 US" in done.text
+    assert stock_service.inflight_deltas(l1["id"]) == {}
+    assert "✅ <b>Semaine clôturée</b>" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
+    assert (await db._t("events").select("*").eq("type", "cloture").execute()).data
+
+    # Deuxième appui (ou deuxième admin) juste après : refusé.
+    await h.text(DISPATCH, "/cloture")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "cl_go")
+    assert h.tg.answers()[-1]["text"] == texts.CLOTURE_ALREADY
+    assert [c[0] for c in calls].count("cloture") == 1
+
+    # Échec du script : expliqué, rien n'est marqué comme clôturé.
+    cloture_h._last_done = None
+    answer["cloture"] = {"ok": False, "error": "COMPTA_SPREADSHEET_ID vide dans le script"}
+    await h.text(DISPATCH, "/cloture")
+    check = h.tg.last(DISPATCH)
+    await h.press_data(DISPATCH, check, "cl_go")
+    assert "⚠️ Clôture impossible : COMPTA_SPREADSHEET_ID vide" in h.tg.messages[(DISPATCH, check.message_id)].text
+    assert cloture_h._last_done is None
+
+    await cloture_h.weekly_reminder(h.context)
+    assert h.tg.last(DISPATCH).text == texts.CLOTURE_REMINDER

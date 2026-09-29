@@ -109,7 +109,7 @@ def build_csv(courses: list[dict], users: dict[str, dict]) -> bytes:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
     w.writerow(["numero", "date_livraison", "heure_livraison", "franchise", "livreur", "adresse", "complement",
-                "produits", "prix"])
+                "produits", "prix", "paiement"])
     for c in courses:
         at = to_paris(parse_ts(c["delivered_at"]))
         w.writerow([
@@ -118,6 +118,7 @@ def build_csv(courses: list[dict], users: dict[str, dict]) -> bytes:
             users.get(c["livreur_id"], {}).get("display_name", ""),
             c["address"], c.get("address_detail") or "", c["products"],
             f"{float(c['price']):.2f}".replace(".", ","),
+            sheets.PAYMENT_SHEET.get(c.get("payment") or "", ""),
         ])
     return buf.getvalue().encode("utf-8-sig")
 
@@ -212,7 +213,9 @@ async def override_do(update: Update, context):
     dispatcher = await _dispatch(update)
     if dispatcher is None:
         return None
-    _, action, course_id = update.callback_query.data.split(":", 2)
+    parts = update.callback_query.data.split(":")
+    action, course_id = parts[1], parts[2]
+    payment = lifecycle.PAYMENTS.get(parts[3]) if len(parts) > 3 else None
     course = await db.get_course(int(course_id))
     message_id = update.callback_query.message.message_id
     result = None
@@ -220,7 +223,7 @@ async def override_do(update: Update, context):
         if action == "cancel":
             result = await lifecycle.cancel(context, course, by="dispatch")
         elif action == "deliver" and course["status"] == "assigned":
-            result = await lifecycle.deliver(context, course, by_dispatch=True)
+            result = await lifecycle.deliver(context, course, by_dispatch=True, payment=payment)
         elif action == "release" and course["status"] == "assigned":
             result = await lifecycle.release(context, course, reason="dispatch")
     if result is None:
@@ -470,16 +473,19 @@ async def synchro(update: Update, context) -> None:
     start, end = night_bounds(night, cfg.night_end_hour)
     delivered = await db.list_delivered_between(start, end)
     restocks = await db.list_restocks_between(start, end)
+    expenses = await db.list_expenses_between(start, end)
     users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered]
-                               + [r["livreur_id"] for r in restocks] + [r["by_user_id"] for r in restocks])
+                               + [r["livreur_id"] for r in restocks] + [r["by_user_id"] for r in restocks]
+                               + [e["livreur_id"] for e in expenses])
     try:
         catalog = await sheets.load_catalog()
-        rows = [sheets.row(c, users, catalog) for c in delivered] + [sheets.restock_row(r, users) for r in restocks]
+        rows = ([sheets.row(c, users, catalog) for c in delivered] + [sheets.restock_row(r, users) for r in restocks]
+                + [sheets.expense_row(e, users) for e in expenses])
         added = await sheets.send_rows(rows)
     except RuntimeError as exc:
         await messaging.reply(update, texts.sheets_failed(str(exc)))
         return
-    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks)))
+    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks), len(expenses)))
 
 
 # ================================================================ /livreurs : service et pause par un admin

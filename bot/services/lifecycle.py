@@ -100,12 +100,17 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
 
 # ---------------------------------------------------------------- livraison
 
-async def deliver(context, course: dict, by_dispatch: bool = False) -> dict | None:
-    """Passe la course en `delivered`. Renvoie la course à jour, ou None si elle
-    n'était plus en cours (double appui, course déjà close…)."""
+PAYMENTS = {"e": "especes", "v": "virement"}   # code du bouton → valeur en base
+
+
+async def deliver(context, course: dict, by_dispatch: bool = False, payment: str | None = None) -> dict | None:
+    """Passe la course en `delivered` (avec le mode de paiement). Renvoie la course à jour, ou
+    None si elle n'était plus en cours (double appui, course déjà close…)."""
     livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
     now = now_utc()
     fields = {"status": "delivered", "delivered_at": iso(now), "closed_at": iso(now)}
+    if payment in PAYMENTS.values():
+        fields["payment"] = payment
     far_label = None
     if livreur and not by_dispatch:
         pos = await db.get_position(livreur["id"])

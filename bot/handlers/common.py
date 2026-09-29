@@ -23,17 +23,20 @@ def is_admin(user: dict | None) -> bool:
 _ADMIN_COMMANDS = [("encours", "Courses en attente et en cours"), ("livreurs", "Mettre un livreur en service / pause"),
                    ("recap", "Totaux par livreur"), ("journal", "Détail des courses livrées"),
                    ("users", "Tous les utilisateurs"), ("recharge", "Charger / reprendre un livreur"),
-                   ("stock", "Stock des box et des livreurs"),
-                   ("synchro", "Renvoyer la nuit vers Google Sheets"), ("exclure", "Retirer un accès"),
+                   ("stock", "Stock des box et des livreurs"), ("caisse", "Cash à récupérer chez les livreurs"),
+                   ("depense", "Noter une dépense d'un livreur"),
+                   ("synchro", "Renvoyer la nuit vers Google Sheets"), ("cloture", "Clôturer la semaine (archives)"), ("exclure", "Retirer un accès"),
                    ("reactiver", "Rendre un accès")]
 
 COMMANDS = {
     "franchise": [("mescourses", "Mes courses de la nuit"), ("modele", "Modèle de commande"),
                   ("produits", "Catalogue des produits")] + _ADMIN_COMMANDS,
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
-                ("macourse", "Revoir ma course en cours")],
+                ("macourse", "Revoir ma course en cours"), ("depense", "Noter une dépense"),
+                ("macaisse", "Mon cash à remettre")],
     "dispatch": _ADMIN_COMMANDS + [("produits", "Catalogue des produits")],
-    "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash"), ("stock", "Stock des box et des livreurs")],
+    "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash"), ("stock", "Stock des box et des livreurs"),
+                     ("caisse", "Cash à récupérer chez les livreurs")],
 }
 COMMON_COMMANDS = [("start", "Démarrer"), ("aide", "Aide")]
 

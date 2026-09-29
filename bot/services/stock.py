@@ -37,7 +37,9 @@ def add_inflight(livreur_id: str, token: str, deltas: dict[str, int]) -> None:
 
 
 def remove_inflight(livreur_id: str, token: str) -> None:
+    global _sheet_cache
     _inflight.get(livreur_id, {}).pop(token, None)
+    _sheet_cache = None   # le mouvement est maintenant dans la feuille : relire la feuille
 
 
 def inflight_deltas(livreur_id: str) -> dict[str, int]:
@@ -154,14 +156,19 @@ async def check_assignment(context, course: dict, livreur: dict) -> None:
         log.exception("Alerte de stock (attribution) impossible")
 
 
-async def deliver_then_push(context, course: dict, livreur: dict | None) -> None:
+async def deliver_then_push(context, course: dict, livreur: dict | None, alerts: bool = True) -> None:
     """Stock lu avant l'envoi de la vente, alerte « plus de … sur lui », puis envoi à la feuille.
-    Tant que la vente n'est pas confirmée dans la feuille, le bot la compte lui-même (en vol)."""
+    Tant que la vente n'est pas confirmée dans la feuille, le bot la compte lui-même (en vol) :
+    produits sortis du stock du livreur, espèces encaissées."""
+    from bot.services import cash
+
     quantities: dict[str, int] = {}
     token = f"course:{course['id']}"
+    livreur_id = livreur["id"] if livreur is not None else None
+    cash.track(livreur_id, token, cash.delivery_amount(course))
     try:
         quantities = course_quantities(course, await sheets.load_catalog())
-        if livreur is not None:
+        if livreur is not None and alerts:
             stock, sheet_name = await current_stock(livreur)
             if stock is not None:
                 empty = emptied_after_delivery(quantities, stock)
@@ -175,6 +182,7 @@ async def deliver_then_push(context, course: dict, livreur: dict | None) -> None
         add_inflight(livreur["id"], token, {p: -q for p, q in quantities.items()})
     if await sheets.push_delivered(course) and livreur is not None:
         remove_inflight(livreur["id"], token)
+        cash.done(livreur_id, token)
 
 
 def _later(coro) -> None:
@@ -190,16 +198,19 @@ def after_assignment_later(context, course: dict, livreur: dict) -> None:
 
 async def push_restock_tracked(restock: dict) -> None:
     """Envoi d'un rechargement, compté par le bot tant qu'il n'est pas dans la feuille."""
+    from bot.services import cash
     from bot.services import restock as rs
 
     token = f"restock:{restock['id']}"
     deltas = rs.signed_quantities(restock.get("items") or [], restock["kind"])
     add_inflight(restock["livreur_id"], token, deltas)
+    cash.track(restock["livreur_id"], token, -float(restock.get("cash") or 0))
     if restock.get("box"):
         # Le box perd ce qui est chargé au livreur, regagne ce qui est repris.
         add_inflight(box_key(restock["box"]), token, {p: -d for p, d in deltas.items()})
     if await sheets.push_restock(restock):
         remove_inflight(restock["livreur_id"], token)
+        cash.done(restock["livreur_id"], token)
         if restock.get("box"):
             remove_inflight(box_key(restock["box"]), token)
 
@@ -232,16 +243,103 @@ async def livreurs_now() -> dict:
     return {"ok": True, "livreurs": out}
 
 
+# ---------------------------------------------------------------- dispatch selon le stock
+
+SHEET_CACHE_SECONDS = 60
+_sheet_cache: tuple[float, dict] | None = None   # (expire, {nom feuille: {produit: qté}})
+_dispatch_alerted: set[int] = set()
+
+
+async def _sheet_livreurs() -> dict | None:
+    """Stock de chaque livreur d'après le script, gardé une minute (une vague par course et par
+    minute ne relit pas la feuille à chaque fois). None si illisible."""
+    global _sheet_cache
+    now = time.monotonic()
+    if _sheet_cache and _sheet_cache[0] > now:
+        return _sheet_cache[1]
+    data = await sheets.fetch_action("stock_livreurs")
+    if not data or not data.get("ok"):
+        return None
+    _sheet_cache = (now + SHEET_CACHE_SECONDS, data.get("livreurs") or {})
+    return _sheet_cache[1]
+
+
+async def availability(course: dict, livreurs: list[dict]) -> dict[str, list[tuple[str, int, float]] | None]:
+    """Pour chaque livreur : [] s'il a tout ce que demande la course, [(produit, commandé, dispo)]
+    s'il lui manque quelque chose, None si son stock est inconnu. {} si rien n'est lisible.
+    Dispo = feuille + mouvements en vol − ses autres courses attribuées pas encore livrées.
+    Les produits absents des colonnes de la feuille (coca…) sont ignorés."""
+    sheet = await _sheet_livreurs()
+    if not sheet:
+        return {}
+    catalog = await sheets.load_catalog()
+    known = {_key(p) for values in sheet.values() for p in (values or {})}
+    need = {p: q for p, q in course_quantities(course, catalog).items() if _key(p) in known}
+    if not need:
+        return {}
+    by_name = {_key(name): values or {} for name, values in sheet.items()}
+    reserved: dict[str, dict[str, int]] = {}
+    for c in await db.list_assigned_for_livreurs([lv["id"] for lv in livreurs]):
+        if c["id"] == course["id"]:
+            continue
+        mine = reserved.setdefault(c["livreur_id"], {})
+        for p, q in course_quantities(c, catalog).items():
+            mine[p] = mine.get(p, 0) - q
+    out: dict[str, list[tuple[str, int, float]] | None] = {}
+    for lv in livreurs:
+        values = by_name.get(_key(lv.get("display_name") or ""))
+        if values is None:
+            out[lv["id"]] = None
+            continue
+        have = apply_deltas(apply_deltas(values, inflight_deltas(lv["id"])), reserved.get(lv["id"], {}))
+        out[lv["id"]] = [(p, q, _have(have, p)) for p, q in need.items() if _have(have, p) < q]
+    return out
+
+
+async def rank_by_stock(context, course: dict, eligible: list[tuple[dict, float | None]]):
+    """Livreurs éligibles réordonnés : d'abord ceux qui ont tout en stock, puis stock inconnu,
+    puis ceux à qui il manque quelque chose (l'ordre par distance est gardé dans chaque groupe).
+    Si aucun n'a tout, ravitailleurs et dispatch sont prévenus une fois pour la course.
+    Ne lève jamais d'exception : en cas de problème, l'ordre reste celui des distances."""
+    if not enabled() or not eligible:
+        return eligible
+    try:
+        avail = await availability(course, [lv for lv, _ in eligible])
+        if not avail:
+            return eligible
+
+        def group(item):
+            missing = avail.get(item[0]["id"])
+            return 1 if missing is None else (0 if not missing else 2)
+
+        ranked = sorted(eligible, key=group)   # tri stable : la distance départage
+        known = [m for m in avail.values() if m is not None]
+        if known and all(known) and course["id"] not in _dispatch_alerted:
+            _dispatch_alerted.add(course["id"])
+            await _alert_no_stock(context, course, eligible, avail)
+        return ranked
+    except Exception:  # noqa: BLE001
+        log.exception("Dispatch selon le stock impossible")
+        return eligible
+
+
+async def _alert_no_stock(context, course: dict, eligible, avail) -> None:
+    short = [(lv, avail[lv["id"]]) for lv, _ in eligible if avail.get(lv["id"])]
+    text = texts.stock_dispatch_alert(course, short)
+    await db.log_event("stock_dispatch_alert", course["id"],
+                       payload={"livreurs": [lv["id"] for lv, _ in short]})
+    for user in await db.list_users(role="ravitailleur", status="active"):
+        await messaging.send(context.bot, user, text)
+    await messaging.notify_dispatch(context.bot, text)
+
+
 def push_restock_later(restock: dict) -> None:
     if sheets.enabled():
         _later(push_restock_tracked(dict(restock)))
 
 
 def after_delivery_later(context, course: dict, livreur: dict | None) -> None:
-    """Remplace sheets.push_delivered_later : même envoi, précédé de l'alerte de stock."""
-    if not sheets.enabled():
-        return
-    if enabled():
-        _later(deliver_then_push(context, dict(course), livreur))
-    else:
-        sheets.push_delivered_later(course)
+    """Remplace sheets.push_delivered_later : même envoi, précédé de l'alerte de stock (si activée)
+    et compté par le bot (stock, espèces) tant qu'il n'est pas confirmé dans la feuille."""
+    if sheets.enabled():
+        _later(deliver_then_push(context, dict(course), livreur, alerts=enabled()))
