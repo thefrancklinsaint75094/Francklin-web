@@ -7,6 +7,7 @@ from telegram import Update
 
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
+from bot.services import names
 
 log = logging.getLogger(__name__)
 
@@ -109,16 +110,22 @@ async def approve(update: Update, context):
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] != "pending":
         return texts.ALREADY_HANDLED
-    n = await db.count_display_names(user["role"]) + 1
     fields = {"status": "active", "conversation_state": None, "state_payload": None, "state_expires_at": None}
     if not user.get("display_name"):
-        fields["display_name"] = f"{texts.ROLE_LABEL[user['role']]} {n}"
+        # Livreur / ravitailleur : premier nom libre de la feuille (« Livreur A »…), sinon « Livreur 3 ».
+        sheet_name = await names.first_free(user["role"], user["id"])
+        n = await db.count_display_names(user["role"]) + 1
+        fields["display_name"] = sheet_name or f"{texts.ROLE_LABEL[user['role']]} {n}"
     user = await db.update_user(user["id"], fields)
     await common.set_commands(context.bot, user)
     await messaging.send(context.bot, user, texts.welcome(user["role"]))
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.registration_approved(user))
     await db.log_event("user_approved", user_id=user["id"], payload={"display_name": user["display_name"]})
+    if names.names_for(user["role"]):
+        from bot.handlers import dispatch
+
+        await dispatch.send_name_picker(update, user)
     return "Validé"
 
 

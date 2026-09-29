@@ -577,3 +577,71 @@ async def assign_do(update: Update, context):
     await db.log_event("course_assigned_by_admin", won["id"], livreur["id"], {"by": admin["id"]})
     await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.assigned_done(won, livreur))
     return "Attribuée ✅"
+
+
+
+# ================================================================ nom dans les feuilles (livreurs, ravitailleurs)
+
+async def _picker(user: dict):
+    from bot.services import names
+
+    return texts.name_picker(user), keyboards.name_picker(user, names.names_for(user["role"]),
+                                                        await names.holders(user["role"]))
+
+
+async def send_name_picker(update: Update, user: dict) -> None:
+    text, markup = await _picker(user)
+    await messaging.reply(update, text, markup)
+
+
+@common.callback
+async def name_ask(update: Update, context):
+    """sname:<utilisateur> : ouvre le choix du nom de feuille."""
+    from bot.services import names
+
+    if await _dispatch(update) is None:
+        return None
+    user = await db.get_user(common.arg(update))
+    if user is None or not names.names_for(user["role"]):
+        return texts.ALREADY_HANDLED, True
+    await send_name_picker(update, user)
+    return None
+
+
+@common.callback
+async def name_set(update: Update, context):
+    """sname_set:<utilisateur>:<n° du nom> : donne ce nom de feuille (s'il est libre)."""
+    from bot.services import names
+
+    admin = await _dispatch(update)
+    if admin is None:
+        return None
+    _, user_id, idx = update.callback_query.data.split(":", 2)
+    user = await db.get_user(user_id)
+    choices = names.names_for(user["role"]) if user else ()
+    if user is None or not 0 <= int(idx) < len(choices):
+        return texts.ALREADY_HANDLED, True
+    name = choices[int(idx)]
+    if user.get("display_name") == name:
+        return f"C'est déjà {name}"
+    holder = await names.holder_of(user["role"], name, exclude_user_id=user["id"])
+    if holder:
+        return texts.name_taken(name, holder), True
+    old = user.get("display_name")
+    user = await db.update_user(user["id"], {"display_name": name})
+    await db.log_event("user_renamed", user_id=user["id"], payload={"from": old, "to": name, "by": admin["id"]})
+    await messaging.send(context.bot, user, texts.name_set_for_user(user))
+    text, markup = await _picker(user)
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         f"{texts.name_set_done(user, old)}\n\n{text}", markup)
+    return f"{old} → {name}"
+
+
+@common.callback
+async def name_done(update: Update, context):
+    if await _dispatch(update) is None:
+        return None
+    user = await db.get_user(common.arg(update))
+    label = f"🏷 {texts.esc(user['display_name'])} ({texts.esc(user.get('real_name') or '?')})" if user else "OK"
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, label)
+    return None

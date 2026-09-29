@@ -288,3 +288,13 @@ simple qui respecte le mur de confidentialité (§12).
 86. À l'attribution, le stock disponible retire les quantités des autres courses du livreur, attribuées mais pas
     encore livrées (cas « 1 + 1 » ou attribution par un admin) : « c'est le dernier US » tient compte de ce qu'il
     doit déjà livrer.
+
+## Noms de feuille
+
+87. **Le nom d'un livreur (ou ravitailleur) dans le bot est son nom dans les feuilles** (« Livreur A »…),
+    choisi par un admin parmi `LIVREUR_NAMES` / `RAVITAILLEUR_NAMES` : à la validation (premier nom libre
+    proposé d'office + boutons pour changer) et à tout moment depuis `/livreurs` → 🏷. Plus de table de
+    correspondance à tenir côté feuilles, donc plus d'incohérence entre bot, Dispatch et Rechargement.
+88. Unicité : un nom porté par un autre utilisateur non exclu est refusé (🔒). Un exclu libère son nom.
+    Liste vide (`LIVREUR_NAMES=-`) : ancien comportement « Livreur 1 », « Livreur 2 »…
+89. Les lignes déjà écrites dans les feuilles gardent l'ancien nom ; le livreur est prévenu de son nouveau nom.

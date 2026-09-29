@@ -41,6 +41,14 @@ def _int(name: str, default: int) -> int:
         raise ConfigError(f"{name} doit être un nombre entier (reçu : {value!r})") from exc
 
 
+def _names(name: str, default: str) -> tuple[str, ...]:
+    """Liste de noms séparés par des virgules ; « - » pour n'en mettre aucun."""
+    value = _raw(name)
+    if value is None:
+        value = default
+    return tuple(n.strip() for n in value.split(",") if n.strip() and n.strip() != "-")
+
+
 def _mode() -> str:
     """EXTRACTION_MODE : « regles » (lecture par règles, sans IA) ou « ia ».
     Sans valeur : « ia » si une clé Anthropic est fournie, sinon « regles »."""
@@ -78,6 +86,8 @@ class Config:
     arrival_notify_meters: int = 500
     arrival_notify_minutes: int = 5
     stock_alerts: bool = True
+    livreur_names: tuple[str, ...] = ()        # noms des livreurs dans les feuilles (vide : « Livreur 1 »…)
+    ravitailleur_names: tuple[str, ...] = ()
 
     @property
     def uses_ai(self) -> bool:
@@ -120,6 +130,8 @@ class Config:
             arrival_notify_meters=_int("ARRIVAL_NOTIFY_METERS", 500),
             arrival_notify_minutes=_int("ARRIVAL_NOTIFY_MINUTES", 5),
             stock_alerts=(_raw("STOCK_ALERTS") or "1").lower() not in ("0", "non", "false", "off"),
+            livreur_names=_names("LIVREUR_NAMES", "Livreur A,Livreur B,Livreur C,Livreur D,Livreur R,Livreur X"),
+            ravitailleur_names=_names("RAVITAILLEUR_NAMES", "Ravitailleur 1,Ravitailleur 2"),
         )
         if cfg.extraction_mode == "ia" and not cfg.anthropic_api_key:
             raise ConfigError("EXTRACTION_MODE=ia demande ANTHROPIC_API_KEY")
