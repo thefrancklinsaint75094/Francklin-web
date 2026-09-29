@@ -1724,12 +1724,12 @@ async def test_weekly_cloture(h, monkeypatch):
     def txt(m):
         return m.text.replace("\xa0", " ")
 
-    await h.text(L1, "/cloture")
+    await h.text(L1, "/reset")
     assert h.tg.last(L1).text == texts.NOT_FOR_YOU
 
-    await h.text(DISPATCH, "/cloture")
+    await h.text(DISPATCH, "/reset")
     check = h.tg.last(DISPATCH)
-    assert "🗓 <b>Clôture de la semaine</b>" in check.text
+    assert "🗓 <b>Reset de la semaine</b>" in check.text
     assert "• Livreur 1 : 4 DIV · 4 US" in txt(check) and "Livreur 2" not in txt(check).split("📦 Reporté")[1]
     assert "⚠️ Cash pas encore récupéré" in txt(check) and "• Livreur 1 : 50 €" in txt(check)
     assert "Reste chez le ravitailleur : 70 €" in txt(check)
@@ -1745,13 +1745,13 @@ async def test_weekly_cloture(h, monkeypatch):
     await h.press_data(F1, check, "cl_go")
     done = h.tg.messages[(F1, check.message_id)]
     action, payload, timeout = calls[-1]
-    assert action == "cloture" and payload["onglet"] in sheets.JOURS and payload["libelle"].startswith("Clôture du ")
+    assert action == "cloture" and payload["onglet"] in sheets.JOURS and payload["libelle"].startswith("Reset du ")
     assert timeout == cloture_h.TIMEOUT
-    assert "✅ <b>Semaine clôturée</b>" in done.text and 'href="https://drive.google.com/drive/folders/abc"' in done.text
+    assert "✅ <b>Semaine remise à zéro</b>" in done.text and 'href="https://drive.google.com/drive/folders/abc"' in done.text
     assert "• Box 1 : 28 DIV · 112 US" in done.text and "• Box 2 : vide" in done.text
     assert "• Livreur 1 : 4 DIV · 4 US" in done.text
     assert stock_service.inflight_deltas(l1["id"]) == {}
-    assert "✅ <b>Semaine clôturée</b>" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
+    assert "✅ <b>Semaine remise à zéro</b>" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
     assert (await db._t("events").select("*").eq("type", "cloture").execute()).data
 
     # Deuxième appui (ou deuxième admin) juste après : refusé.
@@ -1766,8 +1766,80 @@ async def test_weekly_cloture(h, monkeypatch):
     await h.text(DISPATCH, "/cloture")
     check = h.tg.last(DISPATCH)
     await h.press_data(DISPATCH, check, "cl_go")
-    assert "⚠️ Clôture impossible : COMPTA_SPREADSHEET_ID vide" in h.tg.messages[(DISPATCH, check.message_id)].text
+    assert "⚠️ Reset impossible : COMPTA_SPREADSHEET_ID vide" in h.tg.messages[(DISPATCH, check.message_id)].text
     assert cloture_h._last_done is None
 
     await cloture_h.weekly_reminder(h.context)
     assert h.tg.last(DISPATCH).text == texts.CLOTURE_REMINDER
+
+
+async def test_close_day_debrief(h, monkeypatch):
+    """/close : débrief de la journée, sans rien changer ; cash à récupérer et stock bas si la feuille est reliée."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_send(rows, client=None):
+        return len(rows)
+
+    async def fake_action(action, client=None, **kw):
+        if action == "cash_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"especes": 60, "cash": 60}, "Livreur 2": {"cash": 0}}}
+        if action == "stock_box":
+            return {"ok": True, "boxes": {}, "totals": [{"produit": "KT", "total": 0, "seuil": 20, "statut": "RUPTURE"},
+                                                        {"produit": "DIV", "total": 50, "seuil": 20, "statut": "OK"}]}
+        return {"ok": False, "error": "?"}
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    await go_on_duty(h, L2, REPUBLIQUE)
+    c1 = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c1['id']}"), "course_take:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"), pay="e")
+    c2 = await order(h, F2, "oberkampf")
+    await h.press(L2, h.tg.find(L2, f"🆕 Course #{c2['id']}"), "course_take:")
+    await deliver_course(h, L2, h.tg.find(L2, "c'est pour toi"), pay="v")
+    await order(h, F1, "rivoli")                         # reste en attente
+    await h.text(L1, "/depense")
+    msg_id = h.tg.last(L1).message_id
+    for d in ("dp_k:c", "dp_a:10", "dp_n", "dp_m:0", "dp_ok"):
+        await h.press_data(L1, h.tg.messages[(L1, msg_id)], d)
+    await asyncio.gather(*list(sheets._tasks))
+
+    await h.text(L1, "/close")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    await h.text(F1, "/close")
+    text = h.tg.last(F1).text.replace("\xa0", " ")
+    assert text.startswith("🔒 <b>Journée close — nuit du")
+    assert "📦 <b>2 courses livrées — 110 €</b>" in text and "💵 espèces 60 € · 💳 virement 50 €" in text
+    assert "⚠️ 1 course encore ouverte (/encours)" in text
+    assert "• Livreur 1 — 1 course — 60 € (💵 60 € · 💳 0 €) — 🧾 10 €" in text
+    assert "• Livreur 2 — 1 course — 50 € (💵 0 € · 💳 50 €)" in text
+    assert "• Franchisé 1 — 1 course — 60 €" in text and "• Franchisé 2 — 1 course — 50 €" in text
+    assert "🧾 Dépenses : 10 € (charges 10 € · payes 0 €)" in text
+    assert "💶 <b>Cash à récupérer</b> (semaine)\n• Livreur 1 : 60 €" in text and "Livreur 2 : 0" not in text
+    assert "🔴 KT : 0 (seuil 20)" in text and "DIV" not in text.split("Stock sous le seuil")[1]
+    assert "✅ Journée terminée" in text
+    assert "(par Franchisé 1)" in h.tg.last(DISPATCH).text
+    # Rien n'a changé : la course en attente l'est toujours.
+    assert len(await db.list_courses_by_status("pending")) == 1
+    assert (await db._t("events").select("*").eq("type", "day_closed").execute()).data
+
+
+async def test_close_day_picks_the_night_that_just_ended(h, monkeypatch):
+    """/close à 10h le matin : la nuit qui vient de finir (rien livré depuis 6h) ; à 3h : la nuit en cours."""
+    from datetime import datetime
+
+    from bot.config import PARIS
+    from bot.handlers import close_day
+
+    monkeypatch.setattr(close_day, "now_utc", lambda: datetime(2026, 9, 29, 10, 0, tzinfo=PARIS))
+    assert (await close_day.closing_night()).isoformat() == "2026-09-28"
+    monkeypatch.setattr(close_day, "now_utc", lambda: datetime(2026, 9, 29, 3, 0, tzinfo=PARIS))
+    assert (await close_day.closing_night()).isoformat() == "2026-09-28"
+    monkeypatch.setattr(close_day, "now_utc", lambda: datetime(2026, 9, 29, 22, 0, tzinfo=PARIS))
+    assert (await close_day.closing_night()).isoformat() == "2026-09-29"

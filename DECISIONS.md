@@ -353,3 +353,13 @@ simple qui respecte le mur de confidentialité (§12).
      pas de ligne propre pour le faire sans fausser charges ou récupérations ; ils sont signalés avant de
      confirmer et restent dans l'archive.
 103. Après la clôture, le bot oublie ses mouvements en vol : ils appartenaient à la semaine archivée.
+
+## Débrief de la journée et nom du reset
+
+104. `/cloture` renommée **`/reset`** à la demande de l'exploitant ; l'ancien nom reste accepté (sans être
+     affiché) pour ne pas surprendre. Le nom de l'action du script (`cloture`) ne change pas : pas besoin de
+     recoller le script.
+105. **`/close`** = débrief seulement : il ne met personne en pause et ne touche ni à la base ni aux feuilles.
+     Journée visée : la nuit en cours ; en journée (entre fin et début de nuit), la nuit qui vient de finir,
+     sauf si des courses ont déjà été livrées depuis la fin de nuit (activité de jour). Le cash à récupérer
+     affiché est celui de la feuille, donc le cumul de la semaine, et il est présenté comme tel.

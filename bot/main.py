@@ -16,7 +16,7 @@ from telegram.ext import (
 from bot import config, db, jobs, messaging, texts
 from bot.config import PARIS
 from bot.handlers import (
-    cash, cloture, common, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
+    cash, close_day, cloture, common, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
 )
 
 log = logging.getLogger("bot")
@@ -139,7 +139,9 @@ def register_handlers(app: Application) -> None:
     cmd("depense", cash.depense)
     cmd("caisse", cash.caisse)
     cmd("macaisse", cash.macaisse)
-    cmd("cloture", cloture.cloture)
+    cmd("reset", cloture.cloture)
+    cmd("close", close_day.close)
+    cmd("cloture", cloture.cloture)   # ancien nom, gardé
 
     callbacks = [
         (r"^role:", onboarding.choose_role),

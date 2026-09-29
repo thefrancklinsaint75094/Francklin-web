@@ -206,7 +206,7 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
   franchisé) : le livreur reçoit directement sa fiche ;
 - sur son message de course, le franchisé a aussi **✏️ Modifier** et **📦 Livrée** ;
 - toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/stock`,
-  `/caisse`, `/depense`, `/synchro`, `/cloture`, `/exclure`, `/reactiver`, `/produits`.
+  `/caisse`, `/depense`, `/synchro`, `/close`, `/reset`, `/exclure`, `/reactiver`, `/produits`.
 
 Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
@@ -283,13 +283,23 @@ proche et les ravitailleurs et le dispatch reçoivent une alerte (une fois par c
 produits absents des colonnes de la feuille (coca…) sont ignorés. Le stock des livreurs est relu au plus une
 fois par minute.
 
-### Clôture de la semaine (`/cloture`)
+### Débrief de la journée (`/close`)
+
+Pour les admins, en fin de nuit : un message « 🔒 Journée close » qui résume la nuit, sans rien changer —
+courses livrées et total (💵 espèces / 💳 virement), annulations, courses encore ouvertes, chiffres par livreur
+(avec ses dépenses) et par franchisé, dépenses et rechargements de la nuit, puis, si Google Sheets est relié,
+le cash à récupérer (cumul de la semaine) et les produits sous le seuil. Lancé le matin, il porte sur la nuit
+qui vient de finir. Le dispatch reçoit le débrief quand c'est un franchisé qui clôt la journée.
+
+### Remise à zéro de la semaine (`/reset`)
+
+(Ancien nom `/cloture`, qui marche toujours.)
 
 Pour les admins, le lundi matin (rappel automatique au dispatch le lundi à 6h05). Le bot montre d'abord ce qui
 va se passer : stock encore chez les livreurs (**reporté**), cash pas encore récupéré et reste chez le
-ravitailleur (**remis à zéro** : récupère-les avant), courses encore ouvertes. Puis **✅ Clôturer la semaine** :
+ravitailleur (**remis à zéro** : récupère-les avant), courses encore ouvertes. Puis **✅ Reset de la semaine** :
 
-1. copie des 3 fichiers dans Google Drive, dossier **Archives bot / Clôture du …** (si la copie échoue, rien
+1. copie des 3 fichiers dans Google Drive, dossier **Archives bot / Reset du …** (si la copie échoue, rien
    n'est effacé) ;
 2. le stock actuel des box (ORGA ④) devient le **stock initial** (COMPTA, onglet STOCK, colonnes B à P) ;
 3. remise à zéro : lignes de commande et dépenses des 7 onglets de la feuille Dispatch (Vendeur repasse à
