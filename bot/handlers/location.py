@@ -8,7 +8,7 @@ from telegram import Update
 
 from bot import config, db, messaging, texts
 from bot.handlers import common
-from bot.services import broadcast
+from bot.services import arrival, broadcast
 from bot.services.distance import haversine_m
 
 log = logging.getLogger(__name__)
@@ -34,7 +34,10 @@ async def on_location(update: Update, context) -> None:
         return
 
     loc = msg.location
+    previous = await db.get_position(user["id"])
     await db.upsert_position(user["id"], loc.latitude, loc.longitude)
+    # Le livreur approche d'une adresse : franchisé et dispatch prévenus (une fois par course).
+    await arrival.check(context, user, loc.latitude, loc.longitude, previous)
     became_available = False
     if not edited:
         if not user.get("on_duty"):

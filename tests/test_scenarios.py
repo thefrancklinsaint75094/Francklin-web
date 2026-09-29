@@ -77,6 +77,9 @@ async def h(database, monkeypatch):
     franchise_h.set_extractor(FakeExtractor())
     lifecycle._no_livreur.clear()
     lifecycle._notice.clear()
+    from bot.services import arrival
+
+    arrival._notified.clear()
     harness = await Harness.create()
     yield harness
     await harness.close()
@@ -1230,3 +1233,31 @@ async def test_franchise_has_full_admin_powers(h):
     lv = await db.get_user(l1["id"])
     assert lv["on_duty"] is False and lv["duty_forced"] is False
     assert "t'a mis en pause" in h.tg.last(L1).text
+
+
+
+async def test_franchise_and_dispatch_notified_when_livreur_arrives(h):
+    """Le livreur approche : franchisé et dispatch prévenus une seule fois par course."""
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    far = (48.8700, 2.3300)                     # ~2,3 km de Rivoli : ≈ 10 min à 15 km/h
+    await go_on_duty(h, L1, far)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    n_f1 = len(h.tg.inbox(F1))
+    await h.location(L1, *far, edited=True, message_id=L1)
+    assert len(h.tg.inbox(F1)) == n_f1          # encore loin : rien
+
+    near = (48.8560, 2.3600)                    # ~200 m de l'adresse
+    await h.location(L1, *near, edited=True, message_id=L1)
+    alert = h.tg.last(F1).text.replace("\xa0", " ")
+    assert alert.startswith(f"📍 Livreur 1 arrive — course #{course['id']} : à ~200 m")
+    assert "12 Rue de Rivoli" in alert
+    assert any(t.startswith(f"📍 #{course['id']} — Livreur 1 arrive") for t in h.tg.texts(DISPATCH))
+    [event] = await db.list_events(course["id"], "arrival_notified")
+    assert event["payload"]["distance_m"] < 500
+
+    # Positions suivantes : pas de nouvelle alerte.
+    await h.location(L1, 48.8557, 2.3585, edited=True, message_id=L1)
+    await h.location(L1, 48.8556, 2.3578, edited=True, message_id=L1)
+    assert sum(1 for t in h.tg.texts(F1) if t.startswith("📍 Livreur 1 arrive")) == 1
+    assert len(await db.list_events(course["id"], "arrival_notified")) == 1

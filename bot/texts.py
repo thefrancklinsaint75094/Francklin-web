@@ -640,6 +640,16 @@ def d_error(kind: str) -> str:
 CANNOT_BAN_SELF = "Tu ne peux pas t'exclure toi-même."
 
 
+def arrival_for_franchise(course: dict, livreur: dict, distance_label: str, minutes: int) -> str:
+    return (f"📍 {esc(livreur.get('display_name') or 'Le livreur')} arrive — course #{course['id']} : "
+            f"à {distance_label} (≈ {minutes} min)\n{course_summary(course)}")
+
+
+def d_arrival(course: dict, livreur: dict, distance_label: str, minutes: int) -> str:
+    return (f"📍 #{course['id']} — {esc(livreur.get('display_name') or '?')} arrive : "
+            f"à {distance_label} (≈ {minutes} min) — {esc(course['district'])}")
+
+
 def livreurs_list(rows: list[tuple[dict, bool, int]]) -> str:
     """rows : (livreur, position fraîche ?, nombre de courses en cours)."""
     if not rows:

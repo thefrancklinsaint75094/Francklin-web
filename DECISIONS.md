@@ -249,3 +249,15 @@ simple qui respecte le mur de confidentialité (§12).
     attente ou en cours) et **📦 Livrée** (avec confirmation, comme dans `/encours`). Une modification par un
     admin prévient le livreur (nouveau message + fiche mise à jour) et le dispatch.
 76. Au démarrage, les menus de commandes Telegram de tous les utilisateurs actifs sont remis à jour.
+
+## Alerte d'arrivée
+
+77. **« Le livreur arrive »** : à chaque position reçue, pour chaque course en cours du livreur, alerte au
+    franchisé (nouveau message, pour qu'il sonne) et au dispatch quand la distance à l'adresse passe sous
+    `ARRIVAL_NOTIFY_METERS` (500 m) **ou** le temps estimé sous `ARRIVAL_NOTIFY_MINUTES` (5 min). Une seule fois
+    par attribution (événement `arrival_notified`, avec la date d'attribution : une course réattribuée peut
+    alerter à nouveau).
+78. Temps estimé = distance à vol d'oiseau / vitesse. La vitesse est mesurée entre les deux dernières positions
+    (échantillon de 5 s à 10 min, entre 1 et 20 m/s) ; sinon 15 km/h, moyenne d'un deux-roues en ville. C'est
+    une estimation : pas d'appel à un service d'itinéraires (coût, dépendance), la marge de 500 m / 5 min suffit.
+79. Une erreur dans l'alerte n'interrompt jamais l'enregistrement de la position ni le « bientôt libre ».
