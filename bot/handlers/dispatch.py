@@ -118,7 +118,7 @@ def build_csv(courses: list[dict], users: dict[str, dict]) -> bytes:
             users.get(c["livreur_id"], {}).get("display_name", ""),
             c["address"], c.get("address_detail") or "", c["products"],
             f"{float(c['price']):.2f}".replace(".", ","),
-            {"especes": "Espèces", "virement": "Virement"}.get(c.get("payment") or "", ""),
+            sheets.PAYMENT_SHEET.get(c.get("payment") or "", ""),
         ])
     return buf.getvalue().encode("utf-8-sig")
 
