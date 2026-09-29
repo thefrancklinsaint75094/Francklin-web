@@ -659,8 +659,10 @@ def stock_assignment_alert(course: dict, livreur: dict, sheet_name: str,
         p = esc(product)
         if have <= 0:
             lines.append(f"• {who} n'a plus de {p} sur lui ({need} commandé{'s' if need > 1 else ''})")
+        elif need == have == 1:
+            lines.append(f"• C'est le dernier {p} de {who}")
         elif need == have:
-            lines.append(f"• Ce sont les {_n(have)} dernier{'s' if have > 1 else ''} {p} de {who}")
+            lines.append(f"• Ce sont les {_n(have)} derniers {p} de {who}")
         else:
             lines.append(f"• {who} n'a que {_n(have)} {p} sur lui pour {need} commandé{'s' if need > 1 else ''}")
     return "\n".join(lines)

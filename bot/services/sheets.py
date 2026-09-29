@@ -132,19 +132,21 @@ def restock_row(restock: dict, users: dict[str, dict]) -> dict:
     }
 
 
-async def push_restock(restock: dict) -> None:
-    """Ajoute un rechargement au tableau Rechargement. Ne lève jamais d'exception."""
+async def push_restock(restock: dict) -> bool:
+    """Ajoute un rechargement au tableau Rechargement. True s'il y est. Ne lève jamais d'exception."""
     if not enabled():
-        return
+        return False
     try:
         users = await db.get_users([restock["livreur_id"], restock["by_user_id"]])
         await send_rows([restock_row(restock, users)])
+        return True
     except Exception as exc:  # noqa: BLE001 — la feuille ne doit jamais bloquer le rechargement
         log.warning("Rechargement R#%s non envoyé à Google Sheets : %s", restock.get("id"), exc)
         try:
             await db.log_event("sheet_error", payload={"restock_id": restock.get("id"), "error": str(exc)[:300]})
         except Exception:  # noqa: BLE001
             pass
+        return False
 
 
 def push_restock_later(restock: dict) -> None:
@@ -263,19 +265,21 @@ async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) ->
             await client.aclose()
 
 
-async def push_delivered(course: dict) -> None:
-    """Ajoute une course livrée à la feuille. Ne lève jamais d'exception."""
+async def push_delivered(course: dict) -> bool:
+    """Ajoute une course livrée à la feuille. True si elle y est. Ne lève jamais d'exception."""
     if not enabled():
-        return
+        return False
     try:
         users = await db.get_users([course["franchise_id"], course.get("livreur_id")])
         await send_rows([row(course, users, await load_catalog())])
+        return True
     except Exception as exc:  # noqa: BLE001 — la feuille ne doit jamais bloquer une livraison
         log.warning("Course #%s non envoyée à Google Sheets : %s", course.get("id"), exc)
         try:
             await db.log_event("sheet_error", course.get("id"), payload={"error": str(exc)[:300]})
         except Exception:  # noqa: BLE001
             pass
+        return False
 
 
 def push_delivered_later(course: dict) -> None:

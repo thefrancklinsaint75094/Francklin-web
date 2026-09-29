@@ -80,6 +80,9 @@ async def h(database, monkeypatch):
     from bot.services import arrival
 
     arrival._notified.clear()
+    from bot.services import stock as stock_service
+
+    stock_service._inflight.clear()
     harness = await Harness.create()
     yield harness
     await harness.close()
@@ -1310,3 +1313,52 @@ async def test_stock_alerts_last_units_and_empty(h, monkeypatch, test_config):
     assert [e["type"] for e in await db.list_events(course["id"], "stock_warning")] == ["stock_warning"]
     assert len(await db.list_events(course["id"], "stock_empty")) == 1
     del r1
+
+
+
+async def test_stock_computed_in_parallel_of_the_sheet(h, monkeypatch, test_config):
+    """La feuille a du retard : le bot compte lui-même les courses déjà attribuées et les ventes
+    pas encore écrites (envoi en échec), pour ne jamais rater une alerte."""
+    import dataclasses
+
+    from bot import config
+    from bot.services import sheets
+
+    config.set_config(dataclasses.replace(test_config, stock_alerts=True))
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def sheet_stock(livreur, client=None):
+        return {"US": 3}, "Livreur A"            # la feuille ne bouge pas (retard)
+
+    async def sheet_down(rows, client=None):
+        raise RuntimeError("feuille injoignable")
+
+    monkeypatch.setattr(sheets, "fetch_stock", sheet_stock)
+    monkeypatch.setattr(sheets, "send_rows", sheet_down)
+    await db.create_product("US", "us", [])
+    EXTRACTIONS["deux us"] = [{**RIVOLI, "products": "2 US", "price": 60}]
+    EXTRACTIONS["un us"] = [{**OBERKAMPF, "products": "1 US", "price": 30}]
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+
+    c1 = await order(h, F1, "deux us")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await asyncio.gather(*list(sheets._tasks))
+    assert not [t for t in h.tg.texts(F1) if t.startswith("⚠️ Stock")]      # 3 US, 2 commandés : rien
+
+    # Deuxième course attribuée par un admin au même livreur : 3 − 2 déjà promis = 1 → le dernier.
+    c2 = await order(h, F2, "un us")
+    await h.press(F2, h.tg.find(F2, f"Course #{c2['id']}"), "assign:")
+    await h.press(F2, h.tg.last(F2), "assign_to:")
+    await asyncio.gather(*list(sheets._tasks))
+    assert f"• C'est le dernier US de Livreur 1 (Livreur A)" in h.tg.find(F2, "⚠️ Stock").text
+
+    # Livraison de la 1re : la feuille est injoignable, la vente reste comptée par le bot.
+    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c1['id']}"), "course_deliver:")
+    await asyncio.gather(*list(sheets._tasks))
+    assert not [t for t in h.tg.texts(F1) if t.startswith("📭")]            # 3 − 2 = 1 : il en reste
+    # Livraison de la 2e : feuille toujours à 3, mais le bot sait qu'il n'en reste qu'1 → épuisé.
+    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"), "course_deliver:")
+    await asyncio.gather(*list(sheets._tasks))
+    assert h.tg.find(F2, "📭").text.startswith("📭 Livreur 1 (Livreur A) n'a plus de US sur lui")

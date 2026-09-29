@@ -14,7 +14,7 @@ from telegram import Update
 
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
-from bot.services import order_edit, restock, sheets
+from bot.services import order_edit, restock, stock
 from bot.timeutil import now_utc
 
 log = logging.getLogger(__name__)
@@ -167,7 +167,7 @@ async def _validate(context, chat_id: int, user: dict, payload: dict):
     await messaging.send(context.bot, livreur, texts.restock_for_livreur(row))
     if user["role"] != "dispatch":
         await messaging.notify_dispatch(context.bot, texts.d_restock(row, user, livreur))
-    sheets.push_restock_later(row)
+    stock.push_restock_later(row)
     return "Enregistré ✅"
 
 

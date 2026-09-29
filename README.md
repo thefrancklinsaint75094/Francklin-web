@@ -157,8 +157,16 @@ livreur partage sa position **en direct**.
 
 ### Alertes de stock du livreur
 
-Le bot lit le stock du livreur dans l'onglet **SOLDES** du tableau Rechargement (chargé − repris − vendu OK,
-saisies à la main comprises), par le script Google (action `stock`, noms via PARAMETRES J/K) :
+Le stock du livreur est calculé **en direct**, sans attendre les IMPORTRANGE entre les fichiers :
+
+- le script Google (action `stock`) prend le **chargé net** de SOLDES (section ②, calculée dans le tableau
+  Rechargement lui-même) et retire les **ventes au statut OK lues directement dans les 7 onglets de la feuille
+  Dispatch** — saisies à la main comprises ;
+- le bot y ajoute ses propres mouvements **pas encore écrits** dans les feuilles (livraison ou rechargement en
+  cours d'envoi, ou dont l'envoi a échoué) ;
+- à l'attribution, il retire aussi les **autres courses déjà attribuées** au livreur, pas encore livrées.
+
+Alertes :
 
 - **à l'attribution** : « ⚠️ Stock — course #142 : • Ce sont les 2 derniers US de Livreur 1 (Livreur A) », ou
   « n'a que 1 US pour 2 commandés », ou « n'a plus de US sur lui » ;
