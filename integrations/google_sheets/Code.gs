@@ -14,7 +14,7 @@
  * Chaque course livrée est écrite dans l'onglet de la nuit, sur la première ligne
  * de commande vide (lignes 2 à 41), colonnes A à N : Vendeur (toujours VENDEUR,
  * « TOTAL »), Livreur, Statut « OK »,
- * Adresse, Paiement (laissé vide), puis 3 produits (Produit, Qté, Prix). Au-delà de
+ * Adresse, Paiement (Espèces / Virement), puis 3 produits (Produit, Qté, Prix). Au-delà de
  * 3 produits, la suite va sur la ligne vide suivante. Le numéro de course est gardé
  * dans une note sur la cellule Vendeur : une course n'est jamais écrite deux fois.
  *
