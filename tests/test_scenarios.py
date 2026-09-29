@@ -1551,7 +1551,7 @@ async def test_expenses_and_cash_to_collect(h, monkeypatch):
     monkeypatch.setattr(sheets, "send_rows", fake_send)
     monkeypatch.setattr(sheets, "fetch_action", fake_action)
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
-    r1 = await register(h, R1, "ravitailleur", "Sam")
+    await register(h, R1, "ravitailleur", "Sam")
 
     def txt(m):
         return m.text.replace("\xa0", " ")
