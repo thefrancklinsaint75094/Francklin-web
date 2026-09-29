@@ -39,10 +39,29 @@ async def dispo(update: Update, context) -> None:
         # Position en direct toujours reçue : pas besoin de la repartager.
         await db.update_user(user["id"], {"on_duty": True})
         await db.log_event("livreur_on_duty", user_id=user["id"])
-        await messaging.reply(update, texts.ON_DUTY)
+        await messaging.reply(update, texts.ON_DUTY, keyboards.transport_mode(user.get("transport_mode")))
         await broadcast.kick_pending(context)
     else:
-        await messaging.reply(update, texts.DISPO_PROMPT)
+        await messaging.reply(update, texts.DISPO_PROMPT, keyboards.transport_mode(user.get("transport_mode")))
+
+
+@common.callback
+async def transport_mode(update: Update, context):
+    """tmode:t|d|v — 🚶 transport, 🛵 deux-roues, 🚗 voiture (retenu jusqu'au prochain changement)."""
+    from bot.services import transport
+
+    user = await _livreur(update)
+    if user is None:
+        return None
+    mode = transport.MODES.get(common.arg(update))
+    if mode is None:
+        return None
+    if user.get("transport_mode") != mode:
+        await db.update_user(user["id"], {"transport_mode": mode})
+        await db.log_event("transport_mode", user_id=user["id"], payload={"mode": mode})
+    await messaging.edit_markup(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                                keyboards.transport_mode(mode))
+    return texts.transport_set(mode)
 
 
 async def pause(update: Update, context) -> None:

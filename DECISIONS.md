@@ -366,3 +366,25 @@ simple qui respecte le mur de confidentialité (§12).
 106. **Prix libre à la modification** (demande de l'exploitant) : ➖ / ➕ ne changent plus que la quantité ; le
      prix de la ligne n'est jamais recalculé (remplace le « prix unitaire gardé » des n° 60 et 64). Le livreur
      ou l'admin met le prix qu'il veut en touchant le produit ; la règle des 10 € reste.
+
+## Moyen de déplacement
+
+107. Trois modes, décidés par l'exploitant : **transport** (à pied et transports en commun, c'est pareil),
+     **deux-roues**, **voiture**. Déclaré au `/dispo` par boutons sous le message (pas de message de plus) et
+     retenu d'un jour sur l'autre ; un livreur sans mode est traité comme un deux-roues (comportement d'avant).
+108. Dispatch : tri par **temps de trajet estimé** (transport : le plus court entre marcher à 4,5 km/h et
+     10 min d'accès + métro à 25 km/h ; deux-roues : 20 km/h ; voiture : 4 min de stationnement + 17 km/h),
+     et rayon de `TRANSPORT_MAX_KM` (5 km) pour un livreur en transport. Le classement selon le stock (n° 98)
+     garde cet ordre dans chaque groupe.
+109. **Métro reconnu sans historique de positions** : la position précédente et son heure (déjà en base)
+     suffisent. Trou de 2 min 30 à 30 min + saut ≥ 800 m à 12–45 km/h + deux stations **différentes** à
+     moins de 400 m (métro et RER seulement, données IDFM téléchargées au démarrage). Sans liste de stations,
+     trou + saut + vitesse seuls. Seulement pendant une course attribuée avant le trou, et seulement sur des
+     mises à jour de la position en direct (pas un nouveau partage après une pause).
+110. **Véhicule** : 3 positions de suite > 25 km/h espacées de moins de 90 s (un livreur en métro n'envoie rien
+     sous terre ; un bus dépasse rarement 25 km/h de façon continue). Limite connue : RER en surface.
+     **À pied** : ≥ 4 positions, jamais > 8 km/h, constaté à la livraison (statistiques en mémoire, perdues à un
+     redémarrage : alors pas de conclusion).
+111. Le dispatch n'est prévenu que d'une **contradiction** (métro alors que deux-roues/voiture déclaré,
+     véhicule alors que transport déclaré), une fois par course et par mode. Les autres détections sont
+     seulement enregistrées (`courses.detected_mode`, événement `transport_detected`) et montrées au `/close`.

@@ -36,9 +36,13 @@ def measured_speed(prev: dict | None, lat: float, lon: float, now: datetime) -> 
     return speed if MIN_SPEED_MS <= speed <= MAX_SPEED_MS else None
 
 
-def eta_minutes(distance_m: float, speed_ms: float | None) -> int:
-    """Minutes estimées jusqu'à l'adresse, arrondies à la minute supérieure (au moins 1)."""
-    speed = speed_ms or DEFAULT_SPEED_MS
+WALK_SPEED_MS = 4.5 / 3.6       # livreur en transport : les derniers mètres se font à pied
+
+
+def eta_minutes(distance_m: float, speed_ms: float | None, mode: str | None = None) -> int:
+    """Minutes estimées jusqu'à l'adresse, arrondies à la minute supérieure (au moins 1).
+    Sans vitesse mesurée : à pied pour un livreur en transport, sinon 15 km/h."""
+    speed = speed_ms or (WALK_SPEED_MS if mode == "transport" else DEFAULT_SPEED_MS)
     return max(1, int(-(-distance_m // (speed * 60))))
 
 
@@ -70,7 +74,7 @@ async def check(context, livreur: dict, lat: float, lon: float, prev: dict | Non
         speed = measured_speed(prev, lat, lon, now_utc())
         for course in courses:
             dist = haversine_m(lat, lon, course["lat"], course["lon"])
-            eta = eta_minutes(dist, speed)
+            eta = eta_minutes(dist, speed, livreur.get("transport_mode"))
             if not should_notify(dist, eta, cfg.arrival_notify_meters, cfg.arrival_notify_minutes):
                 continue
             if await _already(course):

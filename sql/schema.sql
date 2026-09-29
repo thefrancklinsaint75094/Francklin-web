@@ -14,6 +14,7 @@ create table users (
   on_duty         boolean not null default false,   -- livreur en service
   soon_free       boolean not null default false,   -- livreur a signalé qu'il termine
   duty_forced     boolean not null default false,   -- mis en service par un admin (même sans position)
+  transport_mode  text check (transport_mode in ('transport','deux_roues','voiture')),  -- déclaré au /dispo
   cancel_count    integer not null default 0,       -- annulations après acceptation
   conversation_state text,                          -- null | 'awaiting_role' | 'awaiting_name' | 'correcting' | 'relaying'
   state_payload   jsonb,                             -- ex : {"draft_id": "..."} ou {"course_id": 142}
@@ -57,7 +58,8 @@ create table courses (
   assigned_at     timestamptz,
   delivered_at    timestamptz,
   closed_at       timestamptz,
-  payment         text check (payment in ('especes','virement'))   -- mode de paiement à la livraison
+  payment         text check (payment in ('especes','virement')),  -- mode de paiement à la livraison
+  detected_mode   text check (detected_mode in ('metro','vehicule','pied'))  -- déplacement détecté pendant la course
 );
 
 create table livreur_positions (

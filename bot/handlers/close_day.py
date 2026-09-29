@@ -61,7 +61,7 @@ async def build_debrief(night: date) -> str:
         return users.get(uid, {}).get("display_name") or "?"
 
     per_livreur: dict[str, dict] = defaultdict(lambda: {"n": 0, "total": 0.0, "especes": 0.0, "virement": 0.0,
-                                                        "depenses": 0.0})
+                                                        "depenses": 0.0, "mode": None})
     per_franchise: dict[str, dict] = defaultdict(lambda: {"n": 0, "total": 0.0})
     pay = {"especes": 0.0, "virement": 0.0, "": 0.0}
     for c in delivered:
@@ -69,6 +69,7 @@ async def build_debrief(night: date) -> str:
         mode = c.get("payment") or ""
         pay[mode] = pay.get(mode, 0.0) + price
         lv = per_livreur[name(c.get("livreur_id"))]
+        lv["mode"] = users.get(c.get("livreur_id"), {}).get("transport_mode")
         lv["n"] += 1
         lv["total"] += price
         if mode in ("especes", "virement"):
@@ -79,6 +80,10 @@ async def build_debrief(night: date) -> str:
     for e in expenses:
         per_livreur[name(e["livreur_id"])]["depenses"] += float(e["amount"])
 
+    # Déplacements détectés pendant les courses, avec le mode déclaré par le livreur.
+    moves = [(c["id"], name(c.get("livreur_id")), c["detected_mode"],
+              users.get(c.get("livreur_id"), {}).get("transport_mode"))
+             for c in sorted(delivered, key=lambda c: c["id"]) if c.get("detected_mode")]
     cash_rows, alerts = await _sheet_extras()
     return texts.day_debrief(
         night_label(night),
@@ -89,7 +94,7 @@ async def build_debrief(night: date) -> str:
         charges=sum(float(e["amount"]) for e in expenses if e["kind"] == "charges"),
         payes=sum(float(e["amount"]) for e in expenses if e["kind"] == "paye"),
         restocks=len(restocks), recovered=sum(float(r.get("cash") or 0) for r in restocks),
-        cash_rows=cash_rows, alerts=alerts, sheets_on=sheets.enabled(),
+        cash_rows=cash_rows, alerts=alerts, sheets_on=sheets.enabled(), moves=moves,
     )
 
 

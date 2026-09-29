@@ -157,6 +157,32 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
 
+### Moyen de déplacement des livreurs
+
+Trois modes : **🚶 Transport** (à pied, métro, bus : c'est pareil), **🛵 Deux-roues**, **🚗 Voiture**. Le livreur
+le choisit au `/dispo` (boutons sous le message ; retenu jusqu'au prochain changement). À quoi il sert :
+
+- **dispatch** : les livreurs sont classés par **temps de trajet estimé** selon leur mode, plus seulement par
+  distance ; un livreur en transport ne reçoit pas de course à plus de `TRANSPORT_MAX_KM` (5 km) ;
+- **alerte « le livreur arrive »** : sans vitesse mesurable, un livreur en transport est compté à pied ;
+- **vérification** avec la position en direct pendant la course :
+  - 🚇 **métro** : plus aucune position pendant au moins 2 min 30 (sous terre), puis réapparition à plus de
+    800 m, près d'une autre station, à une vitesse de métro (12 à 45 km/h). Les stations de métro et de RER
+    viennent des données ouvertes d'IDFM, téléchargées au démarrage (`STATIONS_URL`) ;
+  - 🛵 **véhicule** : trois positions de suite à plus de 25 km/h, reçues sans interruption ;
+  - 🚶 **à pied** : jamais plus de 8 km/h pendant toute la course (constaté à la livraison).
+
+  Quand c'est contraire à ce que le livreur a déclaré, le dispatch reçoit par exemple : « 🚇 #142 — Livreur A
+  semble avoir pris le métro (Bastille → Nation, 2 km en 7 min) · déclaré 🛵 deux-roues ».
+- **`/livreurs`** montre le mode de chacun (❔ = pas encore choisi) ; **`/close`** l'affiche par livreur, avec la
+  liste des déplacements détectés (⚠️ quand ça ne correspond pas à la déclaration).
+
+Il faut que le livreur partage sa position **en direct**. Limites : un RER qui roule en surface peut passer
+pour un véhicule ; un téléphone qui perd le réseau hors du métro peut ressembler à un trajet en métro (la
+vérification des stations limite ce cas). Ce sont des indices (« semble »), pas des preuves.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/006_transport.sql`.
+
 ### Consulter le stock (`/stock`)
 
 Pour les admins et les ravitailleurs. `/stock` affiche des boutons : **📦 Box 1 / Box 2 / Box 3**, **📦 Tous les
