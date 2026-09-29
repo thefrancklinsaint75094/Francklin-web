@@ -67,7 +67,8 @@ WELCOME_DISPATCH = (
     "Dispatch actif.\n\n"
     "/recap — totaux par livreur\n"
     "/journal — détail des courses livrées (envoyé automatiquement à 6h)\n"
-    "/encours — courses en attente et en cours\n"
+    "/encours — courses en attente et en cours (👤 Attribuer à un livreur)\n"
+    "/livreurs — mettre un livreur en service ou en pause\n"
     "/users — tous les utilisateurs\n"
     "/exclure — retirer un accès\n"
     "/reactiver — rendre un accès\n"
@@ -109,12 +110,20 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
            "ravitailleur": WELCOME_RAVITAILLEUR}
 
 
+ADMIN_HELP_FRANCHISE = (
+    "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
+    "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
+    "/recap · /journal · /users · /recharge · /synchro · /exclure · /reactiver"
+)
+
+
 def welcome(role: str) -> str:
     """Message de bienvenue du rôle, adapté au mode de lecture des commandes."""
     from bot import config
 
-    if role == "franchise" and not config.get().uses_ai:
-        return WELCOME_FRANCHISE_RULES
+    if role == "franchise":
+        base = WELCOME_FRANCHISE_RULES if not config.get().uses_ai else WELCOME_FRANCHISE
+        return base + ADMIN_HELP_FRANCHISE
     return WELCOME[role]
 
 UNBANNED_NOTICE = "✅ Ton accès est rétabli."
@@ -335,10 +344,13 @@ NO_ASSIGNED = "Tu n'as aucune course en cours."
 LIVREUR_CANCEL_CONFIRM = "Tu es sûr ? Ça sera compté dans tes annulations."
 
 
-def proposal(course: dict, distance_label: str) -> str:
+def proposal(course: dict, distance_label: str | None) -> str:
+    where = f"📍 {esc(course['district'])}"
+    if distance_label:
+        where += f" · à {distance_label} de toi"
     lines = [
         f"🆕 Course #{course['id']}",
-        f"📍 {esc(course['district'])} · à {distance_label} de toi",
+        where,
         f"🍾 {esc(course['products'])}",
         f"💶 {eur(course['price'])}",
     ]
@@ -436,11 +448,17 @@ def order_edit_off_step(names: list[str]) -> str:
     return "Les prix vont de 10 en 10 € : corrige le prix de " + ", ".join(names)[:150]
 
 
-def order_modified_for_franchise(course: dict, old_price, livreur_name: str) -> str:
-    lines = [f"✏️ Course #{course['id']} modifiée par {esc(livreur_name)} sur place", "",
+def order_modified_for_franchise(course: dict, old_price, editor_name: str) -> str:
+    lines = [f"✏️ Course #{course['id']} modifiée par {esc(editor_name)} sur place", "",
              f"🍾 {esc(course['products'])}",
              f"💶 {eur(course['price'])} (avant : {eur(old_price)})"]
     return "\n".join(lines)
+
+
+def order_modified_for_livreur(course: dict, old_price, editor_name: str) -> str:
+    return "\n".join([f"✏️ Course #{course['id']} modifiée par {esc(editor_name)}", "",
+                      f"🍾 {esc(course['products'])}",
+                      f"💶 {eur(course['price'])} à encaisser (avant : {eur(old_price)})"])
 
 
 def d_order_modified(course: dict, livreur: dict, old_products: str, old_price) -> str:
@@ -617,6 +635,42 @@ D_TWO_INSTANCES = (
 
 def d_error(kind: str) -> str:
     return f"⚠️ Erreur technique : {esc(kind)}"
+
+
+CANNOT_BAN_SELF = "Tu ne peux pas t'exclure toi-même."
+
+
+def livreurs_list(rows: list[tuple[dict, bool, int]]) -> str:
+    """rows : (livreur, position fraîche ?, nombre de courses en cours)."""
+    if not rows:
+        return "🚴 Aucun livreur actif."
+    lines = ["🚴 <b>Livreurs</b>", ""]
+    for lv, located, busy in rows:
+        if lv.get("on_duty"):
+            state = "🟢 en service" + ("" if located else " · sans position" if lv.get("duty_forced") else " · position perdue")
+        else:
+            state = "⏸ pause"
+        extra = f" · {busy} course{'s' if busy > 1 else ''} en cours" if busy else ""
+        lines.append(f"{esc(lv.get('display_name') or '?')} — {state}{extra}")
+    lines += ["", "Un livreur mis en service ici reçoit les courses même sans position partagée."]
+    return "\n".join(lines)
+
+
+def duty_on_by_admin(admin: dict) -> str:
+    return (f"🟢 {esc(admin.get('display_name') or 'Le dispatch')} t'a mis en service : tu reçois les courses. "
+            "Partage ta position en direct pour recevoir d'abord les plus proches. /pause pour arrêter.")
+
+
+def duty_off_by_admin(admin: dict) -> str:
+    return f"⏸ {esc(admin.get('display_name') or 'Le dispatch')} t'a mis en pause. /dispo pour reprendre."
+
+
+def assign_prompt(course: dict) -> str:
+    return f"👤 À quel livreur attribuer la course #{course['id']} ?\n{course_summary(course)}"
+
+
+def assigned_done(course: dict, livreur: dict) -> str:
+    return f"✅ Course #{course['id']} attribuée à {esc(livreur.get('display_name') or '?')}."
 
 
 def d_override(action: str, course_id: int) -> str:

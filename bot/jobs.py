@@ -36,6 +36,8 @@ async def stale_positions(context) -> None:
     livreurs = await db.list_on_duty_livreurs()
     positions = await db.get_positions(lv["id"] for lv in livreurs)
     for lv in livreurs:
+        if lv.get("duty_forced"):
+            continue  # mis en service par un admin : pas besoin de position
         pos = positions.get(lv["id"])
         if pos is None or parse_ts(pos["updated_at"]) < limit:
             await db.update_user(lv["id"], {"on_duty": False, "soon_free": False})
@@ -82,9 +84,22 @@ async def retention(context) -> None:
     await db.log_event("retention", payload={"courses": len(ids), "messages": n_msg, "drafts": n_drafts})
 
 
+async def refresh_commands(context) -> None:
+    """Menus de commandes Telegram à jour pour tous les utilisateurs actifs
+    (nouvelles commandes après une mise à jour du bot)."""
+    from bot.handlers import common
+
+    for user in await db.list_users(status="active"):
+        await common.set_commands(context.bot, user)
+
+
 async def startup(context) -> None:
     await messaging.notify_dispatch(context.bot, texts.BOT_STARTED)
     await db.clear_expired_states()
+    try:
+        await refresh_commands(context)
+    except Exception:  # noqa: BLE001 — un menu non rafraîchi ne doit pas bloquer le démarrage
+        log.exception("Rafraîchissement des menus impossible")
     await broadcast.resume_all(context)
     await db.log_event("bot_started")
 

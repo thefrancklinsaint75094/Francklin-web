@@ -29,16 +29,20 @@ async def on_message(update: Update, context) -> None:
             await messaging.reply(update, texts.PENDING)
         return
     state, payload = common.active_state(user)
-    if user["role"] == "ravitailleur" or (user["role"] == "dispatch" and state == restock.STATE):
+    # États communs à plusieurs rôles (admins : dispatch et franchisés).
+    if state == livreur.EDIT_STATE and payload.get("sel") is not None:
+        await livreur.edit_typed_price(update, context, user)
+        return
+    if user["role"] == "ravitailleur" or (state == restock.STATE and common.is_admin(user)):
         await restock.on_message(update, context, user, state, payload)
         return
-    if user["role"] == "dispatch":
-        if state == "adding_products" and update.message.text:
-            from bot.handlers import dispatch
+    if state == "adding_products" and common.is_admin(user) and update.message.text:
+        from bot.handlers import dispatch
 
-            await dispatch.save_products(update, user, update.message.text)
-        else:
-            await messaging.reply(update, texts.WELCOME_DISPATCH)
+        await dispatch.save_products(update, user, update.message.text)
+        return
+    if user["role"] == "dispatch":
+        await messaging.reply(update, texts.WELCOME_DISPATCH)
         return
     if user["role"] == "franchise":
         await franchise.on_message(update, context, user, state, payload)

@@ -4,7 +4,8 @@ Bot Telegram qui remplace les groupes WhatsApp entre franchisés et livreurs : i
 (texte, vocal ou capture d'écran), les propose aux livreurs les plus proches, attribue chaque course à un
 seul livreur et tient le compte de ce que chacun a encaissé. Il ne touche jamais à l'argent.
 
-Trois rôles : **dispatch** (toi), **franchisés**, **livreurs**. Tout se passe dans Telegram.
+Rôles : **dispatch** (toi), **franchisés** (qui ont aussi tous les pouvoirs d'admin), **livreurs** et
+**ravitailleurs**. Tout se passe dans Telegram.
 
 ---
 
@@ -142,6 +143,20 @@ fiche porte « ⚠️ Produit pas dans le catalogue ». Les franchisés voient l
 est refusée avec un message qui dit quoi corriger ; le franchisé la renvoie avec le bon prix.
 
 Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002_products.sql`.
+
+### Pouvoirs des admins (dispatch et franchisés)
+
+Le dispatch **et les franchisés** ont les pleins pouvoirs :
+
+- `/livreurs` : mettre un livreur **🟢 en service** ou **⏸ en pause**. Mis en service ainsi, il reçoit les courses
+  même sans position partagée (« distance inconnue ») ;
+- **👤 Attribuer** une course en attente à un livreur précis (dans `/encours`, ou sur le message de course du
+  franchisé) : le livreur reçoit directement sa fiche ;
+- sur son message de course, le franchisé a aussi **✏️ Modifier** et **📦 Livrée** ;
+- toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/synchro`,
+  `/exclure`, `/reactiver`, `/produits`.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
 ### Modification de la commande par le livreur
 
