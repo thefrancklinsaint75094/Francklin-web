@@ -165,6 +165,28 @@ async def load_catalog():
         return None
 
 
+TITLE_RE = re.compile(r"<title>(.*?)</title>", re.I | re.S)
+
+
+def explain_non_json(resp: httpx.Response) -> str:
+    """Le script a renvoyé une page web au lieu de sa réponse : dire pourquoi, en clair."""
+    body = resp.text or ""
+    where = str(resp.url)
+    low = body.lower()
+    if "accounts.google.com" in where or "servicelogin" in low or "signin" in where:
+        return ("le script demande une connexion Google : dans Apps Script, Déployer → Gérer les déploiements "
+                "→ ✏️, mets « Qui a accès : Tout le monde »")
+    if "authorization is required" in low or "autorisation requise" in low or "authorisation" in low:
+        return ("le script doit être autorisé : ouvre-le dans script.google.com, lance doPost une fois "
+                "(▶ Exécuter) et accepte l'autorisation, puis redéploie")
+    if resp.status_code == 404 or "script function not found" in low or "fonction de script introuvable" in low:
+        return ("adresse du script introuvable ou déploiement supprimé : vérifie l'adresse /exec "
+                "(Déployer → Gérer les déploiements)")
+    title = TITLE_RE.search(body)
+    label = " ".join(title.group(1).split())[:80] if title else " ".join(body.split())[:80]
+    return f"réponse inattendue du script (HTTP {resp.status_code}) : {label or 'vide'}"
+
+
 async def send_rows(rows: list[dict], client: httpx.AsyncClient | None = None) -> int:
     """Envoie des lignes. Renvoie le nombre de lignes ajoutées par le script.
     Lève RuntimeError si l'envoi échoue deux fois."""
@@ -179,8 +201,10 @@ async def send_rows(rows: list[dict], client: httpx.AsyncClient | None = None) -
             try:
                 # Apps Script répond par une redirection vers le résultat : on la suit.
                 resp = await client.post(url, json={"secret": secret, "rows": rows}, timeout=TIMEOUT)
-                resp.raise_for_status()
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except ValueError:
+                    raise RuntimeError(explain_non_json(resp)) from None
                 if not data.get("ok"):
                     raise RuntimeError(f"réponse du script : {data.get('error')}")
                 return int(data.get("added", 0))
