@@ -38,6 +38,10 @@
  * moins les ventes au statut OK comptées directement dans les 7 onglets de la feuille Dispatch.
  * Si la section ② est introuvable : repli sur SOLDES ① (stock déjà calculé par la feuille).
  *
+ * Stock des box (« action: stock_box ») : onglet ORGA du tableau Rechargement, section ④
+ * (stock actuel par box) et section ⑤ (total par produit, seuil, statut).
+ * Stock de tous les livreurs (« action: stock_livreurs ») : même calcul direct que « stock ».
+ *
  * Le script refuse toute requête sans le bon SECRET.
  */
 const SPREADSHEET_ID = '';
@@ -70,6 +74,9 @@ const STOCK_COLS = 16;       // A (livreur) à P
 const LOADED_TITLE = '②';    // titre de la section « chargé net » dans SOLDES
 const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const SALE_COLS = [[5, 6], [8, 9], [11, 12]];  // (Produit, Qté) 1 à 3, colonnes F-G, I-J, L-M
+const ORGA_SHEET = 'ORGA';
+const BOX_TITLE = '④';       // stock actuel par box
+const TOTAL_TITLE = '⑤';     // total par produit — alerte stock
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -78,6 +85,8 @@ function doPost(e) {
     const data = JSON.parse(e.postData.contents);
     if (data.secret !== SECRET) return json_({ ok: false, error: 'secret' });
     if (data.action === 'stock') return json_(stock_(data));
+    if (data.action === 'stock_box') return json_(boxStock_());
+    if (data.action === 'stock_livreurs') return json_(livreursStock_());
     const rows = data.rows || [];
     const courses = rows.filter(function (r) { return r.type !== 'recharge'; });
     const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
@@ -230,10 +239,73 @@ function stock_(data) {
   }
   const ds = spreadsheet_();
   const dname = name_(names_(ds, NAMES_RANGE), data.livreur, data.livreur_nom);
-  const sold = sold_(ds, [key_(name), key_(dname)]);
+  const all = soldAll_(ds);
+  const sold = {};
+  [key_(name), key_(dname)].filter(function (k, i, a) { return a.indexOf(k) === i; }).forEach(function (k) {
+    Object.keys(all[k] || {}).forEach(function (p) { sold[p] = (sold[p] || 0) + all[k][p]; });
+  });
   const stock = {};
   Object.keys(loaded.values).forEach(function (p) { stock[p] = loaded.values[p] - (sold[key_(p)] || 0); });
   return { ok: true, livreur: name, stock: stock, source: 'direct' };
+}
+
+// Stock actuel de chaque box (ORGA ④) et total par produit avec seuil et statut (ORGA ⑤).
+function boxStock_() {
+  if (!RECHARGE_SPREADSHEET_ID) return { ok: false, error: 'RECHARGE_SPREADSHEET_ID vide dans le script' };
+  const sheet = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID).getSheetByName(ORGA_SHEET);
+  if (!sheet) return { ok: false, error: 'onglet « ' + ORGA_SHEET + ' » introuvable' };
+  const col = sheet.getRange(1, 1, 200, 1).getDisplayValues();
+  const boxes = {};
+  const totals = [];
+  for (let i = 0; i < col.length; i++) {
+    const title = String(col[i][0]).trim();
+    if (title.indexOf(BOX_TITLE) === 0) {
+      const header = sheet.getRange(i + 2, 2, 1, STOCK_COLS - 1).getDisplayValues()[0];
+      const rows = sheet.getRange(i + 3, 1, STOCK_MAX_ROWS, STOCK_COLS).getValues();
+      for (let r = 0; r < rows.length && String(rows[r][0]).trim() !== ''; r++) {
+        const values = {};
+        header.forEach(function (p, j) { if (String(p).trim()) values[String(p).trim()] = Number(rows[r][j + 1]) || 0; });
+        boxes[String(rows[r][0]).trim()] = values;
+      }
+    } else if (title.indexOf(TOTAL_TITLE) === 0) {
+      const rows = sheet.getRange(i + 3, 1, 40, 6).getDisplayValues();
+      for (let r = 0; r < rows.length && String(rows[r][0]).trim() !== ''; r++) {
+        totals.push({ produit: rows[r][0], box: num_(rows[r][1]), livreurs: num_(rows[r][2]),
+                      total: num_(rows[r][3]), seuil: num_(rows[r][4]), statut: rows[r][5] });
+      }
+    }
+  }
+  return { ok: true, boxes: boxes, totals: totals };
+}
+
+// Stock de chaque livreur de SOLDES ② : chargé net − ventes OK lues en direct dans Dispatch.
+function livreursStock_() {
+  if (!RECHARGE_SPREADSHEET_ID) return { ok: false, error: 'RECHARGE_SPREADSHEET_ID vide dans le script' };
+  const sheet = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID).getSheetByName(STOCK_SHEET);
+  if (!sheet) return { ok: false, error: 'onglet « ' + STOCK_SHEET + ' » introuvable' };
+  const col = sheet.getRange(1, 1, 200, 1).getDisplayValues();
+  let headerRow = -1;
+  for (let i = 0; i < col.length; i++) if (String(col[i][0]).trim().indexOf(LOADED_TITLE) === 0) { headerRow = i + 2; break; }
+  if (headerRow < 0) return { ok: false, error: 'section « ' + LOADED_TITLE + ' » introuvable dans ' + STOCK_SHEET };
+  const header = sheet.getRange(headerRow, 2, 1, STOCK_COLS - 1).getDisplayValues()[0];
+  const rows = sheet.getRange(headerRow + 1, 1, STOCK_MAX_ROWS, STOCK_COLS).getValues();
+  const sold = soldAll_(spreadsheet_());
+  const out = {};
+  for (let r = 0; r < rows.length && String(rows[r][0]).trim() !== ''; r++) {
+    const name = String(rows[r][0]).trim();
+    const mine = sold[key_(name)] || {};
+    const values = {};
+    header.forEach(function (p, j) {
+      if (String(p).trim()) values[String(p).trim()] = (Number(rows[r][j + 1]) || 0) - (mine[key_(p)] || 0);
+    });
+    out[name] = values;
+  }
+  return { ok: true, livreurs: out };
+}
+
+function num_(v) {
+  const n = Number(String(v).replace(/\s/g, '').replace(',', '.'));
+  return isNaN(n) ? 0 : n;
 }
 
 // Ligne d'un livreur dans la section de SOLDES dont le titre (colonne A) commence par `title`.
@@ -260,19 +332,21 @@ function sectionAt_(sheet, headerRow, name) {
   return { found: false, values: {} };
 }
 
-// Ventes au statut OK du livreur, lues directement dans les 7 onglets de la feuille Dispatch.
-function sold_(ds, keys) {
+// Ventes au statut OK de chaque livreur, lues directement dans les 7 onglets de la feuille Dispatch :
+// { livreur (minuscules) : { produit (minuscules) : quantité } }.
+function soldAll_(ds) {
   const sold = {};
   JOURS.forEach(function (day) {
     const sheet = ds.getSheetByName(day);
     if (!sheet) return;
     const values = sheet.getRange(FIRST_ROW, 1, LAST_ROW - FIRST_ROW + 1, COLS).getValues();
     values.forEach(function (row) {
-      if (key_(row[2]) !== 'ok' || keys.indexOf(key_(row[1])) < 0) return;
+      if (key_(row[2]) !== 'ok' || !key_(row[1])) return;
+      const who = sold[key_(row[1])] = sold[key_(row[1])] || {};
       SALE_COLS.forEach(function (pq) {
         const p = key_(row[pq[0]]);
         const q = Number(row[pq[1]]) || 0;
-        if (p && q) sold[p] = (sold[p] || 0) + q;
+        if (p && q) who[p] = (who[p] || 0) + q;
       });
     });
   });

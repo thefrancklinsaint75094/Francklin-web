@@ -23,6 +23,7 @@ def is_admin(user: dict | None) -> bool:
 _ADMIN_COMMANDS = [("encours", "Courses en attente et en cours"), ("livreurs", "Mettre un livreur en service / pause"),
                    ("recap", "Totaux par livreur"), ("journal", "Détail des courses livrées"),
                    ("users", "Tous les utilisateurs"), ("recharge", "Charger / reprendre un livreur"),
+                   ("stock", "Stock des box et des livreurs"),
                    ("synchro", "Renvoyer la nuit vers Google Sheets"), ("exclure", "Retirer un accès"),
                    ("reactiver", "Rendre un accès")]
 
@@ -32,7 +33,7 @@ COMMANDS = {
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
                 ("macourse", "Revoir ma course en cours")],
     "dispatch": _ADMIN_COMMANDS + [("produits", "Catalogue des produits")],
-    "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash")],
+    "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash"), ("stock", "Stock des box et des livreurs")],
 }
 COMMON_COMMANDS = [("start", "Démarrer"), ("aide", "Aide")]
 

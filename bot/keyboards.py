@@ -291,3 +291,11 @@ def assign_livreurs(course_id: int, livreurs: list[dict], counts: dict[str, int]
         rows.append([B(label, callback_data=f"assign_to:{course_id}:{lv['id']}")])
     rows.append([B("Annuler", callback_data="op_cancel")])
     return M(rows)
+
+
+
+def stock_menu(boxes: tuple[str, ...]) -> M:
+    buttons = [B(f"📦 {b}"[:30], callback_data=f"sv:box:{i}") for i, b in enumerate(boxes)]
+    rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
+    rows.append([B("📦 Tous les box", callback_data="sv:all"), B("🚴 Livreurs", callback_data="sv:liv")])
+    return M(rows)

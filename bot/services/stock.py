@@ -193,9 +193,43 @@ async def push_restock_tracked(restock: dict) -> None:
     from bot.services import restock as rs
 
     token = f"restock:{restock['id']}"
-    add_inflight(restock["livreur_id"], token, rs.signed_quantities(restock.get("items") or [], restock["kind"]))
+    deltas = rs.signed_quantities(restock.get("items") or [], restock["kind"])
+    add_inflight(restock["livreur_id"], token, deltas)
+    if restock.get("box"):
+        # Le box perd ce qui est chargé au livreur, regagne ce qui est repris.
+        add_inflight(box_key(restock["box"]), token, {p: -d for p, d in deltas.items()})
     if await sheets.push_restock(restock):
         remove_inflight(restock["livreur_id"], token)
+        if restock.get("box"):
+            remove_inflight(box_key(restock["box"]), token)
+
+
+def box_key(box: str) -> str:
+    return f"box:{_key(box)}"
+
+
+async def boxes_now() -> dict:
+    """Stock des box (ORGA ④) + rechargements pas encore écrits ; totaux par produit (ORGA ⑤).
+    {"ok": bool, "boxes": {box: {produit: qté}}, "totals": [...], "error": str}"""
+    data = await sheets.fetch_action("stock_box")
+    if not data or not data.get("ok"):
+        return {"ok": False, "error": (data or {}).get("error") or "Google Sheets non relié"}
+    boxes = {name: apply_deltas(values, inflight_deltas(box_key(name)))
+             for name, values in (data.get("boxes") or {}).items()}
+    return {"ok": True, "boxes": boxes, "totals": data.get("totals") or []}
+
+
+async def livreurs_now() -> dict:
+    """Stock de chaque livreur (calcul direct du script) + mouvements du bot pas encore écrits."""
+    data = await sheets.fetch_action("stock_livreurs")
+    if not data or not data.get("ok"):
+        return {"ok": False, "error": (data or {}).get("error") or "Google Sheets non relié"}
+    by_name = {_key(u["display_name"]): u for u in await db.list_users(role="livreur") if u.get("display_name")}
+    out = {}
+    for name, values in (data.get("livreurs") or {}).items():
+        user = by_name.get(_key(name))
+        out[name] = apply_deltas(values, inflight_deltas(user["id"])) if user else values
+    return {"ok": True, "livreurs": out}
 
 
 def push_restock_later(restock: dict) -> None:

@@ -157,6 +157,16 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
 
+### Consulter le stock (`/stock`)
+
+Pour les admins et les ravitailleurs. `/stock` affiche des boutons : **📦 Box 1 / Box 2 / Box 3**, **📦 Tous les
+box** et **🚴 Livreurs** ; `/stock box 1` répond directement.
+
+- **Box** : onglet ORGA du tableau Rechargement, section ④ (stock initial + mouvements du Compta − sorties vers
+  les livreurs), moins les rechargements du bot pas encore écrits dans la feuille ;
+- **Tous les box** : chaque box, plus les produits sous leur seuil (🟠 alerte, 🔴 rupture, section ⑤) ;
+- **Livreurs** : stock de chaque livreur, calculé en direct (chargé net − ventes OK de la feuille Dispatch).
+
 ### Noms des livreurs = noms des feuilles
 
 Le nom d'un livreur dans le bot est **exactement** son nom dans les feuilles Dispatch et Rechargement

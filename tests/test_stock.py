@@ -87,3 +87,29 @@ def test_inflight_and_deltas():
 def test_last_one_text():
     assert texts.stock_assignment_alert({"id": 7}, LIVREUR, "Livreur 1", [("US", 1, 1.0)]).splitlines()[1] == (
         "• C'est le dernier US de Livreur 1")
+
+
+def test_box_texts():
+    text = texts.box_stock("Box 1", {"DIV": 28, "KT": 0, "US": 115.0})
+    assert text.splitlines() == ["📦 <b>Box 1</b> — stock actuel", "", "DIV <b>28</b> · US <b>115</b>", "", "À 0 : KT"]
+    assert texts.box_stock("Box 2", {}).endswith("Vide.")
+    overview = texts.boxes_overview({"Box 1": {"DIV": 28}, "Box 2": {}}, [
+        {"produit": "DIV", "total": 32, "seuil": 20, "statut": "OK"},
+        {"produit": "SPAIN", "total": 20, "seuil": 20, "statut": "ALERTE"},
+        {"produit": "KT", "total": 0, "seuil": 20, "statut": "RUPTURE"},
+        {"produit": "", "total": 0, "seuil": 20, "statut": "RUPTURE"}])
+    assert "<b>Box 1</b> : DIV <b>28</b>" in overview and "<b>Box 2</b> : vide" in overview
+    assert "🟠 SPAIN : 20 (seuil 20)" in overview and "🔴 KT : 0 (seuil 20)" in overview
+    assert "DIV : 32" not in overview
+    assert texts.livreurs_stock({"Livreur A": {"US": 2}, "Livreur B": {"US": 0}}).splitlines()[2:] == [
+        "<b>Livreur A</b> : US <b>2</b>", "<b>Livreur B</b> : rien"]
+
+
+def test_box_from_command_text():
+    from bot.handlers.stock_view import _box_from_text
+
+    boxes = ("Box 1", "Box 2", "Box 3")
+    assert _box_from_text("/stock box 1", boxes) == "Box 1"
+    assert _box_from_text("/stock 2", boxes) == "Box 2"
+    assert _box_from_text("/stock", boxes) is None
+    assert _box_from_text("/stock box 9", boxes) is None

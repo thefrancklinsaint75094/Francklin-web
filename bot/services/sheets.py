@@ -265,6 +265,30 @@ async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) ->
             await client.aclose()
 
 
+async def fetch_action(action: str, client: httpx.AsyncClient | None = None) -> dict | None:
+    """Appelle une action de lecture du script (stock_box, stock_livreurs). None si illisible."""
+    url, secret = webhook()
+    if not (url and secret):
+        return None
+    own = client is None
+    client = client or httpx.AsyncClient(follow_redirects=True)
+    try:
+        resp = await client.post(url, json={"secret": secret, "action": action}, timeout=STOCK_TIMEOUT)
+        try:
+            data = resp.json()
+        except ValueError:
+            raise RuntimeError(explain_non_json(resp)) from None
+        if not data.get("ok"):
+            raise RuntimeError(f"réponse du script : {data.get('error')}")
+        return data
+    except (httpx.HTTPError, RuntimeError) as exc:
+        log.warning("Lecture « %s » impossible : %s", action, exc)
+        return {"ok": False, "error": str(exc)}
+    finally:
+        if own:
+            await client.aclose()
+
+
 async def push_delivered(course: dict) -> bool:
     """Ajoute une course livrée à la feuille. True si elle y est. Ne lève jamais d'exception."""
     if not enabled():
