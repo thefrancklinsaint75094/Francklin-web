@@ -23,6 +23,7 @@ TEST_CONFIG = config.Config(
     dispatch_telegram_id=1000,
     openai_api_key=None,
     extraction_mode="ia",  # les scénarios historiques simulent l'extracteur IA
+    stock_alerts=False,    # activé seulement dans les tests qui simulent la lecture du stock
 )
 
 

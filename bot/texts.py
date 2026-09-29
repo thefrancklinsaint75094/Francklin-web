@@ -640,6 +640,38 @@ def d_error(kind: str) -> str:
 CANNOT_BAN_SELF = "Tu ne peux pas t'exclure toi-même."
 
 
+def _stock_who(livreur: dict, sheet_name: str) -> str:
+    name = livreur.get("display_name") or "Le livreur"
+    if sheet_name and sheet_name != name:
+        name += f" ({sheet_name})"
+    return esc(name)
+
+
+def _n(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else f"{value:g}".replace(".", ",")
+
+
+def stock_assignment_alert(course: dict, livreur: dict, sheet_name: str,
+                           warnings: list[tuple[str, int, float]]) -> str:
+    who = _stock_who(livreur, sheet_name)
+    lines = [f"⚠️ Stock — course #{course['id']} ({who})"]
+    for product, need, have in warnings:
+        p = esc(product)
+        if have <= 0:
+            lines.append(f"• {who} n'a plus de {p} sur lui ({need} commandé{'s' if need > 1 else ''})")
+        elif need == have:
+            lines.append(f"• Ce sont les {_n(have)} dernier{'s' if have > 1 else ''} {p} de {who}")
+        else:
+            lines.append(f"• {who} n'a que {_n(have)} {p} sur lui pour {need} commandé{'s' if need > 1 else ''}")
+    return "\n".join(lines)
+
+
+def stock_empty_alert(course: dict, livreur: dict, sheet_name: str, products: list[str]) -> str:
+    who = _stock_who(livreur, sheet_name)
+    what = ", ".join(esc(p) for p in products)
+    return f"📭 {who} n'a plus de {what} sur lui (course #{course['id']} livrée). Pense à le recharger (/recharge)."
+
+
 def arrival_for_franchise(course: dict, livreur: dict, distance_label: str, minutes: int) -> str:
     return (f"📍 {esc(livreur.get('display_name') or 'Le livreur')} arrive — course #{course['id']} : "
             f"à {distance_label} (≈ {minutes} min)\n{course_summary(course)}")

@@ -232,6 +232,37 @@ async def send_rows(rows: list[dict], client: httpx.AsyncClient | None = None) -
     raise RuntimeError(str(last))
 
 
+STOCK_TIMEOUT = 15.0
+
+
+async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) -> tuple[dict | None, str]:
+    """Stock actuel du livreur dans le tableau Rechargement (onglet SOLDES), via le script.
+    Renvoie ({produit: quantité}, nom du livreur dans la feuille), ou (None, nom) si inconnu."""
+    url, secret = webhook()
+    name = livreur.get("display_name") or ""
+    if not (url and secret):
+        return None, name
+    own = client is None
+    client = client or httpx.AsyncClient(follow_redirects=True)
+    try:
+        resp = await client.post(url, json={"secret": secret, "action": "stock", "livreur": name,
+                                            "livreur_nom": livreur.get("real_name") or ""}, timeout=STOCK_TIMEOUT)
+        try:
+            data = resp.json()
+        except ValueError:
+            raise RuntimeError(explain_non_json(resp)) from None
+        if not data.get("ok"):
+            raise RuntimeError(f"réponse du script : {data.get('error')}")
+        stock = data.get("stock")
+        return (stock if isinstance(stock, dict) else None), (data.get("livreur") or name)
+    except (httpx.HTTPError, RuntimeError) as exc:
+        log.warning("Stock de %s illisible : %s", name, exc)
+        return None, name
+    finally:
+        if own:
+            await client.aclose()
+
+
 async def push_delivered(course: dict) -> None:
     """Ajoute une course livrée à la feuille. Ne lève jamais d'exception."""
     if not enabled():

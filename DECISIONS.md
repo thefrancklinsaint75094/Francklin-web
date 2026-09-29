@@ -261,3 +261,18 @@ simple qui respecte le mur de confidentialité (§12).
     (échantillon de 5 s à 10 min, entre 1 et 20 m/s) ; sinon 15 km/h, moyenne d'un deux-roues en ville. C'est
     une estimation : pas d'appel à un service d'itinéraires (coût, dépendance), la marge de 500 m / 5 min suffit.
 79. Une erreur dans l'alerte n'interrompt jamais l'enregistrement de la position ni le « bientôt libre ».
+
+## Alertes de stock
+
+80. **Source du stock : l'onglet SOLDES du tableau Rechargement** (« stock actuel chez le livreur »), et non un
+    calcul du bot : l'exploitant saisit aussi des mouvements et des ventes à la main dans les feuilles, que le
+    bot ne voit pas. Le script Google répond à `action: stock` (même adresse, même secret), avec la table de
+    noms PARAMETRES J/K du tableau Rechargement.
+81. À l'attribution (prise par un livreur ou attribution par un admin) : alerte si la course prend tout ce qui
+    reste d'un produit (« les 2 derniers »), plus qu'il n'en reste, ou un produit absent.
+82. À la livraison : le stock est lu **avant** l'envoi de la vente à la feuille Dispatch (même tâche, dans cet
+    ordre), puis on retire les quantités livrées ; à 0 ou moins : « n'a plus de … sur lui ». Limite connue : une
+    vente précédente pas encore remontée dans SOLDES (IMPORTRANGE entre les feuilles) peut retarder une alerte.
+83. Prévenus : franchisé de la course, livreur, ravitailleurs actifs et dispatch — celui qui recharge doit
+    savoir. Les lectures se font en tâche de fond : la prise et la livraison ne sont jamais ralenties ni
+    bloquées, et sans stock lisible il n'y a simplement pas d'alerte (`STOCK_ALERTS=0` pour couper).

@@ -33,6 +33,9 @@
  * (+ chargé, − repris, colonne trouvée par le nom du produit en ligne 2),
  * S heure, T Ravitailleur. Noms : table PARAMETRES!J4:K40 du tableau Rechargement.
  *
+ * Stock (« action: stock ») : renvoie le stock actuel d'un livreur lu dans l'onglet SOLDES
+ * du tableau Rechargement (en-têtes produits ligne 4, un livreur par ligne à partir de la 5).
+ *
  * Le script refuse toute requête sans le bon SECRET.
  */
 const SPREADSHEET_ID = '';
@@ -57,12 +60,19 @@ const R_LAST_PRODUCT_COL = 18; // R
 const R_NOTE_PREFIX = 'Bot R#';
 const R_NAMES_RANGE = 'PARAMETRES!J4:K40';
 
+const STOCK_SHEET = 'SOLDES';
+const STOCK_HEADER_ROW = 4;
+const STOCK_FIRST_ROW = 5;
+const STOCK_MAX_ROWS = 25;
+const STOCK_COLS = 16;       // A (livreur) à P
+
 function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     const data = JSON.parse(e.postData.contents);
     if (data.secret !== SECRET) return json_({ ok: false, error: 'secret' });
+    if (data.action === 'stock') return json_(stock_(data));
     const rows = data.rows || [];
     const courses = rows.filter(function (r) { return r.type !== 'recharge'; });
     const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
@@ -198,6 +208,27 @@ function writeRecharge_(ss, names, r) {
   sheet.getRange(rowNum, 1, 1, R_COLS).setValues([out]);
   sheet.getRange(rowNum, 1).setNote(tag);
   return true;
+}
+
+// Stock actuel d'un livreur (onglet SOLDES du tableau Rechargement).
+function stock_(data) {
+  if (!RECHARGE_SPREADSHEET_ID) return { ok: false, error: 'RECHARGE_SPREADSHEET_ID vide dans le script' };
+  const rss = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID);
+  const name = name_(names_(rss, R_NAMES_RANGE), data.livreur, data.livreur_nom);
+  const sheet = rss.getSheetByName(STOCK_SHEET);
+  if (!sheet) return { ok: false, error: 'onglet « ' + STOCK_SHEET + ' » introuvable' };
+  const header = sheet.getRange(STOCK_HEADER_ROW, 2, 1, STOCK_COLS - 1).getDisplayValues()[0];
+  const rows = sheet.getRange(STOCK_FIRST_ROW, 1, STOCK_MAX_ROWS, STOCK_COLS).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === '') break;
+    if (key_(rows[i][0]) !== key_(name)) continue;
+    const stock = {};
+    header.forEach(function (p, j) {
+      if (String(p).trim()) stock[String(p).trim()] = Number(rows[i][j + 1]) || 0;
+    });
+    return { ok: true, livreur: name, stock: stock };
+  }
+  return { ok: true, livreur: name, stock: null };
 }
 
 function names_(ss, a1) {

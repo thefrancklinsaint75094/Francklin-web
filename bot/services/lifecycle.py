@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from bot import db, keyboards, messaging, texts
-from bot.services import broadcast, sheets
+from bot.services import broadcast, sheets, stock
 from bot.services.distance import format_distance, haversine_m
 from bot.timeutil import iso, now_utc, parse_ts
 
@@ -95,6 +95,7 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
     await refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)
     await messaging.notify_dispatch(context.bot, texts.d_taken(course, franchise or {"display_name": "?"}, livreur))
     await db.log_event("course_taken", course["id"], livreur["id"])
+    stock.after_assignment_later(context, course, livreur)
 
 
 # ---------------------------------------------------------------- livraison
@@ -136,7 +137,7 @@ async def deliver(context, course: dict, by_dispatch: bool = False) -> dict | No
         "course_delivered", course["id"], livreur["id"] if livreur else None,
         {"by_dispatch": by_dispatch, "distance_m": fields.get("delivered_distance_m")},
     )
-    sheets.push_delivered_later(updated)
+    stock.after_delivery_later(context, updated, livreur)
     await broadcast.kick_pending(context)
     return updated
 
