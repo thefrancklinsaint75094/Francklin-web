@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 STATE = "restocking"
 STATE_MINUTES = 30
-ROLES = ("ravitailleur", "dispatch")
+ROLES = ("ravitailleur", "dispatch", "franchise")
 _locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 

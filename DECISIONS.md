@@ -228,3 +228,24 @@ simple qui respecte le mur de confidentialité (§12).
     entre C et T (un livreur ou un box laissé seul ne bloque pas la ligne). Anti-doublon par la note
     « Bot R#7 » sur la cellule Livreur.
 71. Même découpage des nuits que les courses : un rechargement à 2h dans la nuit de lundi à mardi va dans « Lundi ».
+
+## Pleins pouvoirs des franchisés
+
+72. **Franchisés = administrateurs**, à la demande de l'exploitant : mêmes commandes que le dispatch (`/encours`,
+    `/livreurs`, `/recap`, `/journal`, `/users`, `/recharge`, `/synchro`, `/exclure`, `/reactiver`, catalogue)
+    et validation des inscriptions. C'est un choix assumé qui lève le mur de confidentialité du §12 pour eux :
+    un franchisé voit les vrais noms dans `/users`. Personne ne peut s'exclure soi-même, ni exclure le dispatch.
+    Les notifications automatiques (nouvelle inscription, course prise, erreurs, journal de 6h) restent
+    envoyées au seul dispatch ; `/journal` est envoyé à celui qui le demande.
+73. **`/livreurs`** : un admin met un livreur en service (🟢) ou en pause (⏸). Mis en service ainsi
+    (`duty_forced`, migration 004), le livreur reçoit les courses même sans position partagée — proposées
+    « distance inconnue », après les livreurs dont on connaît la position — et le contrôle des positions ne le
+    met pas hors service. Son propre `/pause`, ou une pause par un admin, lève ce mode.
+74. **👤 Attribuer** (dans `/encours`, et sur le message de course du franchisé) : l'admin choisit le livreur
+    d'une course en attente, sans passer par « Je prends » ni par les vagues. Même verrou en base que la prise
+    (`take_course`) : si un livreur a pris la course entre-temps, rien ne se passe. La règle « une course à la
+    fois » ne s'applique pas à une attribution par un admin.
+75. Sur son message de course, le franchisé a aussi **✏️ Modifier** (même éditeur que le livreur, course en
+    attente ou en cours) et **📦 Livrée** (avec confirmation, comme dans `/encours`). Une modification par un
+    admin prévient le livreur (nouveau message + fiche mise à jour) et le dispatch.
+76. Au démarrage, les menus de commandes Telegram de tous les utilisateurs actifs sont remis à jour.

@@ -33,13 +33,18 @@ def cancel_correction(draft_id: str) -> M:
 
 
 def franchise_course(course: dict) -> M | None:
+    """Message de course du franchisé : il a les pleins pouvoirs sur sa course."""
     cid = course["id"]
     if course["status"] == "pending":
-        return M([[B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")]])
+        return M([
+            [B("👤 Attribuer", callback_data=f"assign:{cid}"), B("✏️ Modifier", callback_data=f"order_edit:{cid}")],
+            [B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")],
+        ])
     if course["status"] == "assigned":
-        return M(
-            [[B("💬 Contacter", callback_data=f"relay_start:{cid}"), B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")]]
-        )
+        return M([
+            [B("📦 Livrée", callback_data=f"force_deliver:{cid}"), B("✏️ Modifier", callback_data=f"order_edit:{cid}")],
+            [B("💬 Contacter", callback_data=f"relay_start:{cid}"), B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")],
+        ])
     return None
 
 
@@ -128,7 +133,8 @@ def journal_prev(night_date: str) -> M:
 def encours(pending: list[dict], assigned: list[dict]) -> M | None:
     rows = []
     for c in pending:
-        rows.append([B(f"#{c['id']} 🗑 Annuler", callback_data=f"force_cancel:{c['id']}")])
+        rows.append([B(f"#{c['id']} 👤 Attribuer", callback_data=f"assign:{c['id']}"),
+                     B("🗑 Annuler", callback_data=f"force_cancel:{c['id']}")])
     for c in assigned:
         rows.append(
             [
@@ -242,4 +248,28 @@ def restock_picker(products: list[dict], page: int, page_size: int) -> M:
     if nav:
         rows.append(nav)
     rows.append([B("↩️ Retour", callback_data="rs_back")])
+    return M(rows)
+
+
+# ---------------------------------------------------------------- admin : livreurs et attribution
+
+def livreurs_duty(livreurs: list[dict]) -> M | None:
+    rows = []
+    for lv in livreurs:
+        name = (lv.get("display_name") or "?")[:20]
+        if lv.get("on_duty"):
+            rows.append([B(f"⏸ Pause — {name}", callback_data=f"duty_off:{lv['id']}")])
+        else:
+            rows.append([B(f"🟢 En service — {name}", callback_data=f"duty_on:{lv['id']}")])
+    return M(rows) if rows else None
+
+
+def assign_livreurs(course_id: int, livreurs: list[dict], counts: dict[str, int]) -> M:
+    rows = []
+    for lv in livreurs:
+        state = "🟢" if lv.get("on_duty") else "⏸"
+        busy = f" · {counts.get(lv['id'], 0)} en cours" if counts.get(lv["id"]) else ""
+        label = f"{state} {lv.get('display_name') or '?'}{busy}"[:40]
+        rows.append([B(label, callback_data=f"assign_to:{course_id}:{lv['id']}")])
+    rows.append([B("Annuler", callback_data="op_cancel")])
     return M(rows)

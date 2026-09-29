@@ -49,7 +49,7 @@ async def pause(update: Update, context) -> None:
     user = await common.actor(update)
     if not await common.require(update, user, role="livreur"):
         return
-    await db.update_user(user["id"], {"on_duty": False, "soon_free": False})
+    await db.update_user(user["id"], {"on_duty": False, "soon_free": False, "duty_forced": False})
     await db.log_event("livreur_pause", user_id=user["id"])
     await messaging.reply(update, texts.PAUSED)
 
@@ -72,9 +72,6 @@ async def ma_course(update: Update, context) -> None:
 
 async def on_message(update: Update, context, user: dict, state: str | None, payload: dict) -> None:
     msg = update.message
-    if state == EDIT_STATE and payload.get("sel") is not None:
-        await _edit_typed_price(update, context, user, payload)
-        return
     if state == "relaying":
         if msg.text:
             await relay.relay_text(update, context, user, payload.get("course_id"), msg.text)
@@ -207,9 +204,23 @@ async def cancel_yes(update: Update, context):
 
 
 # ================================================================ modification de la commande (sur place)
+#
+# Ouverte au livreur de la course (course en cours) et aux admins — dispatch et
+# franchisés — tant que la course n'est pas livrée (en attente ou en cours).
 
 EDIT_STATE = "editing_order"
 EDIT_MINUTES = 30
+
+
+def _edit_mode(user: dict | None, course: dict | None) -> str | None:
+    """« livreur », « admin » ou None si l'utilisateur ne peut pas modifier cette course."""
+    if not user or not course or user.get("status") != "active":
+        return None
+    if course.get("livreur_id") == user["id"] and course["status"] == "assigned":
+        return "livreur"
+    if common.is_admin(user) and course["status"] in ("pending", "assigned"):
+        return "admin"
+    return None
 
 
 async def _save_edit(user: dict, payload: dict) -> None:
@@ -228,22 +239,31 @@ async def _render_edit(context, chat_id: int, payload: dict, picker_page: int | 
     await messaging.edit(context.bot, chat_id, payload.get("msg"), text, markup)
 
 
-async def _back_to_card(context, chat_id: int, message_id: int | None, course: dict) -> None:
-    franchise = await db.get_user(course["franchise_id"])
-    await messaging.edit(context.bot, chat_id, message_id, texts.full_fiche(course, franchise or {}),
-                         keyboards.livreur_course(course["id"]))
+async def _back_to_card(context, chat_id: int, message_id: int | None, course: dict, user: dict) -> None:
+    """Remet le message tel qu'il était avant l'éditeur : fiche du livreur, ou message
+    de course du franchisé."""
+    if course.get("livreur_id") == user["id"]:
+        franchise = await db.get_user(course["franchise_id"])
+        await messaging.edit(context.bot, chat_id, message_id, texts.full_fiche(course, franchise or {}),
+                             keyboards.livreur_course(course["id"]))
+        return
+    livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
+    text, markup = lifecycle.franchise_view(course, livreur)
+    if course["franchise_id"] != user["id"]:
+        markup = None  # boutons du message de course réservés au franchisé de la course
+    await messaging.edit(context.bot, chat_id, message_id, text, markup)
 
 
 async def _edit_context(update: Update):
-    """(livreur, payload, course) d'une modification en cours, course encore à lui et en cours."""
-    user = await _livreur(update)
-    if user is None:
+    """(utilisateur, payload, course) d'une modification en cours et encore permise."""
+    user = await common.actor(update)
+    if user is None or user["status"] != "active":
         return None, None, None
     state, payload = common.active_state(user)
     if state != EDIT_STATE or not payload.get("course_id"):
         return user, None, None
     course = await db.get_course(payload["course_id"])
-    if course is None or course.get("livreur_id") != user["id"] or course["status"] != "assigned":
+    if _edit_mode(user, course) is None:
         await db.clear_state(user["id"])
         return user, None, None
     return user, payload, course
@@ -251,9 +271,12 @@ async def _edit_context(update: Update):
 
 @common.callback
 async def edit_start(update: Update, context):
-    user, course = await _own_assigned(update)
-    if course is None:
-        return (texts.COURSE_FINISHED, True) if user else None
+    user = await common.actor(update)
+    if user is None or user["status"] != "active":
+        return None
+    course = await db.get_course(common.arg(update, int))
+    if _edit_mode(user, course) is None:
+        return texts.COURSE_FINISHED, True
     async with _livreur_locks[user["id"]]:
         cat = await catalog.load()
         lines = order_edit.lines_from_course(course, cat)
@@ -269,8 +292,8 @@ async def _expired(update: Update, context, user) -> tuple[str, bool] | None:
         return None
     course = await db.get_course(_course_of_message(update))
     msg_id = update.callback_query.message.message_id
-    if course and course.get("livreur_id") == user["id"] and course["status"] == "assigned":
-        await _back_to_card(context, update.effective_chat.id, msg_id, course)
+    if _edit_mode(user, course) is not None:
+        await _back_to_card(context, update.effective_chat.id, msg_id, course, user)
         return texts.ORDER_EDIT_EXPIRED, True
     await messaging.edit_markup(context.bot, update.effective_chat.id, msg_id, None)
     return texts.COURSE_FINISHED, True
@@ -287,8 +310,8 @@ def _course_of_message(update: Update) -> int:
 @common.callback
 async def edit_action(update: Update, context):
     """Tous les boutons de l'éditeur : oe_q, oe_s, oe_p, oe_add, oe_pick, oe_ok, oe_x."""
-    user = await _livreur(update)
-    if user is None:
+    user = await common.actor(update)
+    if user is None or user["status"] != "active":
         return None
     data = update.callback_query.data or ""
     action, _, rest = data.partition(":")
@@ -302,7 +325,7 @@ async def edit_action(update: Update, context):
 
         if action == "oe_x":
             await db.clear_state(user["id"])
-            await _back_to_card(context, chat_id, payload["msg"], course)
+            await _back_to_card(context, chat_id, payload["msg"], course, user)
             return texts.CANCELLED_OP
 
         if action == "oe_ok":
@@ -350,7 +373,7 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
         return texts.ORDER_EDIT_EMPTY, True
     if order_edit.same(lines, payload.get("orig") or []):
         await db.clear_state(user["id"])
-        await _back_to_card(context, chat_id, payload["msg"], course)
+        await _back_to_card(context, chat_id, payload["msg"], course, user)
         return texts.ORDER_EDIT_UNCHANGED
     missing = order_edit.missing_prices(lines)
     if missing:
@@ -359,28 +382,44 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
     if off:
         return texts.order_edit_off_step(off), True
     fields = {"products": order_edit.products_text(lines), "price": order_edit.total(lines)}
-    updated = await db.update_course_if_status(course["id"], ["assigned"], fields, livreur_id=user["id"])
+    if _edit_mode(user, course) == "livreur":
+        updated = await db.update_course_if_status(course["id"], ["assigned"], fields, livreur_id=user["id"])
+    else:
+        updated = await db.update_course_if_status(course["id"], ["pending", "assigned"], fields)
     await db.clear_state(user["id"])
     if updated is None:
         await messaging.edit_markup(context.bot, chat_id, payload["msg"], None)
         return texts.COURSE_FINISHED, True
-    await _back_to_card(context, chat_id, payload["msg"], updated)
+    await _back_to_card(context, chat_id, payload["msg"], updated, user)
     await db.log_event("course_modified", course["id"], user["id"], {
         "before": {"products": course["products"], "price": float(course["price"])},
         "after": {"products": updated["products"], "price": float(updated["price"])},
     })
-    franchise = await db.get_user(course["franchise_id"])
-    if franchise:
-        await messaging.send(context.bot, franchise,
-                             texts.order_modified_for_franchise(updated, course["price"], user["display_name"]))
-        await lifecycle.refresh_franchise_message(context, updated, livreur=user, franchise=franchise)
-    await messaging.notify_dispatch(context.bot,
-                                    texts.d_order_modified(updated, user, course["products"], course["price"]))
+    await _notify_modified(context, user, course, updated)
     return "Commande modifiée ✅"
 
 
-async def _edit_typed_price(update: Update, context, user: dict, payload: dict) -> None:
-    """Prix tapé au clavier pendant le réglage d'une ligne."""
+async def _notify_modified(context, editor: dict, before: dict, updated: dict) -> None:
+    """Chacun des autres concernés apprend le changement (ancien → nouveau prix)."""
+    livreur = await db.get_user(updated["livreur_id"]) if updated.get("livreur_id") else None
+    franchise = await db.get_user(updated["franchise_id"])
+    if livreur and livreur["id"] != editor["id"] and updated["status"] == "assigned":
+        await messaging.send(context.bot, livreur,
+                             texts.order_modified_for_livreur(updated, before["price"], editor["display_name"]))
+        await messaging.edit(context.bot, livreur["telegram_id"], updated.get("livreur_message_id"),
+                             texts.full_fiche(updated, franchise or {}), keyboards.livreur_course(updated["id"]),
+                             user=livreur, resend_if_old=False)
+    if franchise and franchise["id"] != editor["id"]:
+        await messaging.send(context.bot, franchise,
+                             texts.order_modified_for_franchise(updated, before["price"], editor["display_name"]))
+        await lifecycle.refresh_franchise_message(context, updated, livreur=livreur, franchise=franchise)
+    if editor["role"] != "dispatch":
+        await messaging.notify_dispatch(context.bot,
+                                        texts.d_order_modified(updated, editor, before["products"], before["price"]))
+
+
+async def edit_typed_price(update: Update, context, user: dict) -> None:
+    """Prix tapé au clavier pendant le réglage d'une ligne (livreur ou admin)."""
     async with _livreur_locks[user["id"]]:
         user = await db.get_user(user["id"])
         state, payload = common.active_state(user)
@@ -388,7 +427,7 @@ async def _edit_typed_price(update: Update, context, user: dict, payload: dict) 
             await messaging.reply(update, texts.LIVREUR_TEXT_HINT)
             return
         course = await db.get_course(payload.get("course_id") or 0)
-        if course is None or course.get("livreur_id") != user["id"] or course["status"] != "assigned":
+        if _edit_mode(user, course) is None:
             await db.clear_state(user["id"])
             await messaging.reply(update, texts.COURSE_FINISHED)
             return

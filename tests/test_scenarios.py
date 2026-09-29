@@ -126,7 +126,8 @@ async def test_onboarding_and_welcome(h):
     assert h.tg.last(F1).text == texts.PENDING
     approve_data = card.data("approve:")
     await h.press(DISPATCH, card, "approve:")
-    assert h.tg.last(F1).text == texts.WELCOME_FRANCHISE
+    assert h.tg.last(F1).text == texts.welcome("franchise")
+    assert "Pleins pouvoirs" in h.tg.last(F1).text
     u = await db.get_user_by_tg(F1)
     assert u["status"] == "active" and u["display_name"] == "Franchisé 1" and u["real_name"] == "hello"
     # Deuxième appui sur Valider : idempotent.
@@ -312,7 +313,8 @@ async def test_dispo_broadcast_take_and_deliver(h):
     assert h.tg.messages[(L2, prop2.message_id)].text == texts.proposal_taken(course["id"])
     fmsg = h.tg.find(F1, f"Course #{course['id']} — prise par Livreur 1")
     assert "lv3001" not in fmsg.text
-    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["relay_start", "course_withdraw"]
+    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["force_deliver", "order_edit", "relay_start",
+                                                          "course_withdraw"]
     assert f"🚴 #{course['id']} — Franchisé 1 → Livreur 1 — Paris 4e — 60 €" in h.tg.texts(DISPATCH)
 
     # L2 appuie trop tard.
@@ -790,7 +792,8 @@ async def test_rules_mode_end_to_end(h, monkeypatch, test_config):
     monkeypatch.setattr(geocoding, "geocode", geocode_contains)
     await h.text(DISPATCH, "/start")
     await register(h, F1, "franchise", "Bar du Coin")
-    assert h.tg.last(F1).text == texts.WELCOME_FRANCHISE_RULES
+    assert h.tg.last(F1).text == texts.welcome("franchise")
+    assert h.tg.last(F1).text.startswith(texts.WELCOME_FRANCHISE_RULES)
 
     await h.text(F1, "12 rue de rivoli paris 4, digicode 45A32, 2 vodka + coca, 60€")
     card = h.tg.last(F1)
@@ -843,7 +846,8 @@ async def test_catalog_from_bot_and_model_order(h, monkeypatch, test_config):
     await h.text(F1, "/modele")
     assert "Modèle de commande" in h.tg.last(F1).text
     await h.text(F1, "/produits")
-    assert "Vodka Absolut" in h.tg.last(F1).text and "🗑" not in h.tg.last(F1).text
+    # Pleins pouvoirs : le franchisé gère aussi le catalogue.
+    assert "Vodka Absolut" in h.tg.last(F1).text and "prod_add" in [d for _, d in h.tg.last(F1).buttons]
 
     # Commande au format du modèle.
     await h.text(F1, "12 rue de Rivoli 75004 Paris\n2 abso 60\n1 cocas 10\n1 ricard 20\n\nDigicode 45A32, 3e étage")
@@ -1138,3 +1142,91 @@ async def test_ravitailleur_restocks_livreur_with_buttons(h, monkeypatch):
 
     await h.text(DISPATCH, "/users")
     assert "<b>Ravitailleurs</b>" in h.tg.last(DISPATCH).text and "Ravitailleur 1 — Sam" in h.tg.last(DISPATCH).text
+
+
+async def test_franchise_has_full_admin_powers(h):
+    """Le franchisé (comme le dispatch) : met un livreur en service sans position,
+    attribue sa course, la modifie, la marque livrée, et a les commandes d'admin."""
+    from bot import jobs
+
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+
+    def txt(m):
+        return m.text.replace("\xa0", " ")
+
+    # Un livreur n'a pas les commandes d'admin.
+    await h.text(L1, "/livreurs")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    # /livreurs : Livreur 1 en pause ; le franchisé le met en service (sans position).
+    await h.text(F1, "/livreurs")
+    listing = h.tg.last(F1)
+    assert "Livreur 1 — ⏸ pause" in listing.text
+    await h.press(F1, listing, "duty_on:")
+    assert "Livreur 1 — 🟢 en service · sans position" in h.tg.messages[(F1, listing.message_id)].text
+    assert "t'a mis en service" in h.tg.last(L1).text
+    assert (await db.get_user(l1["id"]))["on_duty"] is True
+    # Pas de position : le contrôle des positions ne le met pas hors service.
+    await jobs.stale_positions(h.context)
+    assert (await db.get_user(l1["id"]))["on_duty"] is True
+
+    # Une course lui est proposée, distance inconnue.
+    course = await order(h, F1, "rivoli")
+    prop = h.tg.last(L1)
+    assert prop.text.startswith(f"🆕 Course #{course['id']}") and "de toi" not in prop.text
+
+    # Le franchisé l'attribue lui-même, sans attendre « Je prends ».
+    fmsg = h.tg.find(F1, f"Course #{course['id']}")
+    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["assign", "order_edit", "course_withdraw"]
+    await h.press(F1, fmsg, "assign:")
+    picker = h.tg.last(F1)
+    assert "À quel livreur attribuer" in picker.text and "🟢 Livreur 1" in picker.buttons[0][0]
+    await h.press(F1, picker, "assign_to:")
+    assert h.tg.messages[(F1, picker.message_id)].text == f"✅ Course #{course['id']} attribuée à Livreur 1."
+    assigned = await db.get_course(course["id"])
+    assert assigned["status"] == "assigned" and assigned["livreur_id"] == l1["id"]
+    fiche = h.tg.find(L1, "c'est pour toi")
+    assert f"🚴 Course #{course['id']}" in fiche.text
+    assert f"🚴 #{course['id']} — Franchisé 1 → Livreur 1" in txt(h.tg.find(DISPATCH, f"🚴 #{course['id']}"))
+
+    # Le franchisé modifie sa course : une vodka de plus.
+    fmsg = h.tg.find(F1, f"Course #{course['id']} — prise par")
+    await h.press(F1, fmsg, "order_edit:")
+    editor = h.tg.messages[(F1, fmsg.message_id)]
+    assert "modifier la commande" in editor.text
+    await h.press_data(F1, editor, "oe_q:0:1")
+    # Le coca n'avait pas de prix (texte libre) : 10 €.
+    await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_s:1")
+    await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_p:1:10")
+    await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_s:-1")
+    await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_ok")
+    modified = await db.get_course(course["id"])
+    assert float(modified["price"]) == 100 and modified["products"].startswith("3 vodka")
+    assert "modifiée par Franchisé 1" in txt(h.tg.find(L1, "modifiée par"))
+    assert "100 € à encaisser" in txt(h.tg.messages[(L1, fiche.message_id)])
+    assert "modifiée par Franchisé 1" in txt(h.tg.find(DISPATCH, "modifiée par"))
+    back = h.tg.messages[(F1, fmsg.message_id)]
+    assert "prise par Livreur 1" in back.text and "force_deliver" in back.buttons[0][1]
+
+    # Il la marque livrée (avec confirmation).
+    await h.press(F1, back, "force_deliver:")
+    await h.press(F1, h.tg.last(F1), "fy:deliver:")
+    assert (await db.get_course(course["id"]))["status"] == "delivered"
+
+    # Commandes d'admin : récap, journal (chez lui), utilisateurs ; pas d'auto-exclusion.
+    await h.text(F1, "/recap")
+    assert "📊 Récap nuit du" in h.tg.last(F1).text and "Livreur 1 — 1 course — 100 €" in txt(h.tg.last(F1))
+    await h.text(F1, "/journal")
+    assert "📋 Journal nuit du" in h.tg.find(F1, "📋 Journal").text
+    assert len([p for m, p in h.tg.calls if m == "sendDocument" and int(p["chat_id"]) == F1]) == 1
+    await h.text(F1, "/exclure")
+    assert "Franchisé 1" not in " ".join(b for b, _ in h.tg.last(F1).buttons)
+    await h.press_data(F1, h.tg.last(F1), f"ban:{f1['id']}")
+    assert h.tg.answers()[-1]["text"] == texts.CANNOT_BAN_SELF
+
+    # Pause par un admin : le livreur est prévenu.
+    await h.text(DISPATCH, "/livreurs")
+    await h.press(DISPATCH, h.tg.last(DISPATCH), "duty_off:")
+    lv = await db.get_user(l1["id"])
+    assert lv["on_duty"] is False and lv["duty_forced"] is False
+    assert "t'a mis en pause" in h.tg.last(L1).text

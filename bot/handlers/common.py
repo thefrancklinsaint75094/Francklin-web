@@ -13,16 +13,25 @@ from bot.timeutil import now_utc, parse_ts
 
 log = logging.getLogger(__name__)
 
+ADMIN_ROLES = ("dispatch", "franchise")   # le franchisé a les pleins pouvoirs, comme le dispatch
+
+
+def is_admin(user: dict | None) -> bool:
+    return bool(user) and user.get("status") == "active" and user.get("role") in ADMIN_ROLES
+
+
+_ADMIN_COMMANDS = [("encours", "Courses en attente et en cours"), ("livreurs", "Mettre un livreur en service / pause"),
+                   ("recap", "Totaux par livreur"), ("journal", "Détail des courses livrées"),
+                   ("users", "Tous les utilisateurs"), ("recharge", "Charger / reprendre un livreur"),
+                   ("synchro", "Renvoyer la nuit vers Google Sheets"), ("exclure", "Retirer un accès"),
+                   ("reactiver", "Rendre un accès")]
+
 COMMANDS = {
     "franchise": [("mescourses", "Mes courses de la nuit"), ("modele", "Modèle de commande"),
-                  ("produits", "Produits connus")],
+                  ("produits", "Catalogue des produits")] + _ADMIN_COMMANDS,
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
                 ("macourse", "Revoir ma course en cours")],
-    "dispatch": [("recap", "Totaux par livreur"), ("journal", "Détail des courses livrées"),
-                 ("encours", "Courses en attente et en cours"), ("users", "Tous les utilisateurs"),
-                 ("exclure", "Retirer un accès"), ("reactiver", "Rendre un accès"),
-                 ("produits", "Catalogue des produits"), ("recharge", "Charger / reprendre un livreur"),
-                 ("synchro", "Renvoyer la nuit vers Google Sheets")],
+    "dispatch": _ADMIN_COMMANDS + [("produits", "Catalogue des produits")],
     "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash")],
 }
 COMMON_COMMANDS = [("start", "Démarrer"), ("aide", "Aide")]

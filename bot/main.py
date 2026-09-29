@@ -132,6 +132,7 @@ def register_handlers(app: Application) -> None:
     cmd("modele", franchise.modele)
     cmd("synchro", dispatch.synchro)
     cmd("recharge", restock.recharge)
+    cmd("livreurs", dispatch.livreurs)
 
     callbacks = [
         (r"^role:", onboarding.choose_role),
@@ -154,6 +155,9 @@ def register_handlers(app: Application) -> None:
         (r"^oe_(q|s|p|add|pick):", livreur.edit_action),
         (r"^oe_(ok|x)$", livreur.edit_action),
         (r"^rs_", restock.action),
+        (r"^duty_(on|off):", dispatch.duty),
+        (r"^assign:", dispatch.assign_ask),
+        (r"^assign_to:", dispatch.assign_do),
         (r"^relay_start:", relay.start),
         (r"^relay_cancel$", relay.cancel),
         (r"^recap_prev:", dispatch.recap_prev),

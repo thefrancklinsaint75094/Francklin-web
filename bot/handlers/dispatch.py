@@ -1,4 +1,6 @@
-"""Commandes du dispatch (§13) : /recap, /journal, /encours, /users, /exclure, /reactiver."""
+"""Commandes d'administration (§13) : /recap, /journal, /encours, /livreurs, /users, /exclure, /reactiver…
+
+Ouvertes au dispatch et aux franchisés (pleins pouvoirs, voir common.is_admin)."""
 from __future__ import annotations
 
 import csv
@@ -23,17 +25,19 @@ TELEGRAM_LIMIT = 4000
 
 
 async def _dispatch(update: Update) -> dict | None:
-    if update.effective_user.id != config.get().dispatch_telegram_id:
-        return None
+    """Admin (dispatch ou franchisé) à l'origine du bouton, sinon None."""
     user = await common.actor(update)
-    if user is None or user["role"] != "dispatch" or user["status"] != "active":
-        return None
-    return user
+    return user if common.is_admin(user) else None
 
 
 async def _guard_command(update: Update) -> bool:
     user = await common.actor(update)
-    return await common.require(update, user, role="dispatch")
+    if not await common.require(update, user):
+        return False
+    if not common.is_admin(user):
+        await messaging.reply(update, texts.NOT_FOR_YOU)
+        return False
+    return True
 
 
 def _current_night() -> date:
@@ -118,7 +122,8 @@ def build_csv(courses: list[dict], users: dict[str, dict]) -> bytes:
     return buf.getvalue().encode("utf-8-sig")
 
 
-async def send_journal(bot, night: date, with_prev_button: bool = True) -> None:
+async def send_journal(bot, night: date, with_prev_button: bool = True, chat_id: int | None = None) -> None:
+    """Journal d'une nuit : au dispatch (job de 6h) ou à l'admin qui le demande (chat_id)."""
     cfg = config.get()
     start, end = night_bounds(night, cfg.night_end_hour)
     delivered = await db.list_delivered_between(start, end)
@@ -136,12 +141,16 @@ async def send_journal(bot, night: date, with_prev_button: bool = True) -> None:
         lines += ["", texts.journal_total(sum(float(c["price"]) for c in delivered))]
     chunks = split_messages(lines)
     markup = keyboards.journal_prev((night - timedelta(days=1)).isoformat()) if with_prev_button else None
+    target = chat_id or cfg.dispatch_telegram_id
     for i, chunk in enumerate(chunks):
-        await messaging.notify_dispatch(bot, chunk, markup if i == len(chunks) - 1 else None)
+        try:
+            await bot.send_message(target, chunk, reply_markup=markup if i == len(chunks) - 1 else None)
+        except TelegramError as exc:
+            log.warning("Envoi du journal impossible : %s", exc)
     if delivered:
         filename = f"journal_{(night + timedelta(days=1)).isoformat()}.csv"
         try:
-            await bot.send_document(cfg.dispatch_telegram_id, InputFile(build_csv(delivered, users), filename=filename))
+            await bot.send_document(target, InputFile(build_csv(delivered, users), filename=filename))
         except TelegramError as exc:
             log.warning("Envoi du CSV impossible : %s", exc)
 
@@ -149,14 +158,14 @@ async def send_journal(bot, night: date, with_prev_button: bool = True) -> None:
 async def journal(update: Update, context) -> None:
     if not await _guard_command(update):
         return
-    await send_journal(context.bot, _current_night())
+    await send_journal(context.bot, _current_night(), chat_id=update.effective_chat.id)
 
 
 @common.callback
 async def journal_prev(update: Update, context):
     if await _dispatch(update) is None:
         return None
-    await send_journal(context.bot, date.fromisoformat(common.arg(update)))
+    await send_journal(context.bot, date.fromisoformat(common.arg(update)), chat_id=update.effective_chat.id)
     return None
 
 
@@ -283,7 +292,8 @@ async def users(update: Update, context) -> None:
 async def exclure(update: Update, context) -> None:
     if not await _guard_command(update):
         return
-    targets = [u for u in await db.list_users(status="active") if u["role"] != "dispatch"]
+    me = update.effective_user.id
+    targets = [u for u in await db.list_users(status="active") if u["role"] != "dispatch" and u["telegram_id"] != me]
     if not targets:
         await messaging.reply(update, texts.EXCLURE_EMPTY)
         return
@@ -307,6 +317,8 @@ async def ban_ask(update: Update, context):
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] != "active" or user["role"] == "dispatch":
         return texts.ALREADY_HANDLED
+    if user["telegram_id"] == update.effective_user.id:
+        return texts.CANNOT_BAN_SELF, True
     await messaging.reply(update, texts.ban_confirm(user), keyboards.ban_confirm(user["id"]))
     return None
 
@@ -319,6 +331,8 @@ async def ban_do(update: Update, context):
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] != "active" or user["role"] == "dispatch":
         return texts.ALREADY_HANDLED
+    if user["id"] == dispatcher["id"]:
+        return texts.CANNOT_BAN_SELF, True
     user = await db.update_user(user["id"], {
         "status": "banned", "on_duty": False, "soon_free": False,
         "conversation_state": None, "state_payload": None, "state_expires_at": None,
@@ -360,14 +374,8 @@ CATALOG_STATE_MINUTES = 10
 
 
 async def produits(update: Update, context) -> None:
-    """/produits : gestion du catalogue pour le dispatch, lecture seule pour un franchisé."""
-    user = await common.actor(update)
-    if user is not None and user["status"] == "active" and user["role"] == "franchise":
-        from bot.handlers import franchise
-
-        await franchise.produits(update, context)
-        return
-    if not await common.require(update, user, role="dispatch"):
+    """/produits : gestion du catalogue (dispatch et franchisés)."""
+    if not await _guard_command(update):
         return
     await _send_catalog(update)
 
@@ -379,9 +387,9 @@ async def _send_catalog(update: Update) -> None:
 
 async def ajouter(update: Update, context) -> None:
     """/ajouter suivi des produits (un par ligne), ou seul pour ouvrir la saisie."""
-    user = await common.actor(update)
-    if not await common.require(update, user, role="dispatch"):
+    if not await _guard_command(update):
         return
+    user = await common.actor(update)
     text = update.message.text or ""
     body = text.split(None, 1)[1] if len(text.split(None, 1)) > 1 else ""
     if body.strip():
@@ -472,3 +480,100 @@ async def synchro(update: Update, context) -> None:
         await messaging.reply(update, texts.sheets_failed(str(exc)))
         return
     await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks)))
+
+
+# ================================================================ /livreurs : service et pause par un admin
+
+async def _livreurs_view() -> tuple[str, object]:
+    livreurs = sorted(await db.list_users(role="livreur", status="active"),
+                      key=lambda u: u.get("display_name") or "")
+    positions = await db.get_positions(lv["id"] for lv in livreurs)
+    counts: dict[str, int] = defaultdict(int)
+    for c in await db.list_assigned_for_livreurs([lv["id"] for lv in livreurs]):
+        counts[c["livreur_id"]] += 1
+    stale_before = now_utc() - timedelta(minutes=config.get().position_stale_minutes)
+    rows = []
+    for lv in livreurs:
+        pos = positions.get(lv["id"])
+        located = bool(pos) and parse_ts(pos["updated_at"]) >= stale_before
+        rows.append((lv, located, counts[lv["id"]]))
+    return texts.livreurs_list(rows), keyboards.livreurs_duty(livreurs)
+
+
+async def livreurs(update: Update, context) -> None:
+    if not await _guard_command(update):
+        return
+    text, markup = await _livreurs_view()
+    await messaging.reply(update, text, markup)
+
+
+@common.callback
+async def duty(update: Update, context):
+    """duty_on:<livreur> / duty_off:<livreur> : un admin met un livreur en service ou en pause."""
+    admin = await _dispatch(update)
+    if admin is None:
+        return None
+    prefix, livreur_id = update.callback_query.data.split(":", 1)
+    livreur = await db.get_user(livreur_id)
+    if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
+        return texts.ALREADY_HANDLED, True
+    if prefix == "duty_on":
+        await db.update_user(livreur["id"], {"on_duty": True, "duty_forced": True})
+        await db.log_event("livreur_on_duty", user_id=livreur["id"], payload={"by": admin["id"]})
+        await messaging.send(context.bot, livreur, texts.duty_on_by_admin(admin))
+        from bot.services import broadcast
+
+        await broadcast.kick_pending(context)
+        answer = f"{livreur['display_name']} en service"
+    else:
+        await db.update_user(livreur["id"], {"on_duty": False, "soon_free": False, "duty_forced": False})
+        await db.log_event("livreur_pause", user_id=livreur["id"], payload={"by": admin["id"]})
+        await messaging.send(context.bot, livreur, texts.duty_off_by_admin(admin))
+        answer = f"{livreur['display_name']} en pause"
+    text, markup = await _livreurs_view()
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, text, markup)
+    return answer
+
+
+# ================================================================ attribution directe d'une course
+
+@common.callback
+async def assign_ask(update: Update, context):
+    """assign:<course> : l'admin choisit le livreur d'une course en attente."""
+    if await _dispatch(update) is None:
+        return None
+    course = await db.get_course(common.arg(update, int))
+    if course is None or course["status"] != "pending":
+        return texts.ALREADY_CLOSED, True
+    livreurs = sorted(await db.list_users(role="livreur", status="active"),
+                      key=lambda u: (not u.get("on_duty"), u.get("display_name") or ""))
+    if not livreurs:
+        return texts.RESTOCK_NO_LIVREUR, True
+    counts: dict[str, int] = defaultdict(int)
+    for c in await db.list_assigned_for_livreurs([lv["id"] for lv in livreurs]):
+        counts[c["livreur_id"]] += 1
+    await messaging.reply(update, texts.assign_prompt(course),
+                          keyboards.assign_livreurs(course["id"], livreurs, counts))
+    return None
+
+
+@common.callback
+async def assign_do(update: Update, context):
+    """assign_to:<course>:<livreur> : attribue la course, sans passer par « Je prends »."""
+    admin = await _dispatch(update)
+    if admin is None:
+        return None
+    _, course_id, livreur_id = update.callback_query.data.split(":", 2)
+    livreur = await db.get_user(livreur_id)
+    message_id = update.callback_query.message.message_id
+    if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
+        return texts.ALREADY_HANDLED, True
+    won = await db.take_course(int(course_id), livreur["id"])
+    if won is None:
+        await messaging.edit(context.bot, update.effective_chat.id, message_id,
+                             f"Rien à faire : la course #{course_id} n'est plus en attente.")
+        return texts.ALREADY_CLOSED, True
+    await lifecycle.after_assignment(context, won, livreur, None)
+    await db.log_event("course_assigned_by_admin", won["id"], livreur["id"], {"by": admin["id"]})
+    await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.assigned_done(won, livreur))
+    return "Attribuée ✅"

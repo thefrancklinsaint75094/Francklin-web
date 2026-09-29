@@ -96,7 +96,10 @@ async def receive_name(update: Update, context, user: dict) -> None:
 
 
 async def _is_dispatch(update: Update) -> bool:
-    return update.effective_user.id == config.get().dispatch_telegram_id
+    """Validation des inscriptions : dispatch et franchisés (pleins pouvoirs)."""
+    if update.effective_user.id == config.get().dispatch_telegram_id:
+        return True
+    return common.is_admin(await db.get_user_by_tg(update.effective_user.id))
 
 
 @common.callback

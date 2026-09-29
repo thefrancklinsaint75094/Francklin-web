@@ -34,29 +34,33 @@ def select_eligible(
     1. status = active   2. on_duty   3. position fraîche
     4. aucune course assignée, ou exactement une et soon_free
     5. pas déjà sollicité pour cette course   6. à moins de MAX_DISTANCE_KM
+
+    Un livreur mis en service par un admin (duty_forced) sans position fraîche reste
+    éligible, distance inconnue (None), après ceux dont on connaît la position.
     """
     stale_before = now - timedelta(minutes=stale_minutes)
-    out: list[tuple[dict, float, datetime]] = []
+    located: list[tuple[dict, float, datetime]] = []
+    unlocated: list[dict] = []
     for lv in livreurs:
         if lv.get("role") != "livreur" or lv.get("status") != "active" or not lv.get("on_duty"):
-            continue
-        pos = positions.get(lv["id"])
-        if not pos:
-            continue
-        updated = parse_ts(pos["updated_at"])
-        if updated is None or updated < stale_before:
             continue
         n = assigned_counts.get(lv["id"], 0)
         if not (n == 0 or (n == 1 and lv.get("soon_free"))):
             continue
         if lv["id"] in already_solicited:
             continue
+        pos = positions.get(lv["id"])
+        updated = parse_ts(pos["updated_at"]) if pos else None
+        if updated is None or updated < stale_before:
+            if lv.get("duty_forced"):
+                unlocated.append(lv)
+            continue
         dist = haversine_m(pos["lat"], pos["lon"], course_lat, course_lon)
         if dist > max_distance_km * 1000:
             continue
-        out.append((lv, dist, updated))
-    out.sort(key=lambda x: (x[1], -x[2].timestamp()))
-    return [(lv, dist) for lv, dist, _ in out]
+        located.append((lv, dist, updated))
+    located.sort(key=lambda x: (x[1], -x[2].timestamp()))
+    return [(lv, dist) for lv, dist, _ in located] + [(lv, None) for lv in unlocated]
 
 
 async def eligible_for(course: dict, already: set[str]) -> list[tuple[dict, float]]:
@@ -135,7 +139,8 @@ async def run_wave(context, course_id: int, advance: bool = False) -> bool:
             if not await db.reserve_broadcast(course_id, livreur["id"], round_):
                 continue
             msg = await messaging.send(
-                context.bot, livreur, texts.proposal(course, format_distance(dist)), keyboards.proposal(course_id)
+                context.bot, livreur, texts.proposal(course, format_distance(dist) if dist is not None else None),
+                keyboards.proposal(course_id)
             )
             if msg is not None:
                 await db.set_broadcast_message(course_id, livreur["id"], msg.message_id)
