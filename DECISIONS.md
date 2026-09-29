@@ -363,3 +363,6 @@ simple qui respecte le mur de confidentialité (§12).
      Journée visée : la nuit en cours ; en journée (entre fin et début de nuit), la nuit qui vient de finir,
      sauf si des courses ont déjà été livrées depuis la fin de nuit (activité de jour). Le cash à récupérer
      affiché est celui de la feuille, donc le cumul de la semaine, et il est présenté comme tel.
+106. **Prix libre à la modification** (demande de l'exploitant) : ➖ / ➕ ne changent plus que la quantité ; le
+     prix de la ligne n'est jamais recalculé (remplace le « prix unitaire gardé » des n° 60 et 64). Le livreur
+     ou l'admin met le prix qu'il veut en touchant le produit ; la règle des 10 € reste.

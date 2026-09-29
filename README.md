@@ -215,9 +215,8 @@ Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_f
 Sur place, le client prend parfois plus, moins ou autre chose. Sur sa course, le livreur appuie sur
 **✏️ Modifier la commande** et corrige tout avec des boutons, sans rien taper :
 
-- **➖ / ➕** sur chaque produit : la quantité change et le prix de la ligne suit (même prix à l'unité,
-  arrondi à 10 €) ;
-  à 0, le produit disparaît ;
+- **➖ / ➕** sur chaque produit : seule la quantité change, **le prix ne bouge pas tout seul** (pas de calcul
+  automatique) ; à 0, le produit disparaît ;
 - **➕ Ajouter un produit** : la liste du catalogue s'affiche, un appui ajoute le produit ;
 - toucher un produit ouvre son **prix** : boutons −50, −20, −10, +10, +20, +50 € (ou taper le prix, au choix) ;
   les prix vont toujours de 10 en 10 € ;

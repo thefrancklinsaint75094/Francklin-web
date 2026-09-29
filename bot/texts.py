@@ -438,7 +438,8 @@ def order_editor(course_id: int, lines: list[dict], sel: int | None = None) -> s
         out.append(f"Prix de la ligne {sel + 1} ({esc(lines[sel]['p'])}) : ajuste avec les boutons, "
                    "ou tape le prix (ex. 30). Puis ✅ OK.")
     else:
-        out.append("➖ / ➕ : quantité. Touche un produit pour changer son prix. ✅ Valider quand c'est bon.")
+        out.append("➖ / ➕ : quantité (le prix ne change pas tout seul). Touche un produit pour mettre son prix. "
+                   "✅ Valider quand c'est bon.")
     return "\n".join(out)
 
 
