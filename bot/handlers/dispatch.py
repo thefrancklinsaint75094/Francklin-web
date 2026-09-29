@@ -473,16 +473,19 @@ async def synchro(update: Update, context) -> None:
     start, end = night_bounds(night, cfg.night_end_hour)
     delivered = await db.list_delivered_between(start, end)
     restocks = await db.list_restocks_between(start, end)
+    expenses = await db.list_expenses_between(start, end)
     users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered]
-                               + [r["livreur_id"] for r in restocks] + [r["by_user_id"] for r in restocks])
+                               + [r["livreur_id"] for r in restocks] + [r["by_user_id"] for r in restocks]
+                               + [e["livreur_id"] for e in expenses])
     try:
         catalog = await sheets.load_catalog()
-        rows = [sheets.row(c, users, catalog) for c in delivered] + [sheets.restock_row(r, users) for r in restocks]
+        rows = ([sheets.row(c, users, catalog) for c in delivered] + [sheets.restock_row(r, users) for r in restocks]
+                + [sheets.expense_row(e, users) for e in expenses])
         added = await sheets.send_rows(rows)
     except RuntimeError as exc:
         await messaging.reply(update, texts.sheets_failed(str(exc)))
         return
-    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks)))
+    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks), len(expenses)))
 
 
 # ================================================================ /livreurs : service et pause par un admin

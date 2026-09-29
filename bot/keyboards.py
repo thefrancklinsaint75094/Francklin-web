@@ -309,3 +309,44 @@ def stock_menu(boxes: tuple[str, ...]) -> M:
     rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
     rows.append([B("📦 Tous les box", callback_data="sv:all"), B("🚴 Livreurs", callback_data="sv:liv")])
     return M(rows)
+
+
+# ---------------------------------------------------------------- caisse : dépenses et cash
+
+_DP_CANCEL = B("❌ Annuler", callback_data="dp_x")
+
+
+def expense_livreurs(livreurs: list[dict]) -> M:
+    rows = [[B(_user_label(u)[:40], callback_data=f"dp_l:{u['id']}")] for u in livreurs]
+    rows.append([_DP_CANCEL])
+    return M(rows)
+
+
+def expense_step(step: str) -> M:
+    from bot.services.cash import AMOUNT_STEPS, MOTIFS
+
+    if step == "kind":
+        return M([[B("🧾 Charges", callback_data="dp_k:c"), B("💸 Avance sur paye", callback_data="dp_k:p")],
+                  [_DP_CANCEL]])
+    if step == "amount":
+        steps = [B(f"{d:+d} €", callback_data=f"dp_a:{d}") for d in AMOUNT_STEPS]
+        half = len(steps) // 2
+        return M([steps[:half], steps[half:], [B("➡️ Suivant", callback_data="dp_n"), _DP_CANCEL]])
+    if step == "motif":
+        buttons = [B(m, callback_data=f"dp_m:{i}") for i, m in enumerate(MOTIFS)]
+        rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
+        rows.append([B("Sans motif", callback_data="dp_m:-1"), _DP_CANCEL])
+        return M(rows)
+    return M([[B("✅ Enregistrer", callback_data="dp_ok")],
+              [B("✏️ Montant", callback_data="dp_e"), _DP_CANCEL]])
+
+
+def cash_overview(rows: list[dict]) -> M:
+    buttons = []
+    for row in rows:
+        user = row.get("user")
+        if user and user["status"] == "active" and row["cash"] > 0:
+            label = f"💶 Récupérer — {row['nom']}"[:40]
+            buttons.append([B(label, callback_data=f"cs_r:{user['id']}")])
+    buttons.append([B("🔄 Actualiser", callback_data="cs_ref")])
+    return M(buttons)

@@ -414,6 +414,26 @@ async def list_restocks_between(start: datetime, end: datetime) -> list[dict]:
     return res.data
 
 
+async def create_expense(fields: dict) -> dict | None:
+    return _first(await _t("expenses").insert(fields).execute())
+
+
+async def list_expenses_between(start: datetime, end: datetime) -> list[dict]:
+    res = await (
+        _t("expenses").select("*").gte("created_at", iso(start)).lt("created_at", iso(end))
+        .order("created_at").execute()
+    )
+    return res.data
+
+
+async def list_expenses_for_livreur(livreur_id: str, since: datetime) -> list[dict]:
+    res = await (
+        _t("expenses").select("*").eq("livreur_id", livreur_id).gte("created_at", iso(since))
+        .order("created_at").execute()
+    )
+    return res.data
+
+
 async def log_event(type_: str, course_id: int | None = None, user_id: str | None = None, payload: dict | None = None) -> None:
     await _t("events").insert(
         {"type": type_, "course_id": course_id, "user_id": user_id, "payload": payload}

@@ -1526,3 +1526,110 @@ async def test_stock_command_boxes_and_livreurs(h, monkeypatch):
     await h.press_data(F1, menu, "sv:box:1")
     assert h.tg.messages[(F1, menu.message_id)].text.endswith("Vide.")
     del r1
+
+
+async def test_expenses_and_cash_to_collect(h, monkeypatch):
+    """/depense (livreur et admin), /caisse avec 💶 Récupérer (→ /recharge cash prérempli), /macaisse ;
+    le cash d'une livraison en espèces pas encore écrite dans la feuille est compté par le bot."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent, sheet_up = [], {"ok": True}
+
+    async def fake_send(rows, client=None):
+        if not sheet_up["ok"]:
+            raise RuntimeError("feuille injoignable")
+        sent.extend(rows)
+        return len(rows)
+
+    async def fake_action(action, client=None):
+        assert action == "cash_livreurs"
+        return {"ok": True, "livreurs": {"Livreur 1": {"especes": 910, "virement": 60, "depenses": 200,
+                                                       "recupere": 520, "cash": 190}}}
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+
+    def txt(m):
+        return m.text.replace("\xa0", " ")
+
+    # Le livreur note 25 € d'essence (boutons + motif tapé).
+    await h.text(L1, "/depense")
+    msg_id = h.tg.last(L1).message_id
+
+    def screen(tg=L1):
+        return h.tg.messages[(tg, msg_id)]
+
+    assert "Quel type ?" in screen().text
+    await h.press_data(L1, screen(), "dp_k:c")
+    await h.press_data(L1, screen(), "dp_n")
+    assert h.tg.answers()[-1]["text"] == texts.EXPENSE_ZERO
+    for d in ("dp_a:10", "dp_a:10", "dp_a:5"):
+        await h.press_data(L1, screen(), d)
+    assert "Montant : <b>25 €</b>" in txt(screen())
+    await h.press_data(L1, screen(), "dp_n")
+    await h.text(L1, "Essence")
+    assert "📝 Motif : Essence" in txt(screen())
+    await h.press_data(L1, screen(), "dp_ok")
+    assert "✅ Dépense #D" in screen().text
+    await asyncio.gather(*list(sheets._tasks))
+    assert [(r["type"], r["livreur"], r["depense"], r["montant"], r["motif"]) for r in sent] == [
+        ("depense", "Livreur 1", "Charges", 25.0, "Essence")]
+    assert "🧾 D#" in txt(h.tg.last(DISPATCH)) and "Charges (à ses frais) — 25 € — Essence" in txt(h.tg.last(DISPATCH))
+
+    # Avance sur paye, montant tapé, sans motif.
+    await h.text(L1, "/depense")
+    msg_id = h.tg.last(L1).message_id
+    await h.press_data(L1, screen(), "dp_k:p")
+    await h.text(L1, "12,50")
+    await h.press_data(L1, screen(), "dp_m:-1")
+    await h.press_data(L1, screen(), "dp_ok")
+    expenses = (await db._t("expenses").select("*").order("id").execute()).data
+    assert [(e["kind"], float(e["amount"]), e["motif"]) for e in expenses] == [
+        ("charges", 25.0, "Essence"), ("paye", 12.5, None)]
+
+    # Un admin la note pour le livreur : le livreur est prévenu.
+    await h.text(F1, "/depense")
+    msg_id = h.tg.last(F1).message_id
+    for d in (f"dp_l:{l1['id']}", "dp_k:c", "dp_a:50", "dp_n", "dp_m:1", "dp_ok"):
+        await h.press_data(F1, screen(F1), d)
+    assert "Dépense notée pour toi par Franchisé 1" in txt(h.tg.last(L1)) and "50 € — Parking" in txt(h.tg.last(L1))
+    assert (await db._t("expenses").select("*").eq("by_user_id", f1["id"]).execute()).data[0]["amount"] == 50
+
+    # Le ravitailleur ne note pas de dépense ; le livreur ne voit pas /caisse.
+    await h.text(R1, "/depense")
+    assert h.tg.last(R1).text == texts.NOT_FOR_YOU
+    await h.text(L1, "/caisse")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    # Livraison en espèces pendant que la feuille est injoignable : +60 € comptés par le bot.
+    await asyncio.gather(*list(sheets._tasks))
+    sheet_up["ok"] = False
+    await go_on_duty(h, L1, BASTILLE)
+    await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"), pay="e")
+    await asyncio.gather(*list(sheets._tasks))
+
+    await h.text(L1, "/macaisse")
+    mine = txt(h.tg.last(L1))
+    assert "Espèces encaissées : 910 €" in mine and "Pas encore dans la feuille : + 60 €" in mine
+    assert "<b>À remettre : 250 €</b>" in mine and "Virements (pour info) : 60 €" in mine
+
+    await h.text(R1, "/caisse")
+    caisse = h.tg.last(R1)
+    assert "<b>Livreur 1</b> : 250 €" in txt(caisse) and "Total à récupérer : <b>250 €</b>" in txt(caisse)
+    assert [d for _, d in caisse.buttons] == [f"cs_r:{l1['id']}", "cs_ref"]
+
+    # 💶 Récupérer : /recharge « cash seulement » prérempli avec 250 €, validé tel quel.
+    sheet_up["ok"] = True
+    await h.press_data(R1, caisse, f"cs_r:{l1['id']}")
+    editor = h.tg.messages[(R1, caisse.message_id)]
+    assert "💶 Cash récupéré : 250 €" in txt(editor)
+    await h.press_data(R1, editor, "rs_ok")
+    restocks = (await db._t("restocks").select("*").execute()).data
+    assert [(r["kind"], float(r["cash"])) for r in restocks] == [("cash", 250.0)]
+    assert "💶 Cash remis" in txt(h.tg.last(L1))

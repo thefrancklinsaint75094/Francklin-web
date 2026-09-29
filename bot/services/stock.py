@@ -154,14 +154,19 @@ async def check_assignment(context, course: dict, livreur: dict) -> None:
         log.exception("Alerte de stock (attribution) impossible")
 
 
-async def deliver_then_push(context, course: dict, livreur: dict | None) -> None:
+async def deliver_then_push(context, course: dict, livreur: dict | None, alerts: bool = True) -> None:
     """Stock lu avant l'envoi de la vente, alerte « plus de … sur lui », puis envoi à la feuille.
-    Tant que la vente n'est pas confirmée dans la feuille, le bot la compte lui-même (en vol)."""
+    Tant que la vente n'est pas confirmée dans la feuille, le bot la compte lui-même (en vol) :
+    produits sortis du stock du livreur, espèces encaissées."""
+    from bot.services import cash
+
     quantities: dict[str, int] = {}
     token = f"course:{course['id']}"
+    livreur_id = livreur["id"] if livreur is not None else None
+    cash.track(livreur_id, token, cash.delivery_amount(course))
     try:
         quantities = course_quantities(course, await sheets.load_catalog())
-        if livreur is not None:
+        if livreur is not None and alerts:
             stock, sheet_name = await current_stock(livreur)
             if stock is not None:
                 empty = emptied_after_delivery(quantities, stock)
@@ -175,6 +180,7 @@ async def deliver_then_push(context, course: dict, livreur: dict | None) -> None
         add_inflight(livreur["id"], token, {p: -q for p, q in quantities.items()})
     if await sheets.push_delivered(course) and livreur is not None:
         remove_inflight(livreur["id"], token)
+        cash.done(livreur_id, token)
 
 
 def _later(coro) -> None:
@@ -190,16 +196,19 @@ def after_assignment_later(context, course: dict, livreur: dict) -> None:
 
 async def push_restock_tracked(restock: dict) -> None:
     """Envoi d'un rechargement, compté par le bot tant qu'il n'est pas dans la feuille."""
+    from bot.services import cash
     from bot.services import restock as rs
 
     token = f"restock:{restock['id']}"
     deltas = rs.signed_quantities(restock.get("items") or [], restock["kind"])
     add_inflight(restock["livreur_id"], token, deltas)
+    cash.track(restock["livreur_id"], token, -float(restock.get("cash") or 0))
     if restock.get("box"):
         # Le box perd ce qui est chargé au livreur, regagne ce qui est repris.
         add_inflight(box_key(restock["box"]), token, {p: -d for p, d in deltas.items()})
     if await sheets.push_restock(restock):
         remove_inflight(restock["livreur_id"], token)
+        cash.done(restock["livreur_id"], token)
         if restock.get("box"):
             remove_inflight(box_key(restock["box"]), token)
 
@@ -238,10 +247,7 @@ def push_restock_later(restock: dict) -> None:
 
 
 def after_delivery_later(context, course: dict, livreur: dict | None) -> None:
-    """Remplace sheets.push_delivered_later : même envoi, précédé de l'alerte de stock."""
-    if not sheets.enabled():
-        return
-    if enabled():
-        _later(deliver_then_push(context, dict(course), livreur))
-    else:
-        sheets.push_delivered_later(course)
+    """Remplace sheets.push_delivered_later : même envoi, précédé de l'alerte de stock (si activée)
+    et compté par le bot (stock, espèces) tant qu'il n'est pas confirmé dans la feuille."""
+    if sheets.enabled():
+        _later(deliver_then_push(context, dict(course), livreur, alerts=enabled()))

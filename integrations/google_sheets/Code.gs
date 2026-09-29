@@ -42,6 +42,14 @@
  * (stock actuel par box) et section ⑤ (total par produit, seuil, statut).
  * Stock de tous les livreurs (« action: stock_livreurs ») : même calcul direct que « stock ».
  *
+ * Dépenses des livreurs (« type: depense ») : écrites dans l'onglet de la nuit de la feuille
+ * Dispatch, zone DÉPENSES LIVREURS (lignes 46 à 57) : A Livreur, B Type (Charges / Paye),
+ * C Montant, D Motif. Numéro gardé dans une note sur la cellule Livreur (« Bot D#12 »).
+ *
+ * Caisse (« action: cash_livreurs ») : cash que chaque livreur doit avoir sur lui, calculé EN
+ * DIRECT comme SOLDES ④ du tableau Rechargement : ventes OK payées en Espèces (feuille Dispatch)
+ * − dépenses (lignes 46 à 57) − cash récupéré (colonne C des onglets du tableau Rechargement).
+ *
  * Le script refuse toute requête sans le bon SECRET.
  */
 const SPREADSHEET_ID = '';
@@ -77,6 +85,12 @@ const SALE_COLS = [[5, 6], [8, 9], [11, 12]];  // (Produit, Qté) 1 à 3, colonn
 const ORGA_SHEET = 'ORGA';
 const BOX_TITLE = '④';       // stock actuel par box
 const TOTAL_TITLE = '⑤';     // total par produit — alerte stock
+const DEP_FIRST_ROW = 46;    // dépenses des livreurs : A Livreur, B Type, C Montant, D Motif
+const DEP_LAST_ROW = 57;
+const DEP_COLS = 4;
+const DEP_NOTE_PREFIX = 'Bot D#';
+const PRICE_COLS = [7, 10, 13];  // Prix 1 à 3, colonnes H, K, N
+const PAY_COL = 4;               // E : Paiement
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -87,12 +101,14 @@ function doPost(e) {
     if (data.action === 'stock') return json_(stock_(data));
     if (data.action === 'stock_box') return json_(boxStock_());
     if (data.action === 'stock_livreurs') return json_(livreursStock_());
+    if (data.action === 'cash_livreurs') return json_(cashLivreurs_());
     const rows = data.rows || [];
-    const courses = rows.filter(function (r) { return r.type !== 'recharge'; });
+    const courses = rows.filter(function (r) { return r.type !== 'recharge' && r.type !== 'depense'; });
     const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
+    const depenses = rows.filter(function (r) { return r.type === 'depense'; });
     let added = 0;
     const errors = [];
-    if (courses.length) {
+    if (courses.length || depenses.length) {
       const ss = spreadsheet_();
       const names = names_(ss, NAMES_RANGE);
       courses.forEach(function (r) {
@@ -100,6 +116,13 @@ function doPost(e) {
           if (write_(ss, names, r)) added++;
         } catch (err) {
           errors.push('course ' + r.numero + ' : ' + err.message);
+        }
+      });
+      depenses.forEach(function (r) {
+        try {
+          if (writeDepense_(ss, names, r)) added++;
+        } catch (err) {
+          errors.push('dépense D' + r.numero + ' : ' + err.message);
         }
       });
     }
@@ -222,6 +245,68 @@ function writeRecharge_(ss, names, r) {
   sheet.getRange(rowNum, 1, 1, R_COLS).setValues([out]);
   sheet.getRange(rowNum, 1).setNote(tag);
   return true;
+}
+
+// Renvoie true si la dépense a été écrite, false si elle y était déjà.
+function writeDepense_(ss, names, r) {
+  const sheet = ss.getSheetByName(r.onglet);
+  if (!sheet) throw new Error('onglet « ' + r.onglet + ' » introuvable');
+  const count = DEP_LAST_ROW - DEP_FIRST_ROW + 1;
+  const tag = DEP_NOTE_PREFIX + r.numero;
+  const notes = sheet.getRange(DEP_FIRST_ROW, 1, count, 1).getNotes();
+  for (let i = 0; i < count; i++) if (notes[i][0] === tag) return false;
+  const values = sheet.getRange(DEP_FIRST_ROW, 1, count, DEP_COLS).getValues();
+  let rowNum = -1;
+  for (let i = 0; i < count; i++) {
+    if (values[i].every(function (v) { return v === ''; })) { rowNum = DEP_FIRST_ROW + i; break; }
+  }
+  if (rowNum < 0) throw new Error('dépenses de « ' + r.onglet + ' » pleines (lignes ' + DEP_FIRST_ROW + ' à ' + DEP_LAST_ROW + ')');
+  sheet.getRange(rowNum, 1, 1, DEP_COLS).setValues([[name_(names, r.livreur, r.livreur_nom), r.depense || '',
+                                                     Number(r.montant) || 0, r.motif || '']]);
+  sheet.getRange(rowNum, 1).setNote(tag);
+  return true;
+}
+
+// Cash de chaque livreur, en direct : ventes OK en espèces − dépenses − cash récupéré.
+function cashLivreurs_() {
+  const out = {};
+  function who(name) {
+    const k = key_(name);
+    if (!out[k]) out[k] = { nom: String(name).trim(), especes: 0, virement: 0, depenses: 0, recupere: 0 };
+    return out[k];
+  }
+  const ds = spreadsheet_();
+  JOURS.forEach(function (day) {
+    const sheet = ds.getSheetByName(day);
+    if (!sheet) return;
+    sheet.getRange(FIRST_ROW, 1, LAST_ROW - FIRST_ROW + 1, COLS).getValues().forEach(function (row) {
+      if (key_(row[2]) !== 'ok' || !key_(row[1])) return;
+      const total = PRICE_COLS.reduce(function (s, c) { return s + num_(row[c]); }, 0);
+      const pay = key_(row[PAY_COL]);
+      if (pay === 'espèces' || pay === 'especes') who(row[1]).especes += total;
+      else if (pay === 'virement') who(row[1]).virement += total;
+    });
+    sheet.getRange(DEP_FIRST_ROW, 1, DEP_LAST_ROW - DEP_FIRST_ROW + 1, 3).getValues().forEach(function (row) {
+      if (key_(row[0]) && num_(row[2])) who(row[0]).depenses += num_(row[2]);
+    });
+  });
+  if (RECHARGE_SPREADSHEET_ID) {
+    const rss = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID);
+    JOURS.forEach(function (day) {
+      const sheet = rss.getSheetByName(day);
+      if (!sheet) return;
+      sheet.getRange(R_FIRST_ROW, 1, R_LAST_ROW - R_FIRST_ROW + 1, 3).getValues().forEach(function (row) {
+        if (key_(row[0]) && num_(row[2])) who(row[0]).recupere += num_(row[2]);
+      });
+    });
+  }
+  const livreurs = {};
+  Object.keys(out).forEach(function (k) {
+    const c = out[k];
+    c.cash = Math.round((c.especes - c.depenses - c.recupere) * 100) / 100;
+    livreurs[c.nom] = c;
+  });
+  return { ok: true, livreurs: livreurs };
 }
 
 // Stock actuel d'un livreur : chargé net (SOLDES ②) − ventes OK lues en direct dans Dispatch.

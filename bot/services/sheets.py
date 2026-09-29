@@ -159,6 +159,41 @@ def push_restock_later(restock: dict) -> None:
     task.add_done_callback(_tasks.discard)
 
 
+def expense_row(expense: dict, users: dict[str, dict]) -> dict:
+    """Dépense d'un livreur pour la zone DÉPENSES LIVREURS de l'onglet de la nuit (feuille Dispatch)."""
+    from bot.services import cash
+
+    livreur = users.get(expense["livreur_id"], {})
+    return {
+        "type": "depense",
+        "numero": expense["id"],
+        "onglet": day_tab(expense["created_at"]),
+        "heure": to_paris(parse_ts(expense["created_at"])).strftime("%H:%M"),
+        "livreur": livreur.get("display_name", ""),
+        "livreur_nom": livreur.get("real_name") or "",
+        "depense": cash.KIND_SHEET.get(expense["kind"], ""),
+        "montant": round(float(expense["amount"]), 2),
+        "motif": expense.get("motif") or "",
+    }
+
+
+async def push_expense(expense: dict) -> bool:
+    """Ajoute une dépense à la feuille Dispatch. True si elle y est. Ne lève jamais d'exception."""
+    if not enabled():
+        return False
+    try:
+        users = await db.get_users([expense["livreur_id"]])
+        await send_rows([expense_row(expense, users)])
+        return True
+    except Exception as exc:  # noqa: BLE001 — la feuille ne doit jamais bloquer la dépense
+        log.warning("Dépense D#%s non envoyée à Google Sheets : %s", expense.get("id"), exc)
+        try:
+            await db.log_event("sheet_error", payload={"expense_id": expense.get("id"), "error": str(exc)[:300]})
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
 async def load_catalog():
     """Catalogue des produits, pour écrire le nom exact de la liste de la feuille.
     Sans catalogue (erreur), les produits partent tels qu'écrits."""
@@ -268,7 +303,7 @@ async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) ->
 
 
 async def fetch_action(action: str, client: httpx.AsyncClient | None = None) -> dict | None:
-    """Appelle une action de lecture du script (stock_box, stock_livreurs). None si illisible."""
+    """Appelle une action de lecture du script (stock_box, stock_livreurs, cash_livreurs). None si illisible."""
     url, secret = webhook()
     if not (url and secret):
         return None
