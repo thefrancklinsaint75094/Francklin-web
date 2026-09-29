@@ -310,3 +310,46 @@ simple qui respecte le mur de confidentialité (§12).
 92. « Tous les box » ajoute les produits dont le total (box + livreurs) est sous le seuil d'ORGA ⑤.
 93. Livreurs : même calcul direct que pour les alertes (chargé net − ventes OK lues dans Dispatch), plus les
     mouvements du bot pas encore écrits.
+
+## Paiement à la livraison
+
+94. Le mode de paiement (**Espèces** / **Virement**, les deux valeurs de la liste PAIEMENT de la feuille) est
+    demandé au moment du « 📦 Livré », par un second écran sur le même message (↩️ Retour possible) : un appui de
+    plus, mais la caisse en dépend. Même choix pour un admin qui marque la course livrée. Stocké dans
+    `courses.payment` (migration 005) ; les courses livrées avant restent sans mode.
+
+## Caisse
+
+95. **Cash qu'un livreur doit avoir** = ventes OK en espèces − dépenses (charges et avances sur paye) − cash
+    récupéré : la définition de SOLDES ④, reprise telle quelle. Le script la calcule en direct (action
+    `cash_livreurs`) à partir des 7 onglets de chaque fichier, sans IMPORTRANGE ; le bot ajoute ses mouvements
+    en vol (livraison en espèces +, dépense −, cash récupéré −) avec le même registre que le stock (clé
+    `cash:<livreur>`).
+96. `/depense` écrit dans la zone DÉPENSES LIVREURS existante de l'onglet de la nuit (lignes 46 à 57, Type =
+    « Charges » ou « Paye » comme la liste TYPE DÉPENSE), note « Bot D#… » contre les doublons, `/synchro` la
+    renvoie. Les montants ne sont pas limités aux multiples de 10 € (essence à 37,50 €).
+97. **💶 Récupérer** dans `/caisse` ne crée rien directement : il ouvre le rechargement « cash seulement »
+    prérempli, pour que le ravitailleur confirme le montant réellement remis.
+
+## Dispatch selon le stock
+
+98. Le stock **reclasse** les livreurs, il n'en **exclut** aucun : la feuille peut être en retard ou incomplète,
+    et une course ne doit jamais rester sans livreur à cause d'elle. Ordre : a tout → stock inconnu → manque
+    quelque chose ; la distance départage dans chaque groupe. Produits absents des colonnes de la feuille :
+    ignorés (sinon « coca » ferait passer tout le monde en « manque »).
+99. Alerte « aucun livreur n'a tout » : une fois par course (mémoire du processus), aux ravitailleurs et au
+    dispatch — pas au franchisé, qui n'y peut rien. Lecture de la feuille gardée 60 s et oubliée dès qu'un
+    mouvement du bot est confirmé écrit, pour ne pas compter deux fois.
+
+## Clôture de la semaine
+
+100. `/cloture` est manuelle (rappel le lundi à 6h05) : une remise à zéro automatique effacerait une semaine
+     dont le cash n'a pas été récupéré. Vérification d'abord, confirmation ensuite ; double appui refusé
+     10 min.
+101. Ordre du script : tout lire, **archiver** (copie des 3 fichiers dans Drive), puis écrire. Si la copie
+     échoue, rien n'est effacé. Le stock initial du COMPTA n'est écrit qu'en colonnes B à P (A = formules).
+102. Stock chez les livreurs **reporté** (ligne « Report clôture » sans box : compté dans le chargé net du
+     livreur, pas dans les sorties des box). Cash des livreurs et reste du ravitailleur **non reportés** :
+     pas de ligne propre pour le faire sans fausser charges ou récupérations ; ils sont signalés avant de
+     confirmer et restent dans l'archive.
+103. Après la clôture, le bot oublie ses mouvements en vol : ils appartenaient à la semaine archivée.
