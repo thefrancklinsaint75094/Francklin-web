@@ -90,7 +90,7 @@ async def h(database, monkeypatch):
     cloture_h._last_done = None
     from bot.services import sheets
 
-    async def no_script(action, client=None):   # jamais d'appel réseau : chaque test simule le script
+    async def no_script(action, client=None, **kw):   # jamais d'appel réseau : chaque test simule le script
         return {"ok": False, "error": "script non simulé"}
 
     monkeypatch.setattr(sheets, "fetch_action", no_script)
@@ -1491,7 +1491,7 @@ async def test_stock_command_boxes_and_livreurs(h, monkeypatch):
     monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
     monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
 
-    async def fake_action(action, client=None):
+    async def fake_action(action, client=None, **kw):
         if action == "stock_box":
             return {"ok": True, "boxes": {"Box 1": {"DIV": 28, "US": 115, "KT": 0}, "Box 2": {}, "Box 3": {}},
                     "totals": [{"produit": "KT", "total": 0, "seuil": 20, "statut": "RUPTURE"}]}
@@ -1554,7 +1554,7 @@ async def test_expenses_and_cash_to_collect(h, monkeypatch):
         sent.extend(rows)
         return len(rows)
 
-    async def fake_action(action, client=None):
+    async def fake_action(action, client=None, **kw):
         assert action == "cash_livreurs"
         return {"ok": True, "livreurs": {"Livreur 1": {"especes": 910, "virement": 60, "depenses": 200,
                                                        "recupere": 520, "cash": 190}}}
@@ -1659,7 +1659,7 @@ async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
     monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
     reads = []
 
-    async def fake_action(action, client=None):
+    async def fake_action(action, client=None, **kw):
         reads.append(action)
         return {"ok": True, "livreurs": {"Livreur 1": {"US": 0, "DIV": 4}, "Livreur 2": {"US": 5, "DIV": 0}}}
 

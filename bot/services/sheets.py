@@ -271,7 +271,14 @@ async def send_rows(rows: list[dict], client: httpx.AsyncClient | None = None) -
     raise RuntimeError(str(last))
 
 
-STOCK_TIMEOUT = 15.0
+STOCK_TIMEOUT = 30.0   # Apps Script peut mettre 15 à 20 s au premier appel d'un nouveau déploiement
+
+
+def describe_error(exc: Exception, timeout: float) -> str:
+    """Message lisible, même pour les erreurs réseau sans texte (délai dépassé…)."""
+    if isinstance(exc, httpx.TimeoutException):
+        return f"le script Google n'a pas répondu à temps ({int(timeout)} s) — réessaie dans un instant"
+    return str(exc) or exc.__class__.__name__
 
 
 async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) -> tuple[dict | None, str]:
@@ -295,7 +302,7 @@ async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) ->
         stock = data.get("stock")
         return (stock if isinstance(stock, dict) else None), (data.get("livreur") or name)
     except (httpx.HTTPError, RuntimeError) as exc:
-        log.warning("Stock de %s illisible : %s", name, exc)
+        log.warning("Stock de %s illisible : %s", name, describe_error(exc, STOCK_TIMEOUT))
         return None, name
     finally:
         if own:
@@ -321,8 +328,9 @@ async def fetch_action(action: str, client: httpx.AsyncClient | None = None, pay
             raise RuntimeError(f"réponse du script : {data.get('error')}")
         return data
     except (httpx.HTTPError, RuntimeError) as exc:
-        log.warning("Lecture « %s » impossible : %s", action, exc)
-        return {"ok": False, "error": str(exc)}
+        error = describe_error(exc, timeout)
+        log.warning("Lecture « %s » impossible : %s", action, error)
+        return {"ok": False, "error": error}
     finally:
         if own:
             await client.aclose()

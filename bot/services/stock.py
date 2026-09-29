@@ -246,6 +246,7 @@ async def livreurs_now() -> dict:
 # ---------------------------------------------------------------- dispatch selon le stock
 
 SHEET_CACHE_SECONDS = 60
+RANK_TIMEOUT = 8.0   # la diffusion d'une course n'attend jamais la feuille plus longtemps
 _sheet_cache: tuple[float, dict] | None = None   # (expire, {nom feuille: {produit: qté}})
 _dispatch_alerted: set[int] = set()
 
@@ -257,7 +258,7 @@ async def _sheet_livreurs() -> dict | None:
     now = time.monotonic()
     if _sheet_cache and _sheet_cache[0] > now:
         return _sheet_cache[1]
-    data = await sheets.fetch_action("stock_livreurs")
+    data = await sheets.fetch_action("stock_livreurs", timeout=RANK_TIMEOUT)
     if not data or not data.get("ok"):
         return None
     _sheet_cache = (now + SHEET_CACHE_SECONDS, data.get("livreurs") or {})

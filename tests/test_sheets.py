@@ -149,3 +149,13 @@ async def test_dutch_google_error_page_shows_its_text(configured):
     async with client(lambda r: httpx.Response(200, text=page)) as c:
         with pytest.raises(RuntimeError, match="doit être autorisé.*Autorisatie is vereist"):
             await sheets.send_rows([ROW], client=c)
+
+
+def test_describe_error_timeout_and_empty_messages():
+    import httpx
+
+    from bot.services import sheets
+
+    assert "n'a pas répondu à temps (30 s)" in sheets.describe_error(httpx.ReadTimeout(""), 30)
+    assert sheets.describe_error(httpx.ConnectError(""), 30) == "ConnectError"
+    assert sheets.describe_error(RuntimeError("réponse du script : secret"), 30) == "réponse du script : secret"
