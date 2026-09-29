@@ -12,6 +12,7 @@ jamais le bot : il est journalisé, et /synchro permet de renvoyer la nuit.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
 import re
@@ -166,25 +167,37 @@ async def load_catalog():
 
 
 TITLE_RE = re.compile(r"<title>(.*?)</title>", re.I | re.S)
+_HIDDEN_RE = re.compile(r"<(script|style|head)\b.*?</\1>", re.I | re.S)
+_TAG_RE = re.compile(r"<[^>]+>")
+_AUTH_WORDS = ("authorization is required", "autorisation requise", "autorisatie", "authorisation",
+               "berechtigung", "autorización", "you do not have permission", "je hebt geen toestemming",
+               "vous n'avez pas l'autorisation")
+
+
+def page_text(body: str) -> str:
+    """Texte visible d'une page HTML, sans balises ni scripts."""
+    text = _TAG_RE.sub(" ", _HIDDEN_RE.sub(" ", body or ""))
+    return " ".join(html.unescape(text).split())
 
 
 def explain_non_json(resp: httpx.Response) -> str:
-    """Le script a renvoyé une page web au lieu de sa réponse : dire pourquoi, en clair."""
+    """Le script a renvoyé une page web au lieu de sa réponse : dire pourquoi, en clair,
+    avec le texte de la page (Google répond dans la langue du serveur : « Fout » = erreur)."""
     body = resp.text or ""
     where = str(resp.url)
-    low = body.lower()
-    if "accounts.google.com" in where or "servicelogin" in low or "signin" in where:
+    text = page_text(body)
+    low = (body + " " + text).lower()
+    detail = text[:220] or "page vide"
+    if "accounts.google.com" in where or "servicelogin" in low:
         return ("le script demande une connexion Google : dans Apps Script, Déployer → Gérer les déploiements "
                 "→ ✏️, mets « Qui a accès : Tout le monde »")
-    if "authorization is required" in low or "autorisation requise" in low or "authorisation" in low:
-        return ("le script doit être autorisé : ouvre-le dans script.google.com, lance doPost une fois "
-                "(▶ Exécuter) et accepte l'autorisation, puis redéploie")
-    if resp.status_code == 404 or "script function not found" in low or "fonction de script introuvable" in low:
+    if any(w in low for w in _AUTH_WORDS):
+        return ("le script doit être autorisé : dans script.google.com, choisis la fonction doPost, "
+                f"▶ Exécuter, accepte l'autorisation, puis redéploie. Page reçue : « {detail} »")
+    if resp.status_code == 404 or "script function not found" in low or "scriptfunctie niet gevonden" in low:
         return ("adresse du script introuvable ou déploiement supprimé : vérifie l'adresse /exec "
-                "(Déployer → Gérer les déploiements)")
-    title = TITLE_RE.search(body)
-    label = " ".join(title.group(1).split())[:80] if title else " ".join(body.split())[:80]
-    return f"réponse inattendue du script (HTTP {resp.status_code}) : {label or 'vide'}"
+                f"(Déployer → Gérer les déploiements). Page reçue : « {detail} »")
+    return f"réponse inattendue du script (HTTP {resp.status_code}) : « {detail} »"
 
 
 async def send_rows(rows: list[dict], client: httpx.AsyncClient | None = None) -> int:

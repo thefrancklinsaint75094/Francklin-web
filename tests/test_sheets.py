@@ -130,9 +130,22 @@ async def test_login_page_is_explained(configured):
 
 async def test_other_html_page_shows_its_title(configured):
     async with client(lambda r: httpx.Response(500, text="<html><title>Erreur interne</title></html>")) as c:
-        with pytest.raises(RuntimeError, match=r"HTTP 500\) : Erreur interne"):
+        with pytest.raises(RuntimeError, match=r"HTTP 500\) : « Erreur interne »"):
             await sheets.send_rows([ROW], client=c)
     page = "<html><body>Authorization is required to perform that action.</body></html>"
     async with client(lambda r: httpx.Response(200, text=page)) as c:
         with pytest.raises(RuntimeError, match="doit être autorisé"):
+            await sheets.send_rows([ROW], client=c)
+
+
+async def test_dutch_google_error_page_shows_its_text(configured):
+    page = ("<html><head><title>Fout</title><style>p{}</style></head><body><div>"
+            "TypeError: Cannot read properties of undefined (reading &#39;x&#39;) (regel 42, bestand Code)"
+            "</div></body></html>")
+    async with client(lambda r: httpx.Response(200, text=page)) as c:
+        with pytest.raises(RuntimeError, match=r"« TypeError: Cannot read properties of undefined \(reading 'x'\)"):
+            await sheets.send_rows([ROW], client=c)
+    page = "<html><title>Fout</title><body>Autorisatie is vereist om die actie uit te voeren.</body></html>"
+    async with client(lambda r: httpx.Response(200, text=page)) as c:
+        with pytest.raises(RuntimeError, match="doit être autorisé.*Autorisatie is vereist"):
             await sheets.send_rows([ROW], client=c)
