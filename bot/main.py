@@ -150,6 +150,7 @@ def register_handlers(app: Application) -> None:
         (r"^fw_no:", franchise.withdraw_no),
         (r"^course_take:", livreur.take),
         (r"^course_deliver:", livreur.deliver),
+        (r"^pay(_back)?:", livreur.pay),
         (r"^livreur_soon_free$", livreur.soon_free),
         (r"^course_livreur_cancel:", livreur.cancel_ask),
         (r"^lc_yes:", livreur.cancel_yes),

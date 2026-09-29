@@ -147,7 +147,17 @@ def encours(pending: list[dict], assigned: list[dict]) -> M | None:
 
 
 def override_confirm(action: str, course_id: int) -> M:
+    if action == "deliver":
+        # Livrée par un admin : il indique aussi comment le client a payé.
+        return M([[B("Oui — 💵 Espèces", callback_data=f"fy:deliver:{course_id}:e"),
+                   B("Oui — 💳 Virement", callback_data=f"fy:deliver:{course_id}:v")],
+                  [B("Non", callback_data="op_cancel")]])
     return M([[B("Oui", callback_data=f"fy:{action}:{course_id}"), B("Non", callback_data="op_cancel")]])
+
+
+def payment_choice(course_id: int) -> M:
+    return M([[B("💵 Espèces", callback_data=f"pay:{course_id}:e"), B("💳 Virement", callback_data=f"pay:{course_id}:v")],
+              [B("↩️ Retour", callback_data=f"pay_back:{course_id}")]])
 
 
 def _user_label(user: dict) -> str:

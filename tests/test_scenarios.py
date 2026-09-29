@@ -289,6 +289,13 @@ async def test_photo_order(h):
 
 # ====================================================================== étape 3
 
+async def deliver_course(h, tg_id, msg, pay="e"):
+    """📦 Livré puis choix du paiement (e : espèces, v : virement)."""
+    course_id = msg.data("course_deliver:").split(":")[1]
+    await h.press(tg_id, msg, "course_deliver:")
+    await h.press_data(tg_id, h.tg.messages[(tg_id, msg.message_id)], f"pay:{course_id}:{pay}")
+
+
 async def go_on_duty(h, tg_id, pos):
     await h.text(tg_id, "/dispo")
     await h.location(tg_id, *pos, message_id=tg_id)
@@ -330,12 +337,13 @@ async def test_dispo_broadcast_take_and_deliver(h):
     await h.text(L1, "/macourse")
     assert h.tg.last(L1).text.startswith(f"🚴 Course #{course['id']}")
 
-    await h.press(L1, fiche, "course_deliver:")
+    await deliver_course(h, L1, fiche)
     delivered = await db.get_course(course["id"])
     assert delivered["status"] == "delivered" and delivered["delivered_distance_m"] is not None
     assert "✅ Course" in h.tg.last(L1).text or "livrée" in h.tg.messages[(L1, fiche.message_id)].text
     assert "— livrée à" in h.tg.find(F1, f"Course #{course['id']} — livrée").text
-    assert f"✅ #{course['id']} — livrée — Livreur 1 — 60 €" in h.tg.texts(DISPATCH)
+    assert f"✅ #{course['id']} — livrée — Livreur 1 — 60 € · 💵 espèces" in [
+        x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
     # Double « Livré » : sans effet.
     await h.press_data(L1, fiche, f"course_deliver:{course['id']}")
     assert h.tg.answers()[-1]["text"] == "Déjà livrée."
@@ -414,7 +422,7 @@ async def test_one_course_at_a_time_and_soon_free(h):
     assert all("🆕" not in t for t in h.tg.texts(L1)[-3:])
     # Livraison de la première : soon_free retombe.
     fiche1 = h.tg.find(L1, f"🚴 Course #{c1['id']}")
-    await h.press(L1, fiche1, "course_deliver:")
+    await deliver_course(h, L1, fiche1)
     assert (await db.get_user(l1["id"]))["soon_free"] is False
     del c3
 
@@ -551,7 +559,7 @@ async def test_relay_both_ways(h):
     await h.voice(F1)
     assert h.tg.last(F1).text == texts.WRITE_TEXT
     # Course livrée : relais fermé.
-    await h.press(L1, fiche, "course_deliver:")
+    await deliver_course(h, L1, fiche)
     await h.press_data(F1, relayed, f"relay_start:{course['id']}")
     assert h.tg.last(F1).text == texts.COURSE_FINISHED
     assert len(await db._t("messages").select("*").execute().__await__().__next__() if False else
@@ -563,10 +571,10 @@ async def test_recap_journal_csv(h):
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     c2 = await order(h, F2, "oberkampf")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"))
     await go_on_duty(h, L2, REPUBLIQUE)
     c3 = await order(h, F1, "deux")
 
@@ -589,8 +597,9 @@ async def test_recap_journal_csv(h):
     assert csv_bytes.startswith("﻿".encode())
     rows = list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig")), delimiter=";"))
     assert rows[0] == ["numero", "date_livraison", "heure_livraison", "franchise", "livreur", "adresse",
-                       "complement", "produits", "prix"]
+                       "complement", "produits", "prix", "paiement"]
     assert rows[1][0] == str(c1["id"]) and rows[1][6] == "digicode 45A32" and rows[1][8] == "60,00"
+    assert rows[1][9] == "Espèces"
 
     await h.press(DISPATCH, h.tg.find(DISPATCH, "📊 Récap"), "recap_prev:")
     assert "aucune course livrée" in h.tg.last(DISPATCH).text
@@ -757,7 +766,7 @@ async def test_retention_scrubs_old_data(h):
     await h.press(L1, h.tg.last(L1), "course_take:")
     await h.press(L1, h.tg.find(L1, "c'est pour toi"), "relay_start:")
     await h.text(L1, "je suis en bas")
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     old = iso(now_utc() - timedelta(days=91))
     await db.update_course(course["id"], {"closed_at": old})
     await db._t("drafts").update({"created_at": old}).gte("created_at", "1970-01-01").execute()
@@ -892,7 +901,7 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     await asyncio.gather(*list(sheets._tasks))
     assert [(r["numero"], r["vendeur"], r["livreur"], r["statut"], r["prix"]) for r in sent] == [
         (course["id"], "Franchisé 1", "Livreur 1", "OK", 60.0)]
@@ -901,6 +910,51 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     sent.clear()
     await h.text(DISPATCH, "/synchro")
     assert "Google Sheets à jour" in h.tg.last(DISPATCH).text and len(sent) == 1
+
+
+async def test_payment_mode_at_delivery(h, monkeypatch):
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    fiche = h.tg.find(L1, "c'est pour toi")
+
+    # 📦 Livré → choix du paiement ; ↩️ Retour rend la fiche intacte.
+    await h.press(L1, fiche, "course_deliver:")
+    assert h.tg.answers()[-1]["text"] == texts.PAYMENT_PROMPT
+    ask = h.tg.messages[(L1, fiche.message_id)]
+    assert [d for _, d in ask.buttons] == [f"pay:{course['id']}:e", f"pay:{course['id']}:v",
+                                           f"pay_back:{course['id']}"]
+    assert (await db.get_course(course["id"]))["status"] == "assigned"
+    await h.press_data(L1, ask, f"pay_back:{course['id']}")
+    assert any(d.startswith("course_deliver:") for _, d in h.tg.messages[(L1, fiche.message_id)].buttons)
+
+    await deliver_course(h, L1, h.tg.messages[(L1, fiche.message_id)], pay="v")
+    delivered = await db.get_course(course["id"])
+    assert delivered["status"] == "delivered" and delivered["payment"] == "virement"
+    assert "💳 virement" in h.tg.find(DISPATCH, f"✅ #{course['id']} — livrée").text
+    await asyncio.gather(*list(sheets._tasks))
+    assert [r["paiement"] for r in sent] == ["Virement"]
+
+    # L'admin marque une course livrée en choisissant le mode de paiement.
+    c2 = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c2['id']}"), "course_take:")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"force_deliver:{c2['id']}")
+    confirm = h.tg.last(DISPATCH)
+    assert f"fy:deliver:{c2['id']}:e" in [d for _, d in confirm.buttons]
+    await h.press_data(DISPATCH, confirm, f"fy:deliver:{c2['id']}:v")
+    assert (await db.get_course(c2["id"]))["payment"] == "virement"
 
 
 async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
@@ -1000,6 +1054,7 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     await h.press(L1, screen(), "order_edit:")
     await h.press_data(L1, screen(), "oe_s:0")
     await h.press_data(L1, card, f"course_deliver:{course['id']}")
+    await h.press_data(L1, card, f"pay:{course['id']}:e")
     await h.text(L1, "5")
     assert h.tg.last(L1).text == texts.COURSE_FINISHED
     assert (await db.get_user(l1["id"]))["conversation_state"] is None
@@ -1009,7 +1064,7 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     assert sent[0]["lignes"] == [{"produit": "vodka", "qte": 3, "prix": 90.0},
                                  {"produit": "coca", "qte": 1, "prix": 20.0},
                                  {"produit": "DIV", "qte": 1, "prix": 20.0}]
-    assert f"✅ #{course['id']} — livrée — Livreur 1 — 130 €" in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
+    assert f"✅ #{course['id']} — livrée — Livreur 1 — 130 € · 💵 espèces" in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
 
 
 async def test_franchise_order_price_must_be_multiple_of_ten(h):
@@ -1303,7 +1358,7 @@ async def test_stock_alerts_last_units_and_empty(h, monkeypatch, test_config):
         assert last in h.tg.find(who, "⚠️ Stock").text, who
     assert h.tg.find(F1, "⚠️ Stock").text.startswith(f"⚠️ Stock — course #{course['id']}")
 
-    await h.press(L1, h.tg.find(L1, "c'est pour toi"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     await asyncio.gather(*list(sheets._tasks))
     empty = f"📭 Livreur 1 (Livreur A) n'a plus de US sur lui (course #{course['id']} livrée)."
     for who in (F1, L1, R1, DISPATCH):
@@ -1355,11 +1410,11 @@ async def test_stock_computed_in_parallel_of_the_sheet(h, monkeypatch, test_conf
     assert f"• C'est le dernier US de Livreur 1 (Livreur A)" in h.tg.find(F2, "⚠️ Stock").text
 
     # Livraison de la 1re : la feuille est injoignable, la vente reste comptée par le bot.
-    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c1['id']}"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c1['id']}"))
     await asyncio.gather(*list(sheets._tasks))
     assert not [t for t in h.tg.texts(F1) if t.startswith("📭")]            # 3 − 2 = 1 : il en reste
     # Livraison de la 2e : feuille toujours à 3, mais le bot sait qu'il n'en reste qu'1 → épuisé.
-    await h.press(L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"), "course_deliver:")
+    await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"))
     await asyncio.gather(*list(sheets._tasks))
     assert h.tg.find(F2, "📭").text.startswith("📭 Livreur 1 (Livreur A) n'a plus de US sur lui")
 

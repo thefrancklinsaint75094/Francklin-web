@@ -157,7 +157,7 @@ function write_(ss, names, r) {
   const vendeur = VENDEUR || name_(names, r.vendeur, r.vendeur_nom);
   const livreur = name_(names, r.livreur, r.livreur_nom);
   chunks.forEach(function (chunk, k) {
-    const out = [vendeur, livreur, r.statut || 'OK', r.adresse || '', ''];
+    const out = [vendeur, livreur, r.statut || 'OK', r.adresse || '', r.paiement || ''];
     for (let j = 0; j < PRODUCTS_PER_ROW; j++) {
       const p = chunk[j];
       out.push(p ? p.produit : '', p ? p.qte : '', p && p.prix !== null && p.prix !== undefined ? p.prix : '');

@@ -379,8 +379,17 @@ def full_fiche(course: dict, franchise: dict) -> str:
     return "\n".join(lines)
 
 
+PAYMENT_LABEL = {"especes": "💵 espèces", "virement": "💳 virement"}
+PAYMENT_PROMPT = "Le client a payé comment ?"
+
+
+def _pay(course: dict) -> str:
+    label = PAYMENT_LABEL.get(course.get("payment") or "")
+    return f" · {label}" if label else ""
+
+
 def delivered_for_livreur(course: dict) -> str:
-    return f"✅ Course #{course['id']} livrée — {eur(course['price'])} encaissés."
+    return f"✅ Course #{course['id']} livrée — {eur(course['price'])} encaissés{_pay(course)}."
 
 
 def livreur_cancelled(course_id: int) -> str:
@@ -595,7 +604,7 @@ def d_taken(course: dict, franchise: dict, livreur: dict) -> str:
 
 
 def d_delivered(course: dict, livreur: dict, far_label: str | None = None) -> str:
-    text = f"✅ #{course['id']} — livrée — {esc(livreur['display_name'])} — {eur(course['price'])}"
+    text = f"✅ #{course['id']} — livrée — {esc(livreur['display_name'])} — {eur(course['price'])}{_pay(course)}"
     if far_label:
         text += f"\n⚠️ livré à {far_label} de l'adresse"
     return text
@@ -826,7 +835,7 @@ def journal_header(label: str, count: int) -> str:
 def journal_line(time_label: str, course: dict, franchise_name: str, livreur_name: str) -> str:
     return (
         f"{time_label} · #{course['id']} · {esc(franchise_name)} → {esc(livreur_name)} · "
-        f"{esc(course['address'])} · {eur(course['price'])}"
+        f"{esc(course['address'])} · {eur(course['price'])}{_pay(course)}"
     )
 
 

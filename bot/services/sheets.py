@@ -28,6 +28,7 @@ TIMEOUT = 20.0
 RETRY_DELAY = 2.0
 JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 STATUT_LIVRE = "OK"
+PAYMENT_SHEET = {"especes": "Espèces", "virement": "Virement"}   # valeurs de la liste « Paiement » de la feuille
 _tasks: set[asyncio.Task] = set()
 
 LINE_PRICE_RE = re.compile(r"\s*\((\d+(?:[.,]\d+)?)\s*€\)\s*$")
@@ -103,6 +104,7 @@ def row(course: dict, users: dict[str, dict], catalog=None) -> dict:
         "livreur": livreur.get("display_name", ""),
         "livreur_nom": livreur.get("real_name") or "",
         "statut": STATUT_LIVRE,
+        "paiement": PAYMENT_SHEET.get(course.get("payment") or "", ""),
         "adresse": course["address"],
         "lignes": product_lines(course["products"], total, catalog),
         "prix": total,
