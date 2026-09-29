@@ -97,6 +97,8 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `GOOGLE_SHEETS_WEBHOOK_URL` | non | | adresse du script Google Sheets (voir plus haut) |
 | `GOOGLE_SHEETS_SECRET` | non | | secret partagé avec ce script |
 | `BOXES` | non | `Box 1,Box 2,Box 3` | box proposés au ravitailleur (noms du tableau Rechargement) |
+| `ARRIVAL_NOTIFY_METERS` | non | `500` | alerte « le livreur arrive » sous cette distance (0 = désactivé) |
+| `ARRIVAL_NOTIFY_MINUTES` | non | `5` | … ou sous ce nombre de minutes estimées (0 = désactivé) |
 
 ---
 
@@ -143,6 +145,14 @@ fiche porte « ⚠️ Produit pas dans le catalogue ». Les franchisés voient l
 est refusée avec un message qui dit quoi corriger ; le franchisé la renvoie avec le bon prix.
 
 Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002_products.sql`.
+
+### Alerte « le livreur arrive »
+
+Grâce à la position en direct du livreur, le franchisé de la course et le dispatch reçoivent **une fois par
+course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », dès que le livreur est à moins de
+`ARRIVAL_NOTIFY_METERS` (500 m) de l'adresse **ou** à moins de `ARRIVAL_NOTIFY_MINUTES` (5 min). Le temps est
+estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
+livreur partage sa position **en direct**.
 
 ### Pouvoirs des admins (dispatch et franchisés)
 
