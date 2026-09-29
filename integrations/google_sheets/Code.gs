@@ -50,11 +50,24 @@
  * DIRECT comme SOLDES ④ du tableau Rechargement : ventes OK payées en Espèces (feuille Dispatch)
  * − dépenses (lignes 46 à 57) − cash récupéré (colonne C des onglets du tableau Rechargement).
  *
+ * Clôture de la semaine (« action: cloture », commande /cloture du bot) :
+ * 1. copie des 3 fichiers dans le dossier Drive « Archives bot » (si la copie échoue, rien n'est effacé) ;
+ * 2. stock actuel des box (ORGA ④) → nouveau stock initial (COMPTA, onglet STOCK) ;
+ * 3. efface la semaine : MOUVEMENTS et RAVI (COMPTA), lignes de commande et dépenses des
+ *    7 onglets (Dispatch, la colonne Vendeur repasse à TOTAL), lignes des 7 onglets (Rechargement) ;
+ * 4. le stock encore chez chaque livreur est reporté : une ligne « Report clôture » (sans box)
+ *    dans l'onglet du jour du tableau Rechargement.
+ * Il faut COMPTA_SPREADSHEET_ID et l'accès à Google Drive : après avoir collé le script,
+ * choisis la fonction « autoriser », ▶ Exécuter et accepte, puis Déployer → Gérer les
+ * déploiements → ✏️ → Version : Nouvelle version (l'adresse /exec ne change pas).
+ *
  * Le script refuse toute requête sans le bon SECRET.
  */
 const SPREADSHEET_ID = '';
 const SECRET = 'A_REMPLACER';
 const RECHARGE_SPREADSHEET_ID = '';
+const COMPTA_SPREADSHEET_ID = '';
+const ARCHIVE_FOLDER = 'Archives bot';
 
 const VENDEUR = 'TOTAL';
 
@@ -91,6 +104,13 @@ const DEP_COLS = 4;
 const DEP_NOTE_PREFIX = 'Bot D#';
 const PRICE_COLS = [7, 10, 13];  // Prix 1 à 3, colonnes H, K, N
 const PAY_COL = 4;               // E : Paiement
+const C_STOCK_SHEET = 'STOCK';   // COMPTA : en-têtes produits ligne 2 (B à P), box lignes 4 à 6
+const C_STOCK_HEADER_ROW = 2;
+const C_STOCK_FIRST_ROW = 4;
+const C_STOCK_ROWS = 3;
+const C_MOVES = 'MOUVEMENTS!A3:P22';
+const C_RAVI = 'RAVI!A5:E15';
+const REPORT_LABEL = 'Report clôture';
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -102,6 +122,7 @@ function doPost(e) {
     if (data.action === 'stock_box') return json_(boxStock_());
     if (data.action === 'stock_livreurs') return json_(livreursStock_());
     if (data.action === 'cash_livreurs') return json_(cashLivreurs_());
+    if (data.action === 'cloture') return json_(cloture_(data));
     const rows = data.rows || [];
     const courses = rows.filter(function (r) { return r.type !== 'recharge' && r.type !== 'depense'; });
     const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
@@ -301,12 +322,123 @@ function cashLivreurs_() {
     });
   }
   const livreurs = {};
+  let recupere = 0;
   Object.keys(out).forEach(function (k) {
     const c = out[k];
     c.cash = Math.round((c.especes - c.depenses - c.recupere) * 100) / 100;
+    recupere += c.recupere;
     livreurs[c.nom] = c;
   });
-  return { ok: true, livreurs: livreurs };
+  // Reste chez le ravitailleur (comme COMPTA RAVI) : cash récupéré − ce qu'il a noté dans RAVI.
+  let ravi = null;
+  if (COMPTA_SPREADSHEET_ID) {
+    const used = SpreadsheetApp.openById(COMPTA_SPREADSHEET_ID).getRange(C_RAVI).getValues()
+      .reduce(function (s, row) { return s + num_(row[2]); }, 0);
+    ravi = Math.round((recupere - used) * 100) / 100;
+  }
+  return { ok: true, livreurs: livreurs, ravitailleur: ravi };
+}
+
+// À exécuter une fois depuis l'éditeur (▶) pour autoriser l'accès à Google Drive (archives).
+function autoriser() {
+  DriveApp.getRootFolder();
+  return 'ok';
+}
+
+// Clôture de la semaine. data.onglet : onglet du jour où reporter le stock des livreurs ;
+// data.libelle : nom des copies d'archive (« Clôture du 2026-09-28 »).
+function cloture_(data) {
+  if (!RECHARGE_SPREADSHEET_ID) return { ok: false, error: 'RECHARGE_SPREADSHEET_ID vide dans le script' };
+  if (!COMPTA_SPREADSHEET_ID) return { ok: false, error: 'COMPTA_SPREADSHEET_ID vide dans le script' };
+  const ds = spreadsheet_();
+  const rss = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID);
+  const cs = SpreadsheetApp.openById(COMPTA_SPREADSHEET_ID);
+  if (JOURS.indexOf(data.onglet) < 0) return { ok: false, error: 'onglet du jour inconnu : ' + data.onglet };
+
+  // 1. Tout lire AVANT d'effacer.
+  const boxes = boxStock_();
+  if (!boxes.ok) return boxes;
+  const livreurs = livreursStock_();
+  if (!livreurs.ok) return livreurs;
+
+  // 2. Archives : si la copie échoue, on s'arrête sans rien effacer.
+  const label = String(data.libelle || ('Clôture du ' + Utilities.formatDate(new Date(), 'Europe/Paris', 'yyyy-MM-dd')));
+  const found = DriveApp.getFoldersByName(ARCHIVE_FOLDER);
+  const root = found.hasNext() ? found.next() : DriveApp.createFolder(ARCHIVE_FOLDER);
+  const folder = root.createFolder(label);
+  [ds, rss, cs].forEach(function (f) {
+    DriveApp.getFileById(f.getId()).makeCopy(f.getName() + ' — ' + label, folder);
+  });
+
+  // 3. Nouveau stock initial des box = stock actuel (ORGA ④), rangé selon les en-têtes du COMPTA.
+  const stockSheet = cs.getSheetByName(C_STOCK_SHEET);
+  if (!stockSheet) return { ok: false, error: 'onglet « ' + C_STOCK_SHEET + ' » introuvable dans le COMPTA' };
+  const header = stockSheet.getRange(C_STOCK_HEADER_ROW, 2, 1, STOCK_COLS - 1).getDisplayValues()[0];
+  const boxRange = stockSheet.getRange(C_STOCK_FIRST_ROW, 1, C_STOCK_ROWS, STOCK_COLS);
+  const boxRows = boxRange.getValues();
+  const byBox = {};
+  Object.keys(boxes.boxes).forEach(function (b) { byBox[key_(b)] = boxes.boxes[b]; });
+  const initial = {};
+  boxRows.forEach(function (row) {
+    const values = byBox[key_(row[0])];
+    if (!values) return;
+    const byProduct = {};
+    Object.keys(values).forEach(function (p) { byProduct[key_(p)] = values[p]; });
+    initial[String(row[0]).trim()] = {};
+    header.forEach(function (p, j) {
+      if (!String(p).trim()) return;
+      const q = byProduct[key_(p)] || 0;
+      row[j + 1] = q === 0 ? '' : q;
+      if (q) initial[String(row[0]).trim()][String(p).trim()] = q;
+    });
+  });
+  // Colonnes B à P seulement : les noms des box (colonne A) sont des formules.
+  stockSheet.getRange(C_STOCK_FIRST_ROW, 2, C_STOCK_ROWS, STOCK_COLS - 1)
+    .setValues(boxRows.map(function (row) { return row.slice(1); }));
+
+  // 4. Effacer la semaine.
+  cs.getRange(C_MOVES).clearContent();
+  cs.getRange(C_RAVI).clearContent();
+  JOURS.forEach(function (day) {
+    const sheet = ds.getSheetByName(day);
+    if (sheet) {
+      const n = LAST_ROW - FIRST_ROW + 1;
+      sheet.getRange(FIRST_ROW, 2, n, COLS - 1).clearContent();
+      const vendeur = sheet.getRange(FIRST_ROW, 1, n, 1);
+      vendeur.clearNote();
+      vendeur.setValues(Array.from({ length: n }, function () { return [VENDEUR]; }));
+      const dep = sheet.getRange(DEP_FIRST_ROW, 1, DEP_LAST_ROW - DEP_FIRST_ROW + 1, DEP_COLS);
+      dep.clearContent();
+      dep.clearNote();
+    }
+    const rsheet = rss.getSheetByName(day);
+    if (rsheet) {
+      const r = rsheet.getRange(R_FIRST_ROW, 1, R_LAST_ROW - R_FIRST_ROW + 1, R_COLS);
+      r.clearContent();
+      r.clearNote();
+    }
+  });
+
+  // 5. Report du stock encore chez les livreurs (sans box : les box ne bougent pas).
+  const rsheet = rss.getSheetByName(data.onglet);
+  const nProducts = R_LAST_PRODUCT_COL - R_FIRST_PRODUCT_COL + 1;
+  const rheader = rsheet.getRange(R_HEADER_ROW, R_FIRST_PRODUCT_COL, 1, nProducts).getDisplayValues()[0];
+  const reports = {};
+  let rowNum = R_FIRST_ROW;
+  Object.keys(livreurs.livreurs).forEach(function (name) {
+    const values = livreurs.livreurs[name];
+    const byProduct = {};
+    Object.keys(values).forEach(function (p) { byProduct[key_(p)] = values[p]; });
+    const qty = rheader.map(function (p) { return String(p).trim() && byProduct[key_(p)] ? byProduct[key_(p)] : ''; });
+    if (qty.every(function (q) { return q === ''; }) || rowNum > R_LAST_ROW) return;
+    rsheet.getRange(rowNum, 1, 1, R_COLS).setValues([[name, '', ''].concat(qty).concat([REPORT_LABEL, ''])]);
+    rsheet.getRange(rowNum, 1).setNote(REPORT_LABEL);
+    reports[name] = {};
+    rheader.forEach(function (p, j) { if (qty[j] !== '') reports[name][String(p).trim()] = qty[j]; });
+    rowNum++;
+  });
+  return { ok: true, archive: folder.getUrl(), dossier: ARCHIVE_FOLDER + ' / ' + label,
+           initial: initial, reports: reports };
 }
 
 // Stock actuel d'un livreur : chargé net (SOLDES ②) − ventes OK lues en direct dans Dispatch.

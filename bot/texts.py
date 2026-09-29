@@ -79,7 +79,8 @@ WELCOME_DISPATCH = (
     "/stock — ce qui reste dans chaque box et chez les livreurs\n"
     "/caisse — cash à récupérer chez chaque livreur\n"
     "/depense — noter une dépense d'un livreur\n"
-    "/synchro — renvoyer les courses de la nuit vers Google Sheets"
+    "/synchro — renvoyer les courses de la nuit vers Google Sheets\n"
+    "/cloture — clôturer la semaine : archives dans Drive, remise à zéro des onglets"
 )
 
 MODEL_HELP = (
@@ -120,7 +121,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /exclure · /reactiver"
+    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /cloture · /exclure · /reactiver"
 )
 
 
@@ -1101,3 +1102,68 @@ def my_cash(row: dict) -> str:
 
 def cash_unavailable(error: str) -> str:
     return f"⚠️ Caisse illisible pour l'instant : {esc(error[:200])}"
+
+
+# ================================================================ clôture de la semaine
+
+CLOTURE_CANCELLED = "Clôture annulée : rien n'a changé."
+CLOTURE_RUNNING = "Clôture déjà en cours…"
+CLOTURE_ALREADY = "La semaine vient déjà d'être clôturée."
+CLOTURE_IN_PROGRESS = "⏳ Clôture en cours : copie des 3 fichiers dans Drive, puis remise à zéro… (1 à 3 min)"
+CLOTURE_REMINDER = ("🗓 Nouvelle semaine : pense à /cloture — archive des 3 fichiers dans Drive, stock des box "
+                    "reporté, onglets Lundi → Dimanche remis à zéro.")
+
+
+def _qty_text(values: dict) -> str:
+    return " · ".join(f"{_n(q)} {esc(p)}" for p, q in values.items() if q)
+
+
+def cloture_precheck(open_courses: int, livreurs_stock: dict, cash_rows: list[dict], ravi: float | None,
+                     tab: str) -> str:
+    lines = ["🗓 <b>Clôture de la semaine</b>", "",
+             "1. Copie des 3 fichiers dans Google Drive (dossier « Archives bot »).",
+             "2. Le stock actuel des box devient le stock initial (COMPTA, onglet STOCK).",
+             "3. Les onglets Lundi → Dimanche sont vidés (commandes, dépenses, rechargements), "
+             "ainsi que MOUVEMENTS et RAVI.",
+             f"4. Le stock encore chez les livreurs est reporté (onglet {esc(tab)} du Rechargement).", ""]
+    carried = [(name, values) for name, values in livreurs_stock.items() if any(q for q in values.values())]
+    if carried:
+        lines.append("📦 Reporté :")
+        lines += [f"• {esc(name)} : {_qty_text(values)}" for name, values in carried]
+    else:
+        lines.append("📦 Aucun stock chez les livreurs.")
+    unpaid = [r for r in cash_rows if abs(r["cash"]) >= 0.01]
+    if unpaid:
+        lines += ["", "⚠️ Cash pas encore récupéré (remis à zéro — récupère-le avant avec /caisse) :"]
+        lines += [f"• {esc(r['nom'])} : {eur(r['cash'])}" for r in unpaid]
+    if ravi is not None and abs(ravi) >= 0.01:
+        lines += ["", f"⚠️ Reste chez le ravitailleur : {eur(ravi)} (remis à zéro, garde-en trace)"]
+    if open_courses:
+        lines += ["", f"⚠️ {plural(open_courses, 'course')} en attente ou en cours : elles seront écrites "
+                      "dans la nouvelle semaine une fois livrées."]
+    lines += ["", "L'archive garde tout. Clôturer maintenant ?"]
+    return "\n".join(lines)
+
+
+def cloture_done(result: dict, tab: str) -> str:
+    lines = ["✅ <b>Semaine clôturée</b>", "",
+             f"🗄 Archive : <a href=\"{esc(result.get('archive') or '')}\">{esc(result.get('dossier') or 'Drive')}</a>"]
+    initial = {box: values for box, values in (result.get("initial") or {}).items()}
+    if initial:
+        lines.append("📦 Stock initial des box :")
+        lines += [f"• {esc(box)} : {_qty_text(values) or 'vide'}" for box, values in initial.items()]
+    reports = result.get("reports") or {}
+    if reports:
+        lines.append(f"🚴 Reporté chez les livreurs (onglet {esc(tab)}) :")
+        lines += [f"• {esc(name)} : {_qty_text(values)}" for name, values in reports.items()]
+    return "\n".join(lines)
+
+
+def cloture_failed(error: str) -> str:
+    return (f"⚠️ Clôture impossible : {esc(error[:250])}\n\n"
+            "Si la copie dans Drive a échoué, rien n'a été effacé. Sinon, l'archive est dans le dossier "
+            "« Archives bot » de Drive.")
+
+
+def cloture_unavailable(error: str) -> str:
+    return f"⚠️ Clôture impossible pour l'instant, feuilles illisibles : {esc(error[:200])}"

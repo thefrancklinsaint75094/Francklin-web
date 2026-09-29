@@ -350,3 +350,7 @@ def cash_overview(rows: list[dict]) -> M:
             buttons.append([B(label, callback_data=f"cs_r:{user['id']}")])
     buttons.append([B("🔄 Actualiser", callback_data="cs_ref")])
     return M(buttons)
+
+
+def cloture_confirm() -> M:
+    return M([[B("✅ Clôturer la semaine", callback_data="cl_go")], [B("❌ Annuler", callback_data="cl_x")]])

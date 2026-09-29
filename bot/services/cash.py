@@ -86,7 +86,9 @@ async def livreurs_now() -> dict:
         row["en_vol"] = inflight(user["id"])
         row["cash"] = round(row["cash"] + row["en_vol"], 2)
     ordered = sorted(rows.values(), key=lambda r: r["nom"].lower())
-    return {"ok": True, "livreurs": {r["nom"]: r for r in ordered}}
+    ravi = data.get("ravitailleur")
+    return {"ok": True, "livreurs": {r["nom"]: r for r in ordered},
+            "ravitailleur": float(ravi) if isinstance(ravi, (int, float)) else None}
 
 
 async def livreur_now(livreur: dict) -> dict:

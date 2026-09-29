@@ -302,15 +302,17 @@ async def fetch_stock(livreur: dict, client: httpx.AsyncClient | None = None) ->
             await client.aclose()
 
 
-async def fetch_action(action: str, client: httpx.AsyncClient | None = None) -> dict | None:
-    """Appelle une action de lecture du script (stock_box, stock_livreurs, cash_livreurs). None si illisible."""
+async def fetch_action(action: str, client: httpx.AsyncClient | None = None, payload: dict | None = None,
+                       timeout: float = STOCK_TIMEOUT) -> dict | None:
+    """Appelle une action du script (stock_box, stock_livreurs, cash_livreurs, cloture).
+    None sans script ; {"ok": False, "error": …} si la réponse est illisible ou refusée."""
     url, secret = webhook()
     if not (url and secret):
         return None
     own = client is None
     client = client or httpx.AsyncClient(follow_redirects=True)
     try:
-        resp = await client.post(url, json={"secret": secret, "action": action}, timeout=STOCK_TIMEOUT)
+        resp = await client.post(url, json={**(payload or {}), "secret": secret, "action": action}, timeout=timeout)
         try:
             data = resp.json()
         except ValueError:

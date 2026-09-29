@@ -85,6 +85,9 @@ async def h(database, monkeypatch):
     stock_service._inflight.clear()
     stock_service._sheet_cache = None
     stock_service._dispatch_alerted.clear()
+    from bot.handlers import cloture as cloture_h
+
+    cloture_h._last_done = None
     from bot.services import sheets
 
     async def no_script(action, client=None):   # jamais d'appel réseau : chaque test simule le script
@@ -1689,3 +1692,82 @@ async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
     # Nouvelle vague pour la même course : pas de deuxième alerte.
     await broadcast.run_wave(h.context, c2["id"], advance=True)
     assert len([t for t in h.tg.texts(R1) if t.startswith(f"⚠️ Course #{c2['id']}")]) == 1
+
+
+async def test_weekly_cloture(h, monkeypatch):
+    """/cloture : vérification (stock reporté, cash non récupéré, reste du ravitailleur), annulation,
+    clôture par le script (archives), double appui refusé, échec expliqué, rappel du lundi."""
+    from bot.handlers import cloture as cloture_h
+    from bot.services import sheets
+    from bot.services import stock as stock_service
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    calls = []
+    answer = {"cloture": {"ok": True, "archive": "https://drive.google.com/drive/folders/abc",
+                          "dossier": "Archives bot / Clôture du 2026-09-28 06h10",
+                          "initial": {"Box 1": {"DIV": 28, "US": 112}, "Box 2": {}},
+                          "reports": {"Livreur 1": {"DIV": 4, "US": 4}}}}
+
+    async def fake_action(action, client=None, payload=None, timeout=None):
+        calls.append((action, payload, timeout))
+        if action == "stock_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"DIV": 4, "US": 4, "KT": 0}, "Livreur 2": {"US": 0}}}
+        if action == "cash_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"especes": 350, "depenses": 200, "recupere": 100,
+                                                           "cash": 50}}, "ravitailleur": 70}
+        return answer[action]
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    f1, f2, (l1, l2) = await setup_network(h)
+
+    def txt(m):
+        return m.text.replace("\xa0", " ")
+
+    await h.text(L1, "/cloture")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    await h.text(DISPATCH, "/cloture")
+    check = h.tg.last(DISPATCH)
+    assert "🗓 <b>Clôture de la semaine</b>" in check.text
+    assert "• Livreur 1 : 4 DIV · 4 US" in txt(check) and "Livreur 2" not in txt(check).split("📦 Reporté")[1]
+    assert "⚠️ Cash pas encore récupéré" in txt(check) and "• Livreur 1 : 50 €" in txt(check)
+    assert "Reste chez le ravitailleur : 70 €" in txt(check)
+    assert [d for _, d in check.buttons] == ["cl_go", "cl_x"]
+    await h.press_data(DISPATCH, check, "cl_x")
+    assert h.tg.messages[(DISPATCH, check.message_id)].text == texts.CLOTURE_CANCELLED
+    assert [c[0] for c in calls] == ["stock_livreurs", "cash_livreurs"]
+
+    # Un franchisé (pleins pouvoirs) clôture ; le bot oublie les mouvements de l'ancienne semaine.
+    stock_service.add_inflight(l1["id"], "course:1", {"US": -1})
+    await h.text(F1, "/cloture")
+    check = h.tg.last(F1)
+    await h.press_data(F1, check, "cl_go")
+    done = h.tg.messages[(F1, check.message_id)]
+    action, payload, timeout = calls[-1]
+    assert action == "cloture" and payload["onglet"] in sheets.JOURS and payload["libelle"].startswith("Clôture du ")
+    assert timeout == cloture_h.TIMEOUT
+    assert "✅ <b>Semaine clôturée</b>" in done.text and 'href="https://drive.google.com/drive/folders/abc"' in done.text
+    assert "• Box 1 : 28 DIV · 112 US" in done.text and "• Box 2 : vide" in done.text
+    assert "• Livreur 1 : 4 DIV · 4 US" in done.text
+    assert stock_service.inflight_deltas(l1["id"]) == {}
+    assert "✅ <b>Semaine clôturée</b>" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
+    assert (await db._t("events").select("*").eq("type", "cloture").execute()).data
+
+    # Deuxième appui (ou deuxième admin) juste après : refusé.
+    await h.text(DISPATCH, "/cloture")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "cl_go")
+    assert h.tg.answers()[-1]["text"] == texts.CLOTURE_ALREADY
+    assert [c[0] for c in calls].count("cloture") == 1
+
+    # Échec du script : expliqué, rien n'est marqué comme clôturé.
+    cloture_h._last_done = None
+    answer["cloture"] = {"ok": False, "error": "COMPTA_SPREADSHEET_ID vide dans le script"}
+    await h.text(DISPATCH, "/cloture")
+    check = h.tg.last(DISPATCH)
+    await h.press_data(DISPATCH, check, "cl_go")
+    assert "⚠️ Clôture impossible : COMPTA_SPREADSHEET_ID vide" in h.tg.messages[(DISPATCH, check.message_id)].text
+    assert cloture_h._last_done is None
+
+    await cloture_h.weekly_reminder(h.context)
+    assert h.tg.last(DISPATCH).text == texts.CLOTURE_REMINDER

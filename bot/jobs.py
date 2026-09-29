@@ -6,7 +6,7 @@ from datetime import time, timedelta
 
 from bot import config, db, messaging, texts
 from bot.config import PARIS
-from bot.handlers import dispatch
+from bot.handlers import cloture, dispatch
 from bot.services import broadcast
 from bot.timeutil import minutes_since, night_start_date, now_utc, parse_ts
 
@@ -127,3 +127,6 @@ def register(job_queue) -> None:
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")
     job_queue.run_daily(_safe(daily_journal), time=time(cfg.night_end_hour, 0, tzinfo=PARIS), name="daily_journal")
     job_queue.run_daily(_safe(retention), time=time(7, 0, tzinfo=PARIS), name="retention")
+    # Lundi (0 = dimanche pour run_daily) à 6h05, juste après la nuit de dimanche.
+    job_queue.run_daily(_safe(cloture.weekly_reminder), time=time(cfg.night_end_hour, 5, tzinfo=PARIS), days=(1,),
+                        name="cloture_reminder")
