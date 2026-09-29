@@ -99,6 +99,8 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `BOXES` | non | `Box 1,Box 2,Box 3` | box proposés au ravitailleur (noms du tableau Rechargement) |
 | `ARRIVAL_NOTIFY_METERS` | non | `500` | alerte « le livreur arrive » sous cette distance (0 = désactivé) |
 | `ARRIVAL_NOTIFY_MINUTES` | non | `5` | … ou sous ce nombre de minutes estimées (0 = désactivé) |
+| `LIVREUR_NAMES` | non | `Livreur A,Livreur B,Livreur C,Livreur D,Livreur R,Livreur X` | noms des livreurs dans les feuilles (`-` : « Livreur 1 », « Livreur 2 »…) |
+| `RAVITAILLEUR_NAMES` | non | `Ravitailleur 1,Ravitailleur 2` | idem pour les ravitailleurs |
 | `STOCK_ALERTS` | non | `1` | alertes de stock du livreur (lu dans SOLDES du tableau Rechargement) ; `0` pour couper |
 
 ---
@@ -154,6 +156,14 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 `ARRIVAL_NOTIFY_METERS` (500 m) de l'adresse **ou** à moins de `ARRIVAL_NOTIFY_MINUTES` (5 min). Le temps est
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
+
+### Noms des livreurs = noms des feuilles
+
+Le nom d'un livreur dans le bot est **exactement** son nom dans les feuilles Dispatch et Rechargement
+(« Livreur A », « Livreur B »… liste `LIVREUR_NAMES`). À la validation d'une inscription, le livreur reçoit le
+premier nom libre et l'admin reçoit des boutons pour en choisir un autre ; plus tard : `/livreurs` → **🏷 Nom**.
+Un nom n'est porté que par un seul livreur (🔒 = déjà pris). Même principe pour les ravitailleurs
+(`RAVITAILLEUR_NAMES`). Les tables de correspondance des onglets PARAMETRES ne servent plus pour eux.
 
 ### Alertes de stock du livreur
 

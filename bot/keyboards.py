@@ -258,10 +258,28 @@ def livreurs_duty(livreurs: list[dict]) -> M | None:
     for lv in livreurs:
         name = (lv.get("display_name") or "?")[:20]
         if lv.get("on_duty"):
-            rows.append([B(f"⏸ Pause — {name}", callback_data=f"duty_off:{lv['id']}")])
+            duty = B(f"⏸ Pause — {name}", callback_data=f"duty_off:{lv['id']}")
         else:
-            rows.append([B(f"🟢 En service — {name}", callback_data=f"duty_on:{lv['id']}")])
+            duty = B(f"🟢 En service — {name}", callback_data=f"duty_on:{lv['id']}")
+        rows.append([duty, B("🏷 Nom", callback_data=f"sname:{lv['id']}")])
     return M(rows) if rows else None
+
+
+def name_picker(user: dict, choices: tuple[str, ...], holders: dict[str, dict]) -> M:
+    """Noms de la feuille ; un nom pris par quelqu'un d'autre est marqué 🔒."""
+    buttons = []
+    for i, name in enumerate(choices):
+        holder = holders.get(" ".join(name.lower().split()))
+        if holder and holder["id"] == user["id"]:
+            label = f"✅ {name}"
+        elif holder:
+            label = f"🔒 {name}"
+        else:
+            label = name
+        buttons.append(B(label[:30], callback_data=f"sname_set:{user['id']}:{i}"))
+    rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
+    rows.append([B("OK", callback_data=f"sname_done:{user['id']}")])
+    return M(rows)
 
 
 def assign_livreurs(course_id: int, livreurs: list[dict], counts: dict[str, int]) -> M:

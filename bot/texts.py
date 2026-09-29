@@ -640,6 +640,24 @@ def d_error(kind: str) -> str:
 CANNOT_BAN_SELF = "Tu ne peux pas t'exclure toi-même."
 
 
+def name_picker(user: dict) -> str:
+    return (f"🏷 Nom dans les feuilles pour {esc(user.get('real_name') or '?')} "
+            f"(actuellement « {esc(user.get('display_name') or '?')} ») :\n"
+            "C'est ce nom qui est écrit dans Dispatch et Rechargement.")
+
+
+def name_taken(name: str, holder: dict) -> str:
+    return f"« {name} » est déjà pris par {holder.get('real_name') or holder.get('display_name')}."
+
+
+def name_set_done(user: dict, old: str | None) -> str:
+    return f"🏷 {esc(old or '?')} → <b>{esc(user['display_name'])}</b> ({esc(user.get('real_name') or '?')})"
+
+
+def name_set_for_user(user: dict) -> str:
+    return f"🏷 Ton nom est maintenant « {esc(user['display_name'])} »."
+
+
 def _stock_who(livreur: dict, sheet_name: str) -> str:
     name = livreur.get("display_name") or "Le livreur"
     if sheet_name and sheet_name != name:

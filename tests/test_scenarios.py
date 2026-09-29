@@ -1362,3 +1362,57 @@ async def test_stock_computed_in_parallel_of_the_sheet(h, monkeypatch, test_conf
     await h.press(L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"), "course_deliver:")
     await asyncio.gather(*list(sheets._tasks))
     assert h.tg.find(F2, "📭").text.startswith("📭 Livreur 1 (Livreur A) n'a plus de US sur lui")
+
+
+async def test_livreur_gets_sheet_name_chosen_by_admin(h, monkeypatch, test_config):
+    """À la validation, un livreur reçoit le premier nom libre de la feuille (« Livreur A ») ;
+    l'admin peut en choisir un autre ; un nom n'est porté que par un seul livreur ; c'est ce nom
+    qui part dans la feuille Dispatch."""
+    import dataclasses
+
+    from bot import config
+    from bot.services import sheets
+
+    config.set_config(dataclasses.replace(test_config, livreur_names=("Livreur A", "Livreur B", "Livreur X"),
+                                          ravitailleur_names=("Ravitailleur 1", "Ravitailleur 2")))
+    await h.text(DISPATCH, "/start")
+    await register(h, F1, "franchise", "Bar du Coin")
+    l1 = await register(h, L1, "livreur", "Karim")
+    assert l1["display_name"] == "Livreur A"
+    picker = h.tg.last(DISPATCH)
+    assert picker.text.startswith("🏷 Nom dans les feuilles pour Karim")
+    assert [b for b, _ in picker.buttons] == ["✅ Livreur A", "Livreur B", "Livreur X", "OK"]
+
+    # L'admin choisit « Livreur X ».
+    await h.press_data(DISPATCH, picker, f"sname_set:{l1['id']}:2")
+    assert (await db.get_user(l1["id"]))["display_name"] == "Livreur X"
+    assert h.tg.last(L1).text == "🏷 Ton nom est maintenant « Livreur X »."
+    assert "Livreur A → <b>Livreur X</b> (Karim)" in h.tg.messages[(DISPATCH, picker.message_id)].text
+
+    # Deuxième livreur : premier nom libre = Livreur A ; « Livreur X » est pris.
+    l2 = await register(h, L2, "livreur", "Nassim")
+    assert l2["display_name"] == "Livreur A"
+    picker2 = h.tg.last(DISPATCH)
+    assert [b for b, _ in picker2.buttons][:3] == ["✅ Livreur A", "Livreur B", "🔒 Livreur X"]
+    await h.press_data(DISPATCH, picker2, f"sname_set:{l2['id']}:2")
+    assert h.tg.answers()[-1]["text"] == "« Livreur X » est déjà pris par Karim." and h.tg.answers()[-1]["show_alert"]
+    assert (await db.get_user(l2["id"]))["display_name"] == "Livreur A"
+    await h.press_data(DISPATCH, picker2, f"sname_done:{l2['id']}")
+    assert h.tg.messages[(DISPATCH, picker2.message_id)].text == "🏷 Livreur A (Nassim)"
+
+    # Ravitailleur : même principe.
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+    assert r1["display_name"] == "Ravitailleur 1"
+
+    # Changer plus tard depuis /livreurs.
+    await h.text(DISPATCH, "/livreurs")
+    listing = h.tg.last(DISPATCH)
+    assert "🏷 Nom" in [b for b, _ in listing.buttons]
+    await h.press_data(DISPATCH, listing, f"sname:{l2['id']}")
+    assert h.tg.last(DISPATCH).text.startswith("🏷 Nom dans les feuilles pour Nassim")
+
+    # Le nom écrit dans la feuille est celui du bot.
+    course = {"id": 9, "delivered_at": "2026-09-28T21:00:00+00:00", "franchise_id": (await db.get_user_by_tg(F1))["id"],
+              "livreur_id": l1["id"], "address": "A", "products": "1 DIV", "price": 30}
+    users = await db.get_users([course["franchise_id"], l1["id"]])
+    assert sheets.row(course, users)["livreur"] == "Livreur X"

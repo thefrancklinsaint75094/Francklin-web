@@ -24,6 +24,8 @@ TEST_CONFIG = config.Config(
     openai_api_key=None,
     extraction_mode="ia",  # les scénarios historiques simulent l'extracteur IA
     stock_alerts=False,    # activé seulement dans les tests qui simulent la lecture du stock
+    livreur_names=(),      # « Livreur 1 », « Livreur 2 »… (les noms de feuille sont testés à part)
+    ravitailleur_names=(),
 )
 
 
