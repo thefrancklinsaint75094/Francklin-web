@@ -1018,8 +1018,13 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     await h.text(L1, "20")
     assert "2. 1 × coca — 20 €" in txt(screen())
 
-    # Une vodka de plus : le prix suit (30 € l'unité).
+    # Une vodka de plus : le prix ne bouge pas tout seul, le livreur le met lui-même (90 €).
     await h.press_data(L1, screen(), "oe_q:0:1")
+    assert "1. 3 × vodka — 60 €" in txt(screen())
+    await h.press_data(L1, screen(), "oe_s:0")
+    await h.press_data(L1, screen(), "oe_p:0:20")
+    await h.press_data(L1, screen(), "oe_p:0:10")
+    await h.press_data(L1, screen(), "oe_s:-1")
     assert "1. 3 × vodka — 90 €" in txt(screen())
 
     # Ajout d'un produit du catalogue par le sélecteur, prix réglé par boutons.
@@ -1267,6 +1272,10 @@ async def test_franchise_has_full_admin_powers(h):
     editor = h.tg.messages[(F1, fmsg.message_id)]
     assert "modifier la commande" in editor.text
     await h.press_data(F1, editor, "oe_q:0:1")
+    # Prix libre : il met lui-même 90 € pour les 3 vodkas (60 → 90).
+    await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_s:0")
+    await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_p:0:20")
+    await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_p:0:10")
     # Le coca n'avait pas de prix (texte libre) : 10 €.
     await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_s:1")
     await h.press_data(F1, h.tg.messages[(F1, fmsg.message_id)], "oe_p:1:10")

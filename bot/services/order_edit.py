@@ -38,33 +38,19 @@ def total(lines: list[dict]) -> float:
     return round(sum(float(l["x"]) for l in lines), 2)
 
 
-def round_price(value: float) -> float:
-    """Au multiple de 10 € le plus proche (jamais 0 pour un prix qui existait)."""
-    if value <= 0:
-        return 0.0
-    return float(max(PRICE_STEP, round(value / PRICE_STEP) * PRICE_STEP))
-
-
 def valid_price(value: float) -> bool:
     return value > 0 and abs(value / PRICE_STEP - round(value / PRICE_STEP)) < 1e-9
 
 
-def _unit(line: dict) -> float | None:
-    return float(line["x"]) / line["q"] if line["q"] > 0 and float(line["x"]) > 0 else None
-
-
 def change_qty(lines: list[dict], idx: int, delta: int) -> list[dict]:
-    """➖ / ➕ : le prix de la ligne suit la quantité (prix unitaire gardé),
-    arrondi au multiple de 10 €. Une ligne qui tombe à 0 disparaît."""
+    """➖ / ➕ : seule la quantité change. Le prix reste celui de la ligne : c'est le livreur
+    (ou l'admin) qui le fixe librement en touchant le produit. À 0, la ligne disparaît."""
     if not 0 <= idx < len(lines):
         return lines
     line = dict(lines[idx])
-    unit = _unit(line)
     line["q"] = min(MAX_QTY, line["q"] + delta)
     if line["q"] <= 0:
         return lines[:idx] + lines[idx + 1:]
-    if unit is not None:
-        line["x"] = round_price(unit * line["q"])
     return lines[:idx] + [line] + lines[idx + 1:]
 
 
