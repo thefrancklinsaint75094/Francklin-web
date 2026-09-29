@@ -83,6 +83,14 @@ async def h(database, monkeypatch):
     from bot.services import stock as stock_service
 
     stock_service._inflight.clear()
+    stock_service._sheet_cache = None
+    stock_service._dispatch_alerted.clear()
+    from bot.services import sheets
+
+    async def no_script(action, client=None):   # jamais d'appel réseau : chaque test simule le script
+        return {"ok": False, "error": "script non simulé"}
+
+    monkeypatch.setattr(sheets, "fetch_action", no_script)
     harness = await Harness.create()
     yield harness
     await harness.close()
@@ -1633,3 +1641,51 @@ async def test_expenses_and_cash_to_collect(h, monkeypatch):
     restocks = (await db._t("restocks").select("*").execute()).data
     assert [(r["kind"], float(r["cash"])) for r in restocks] == [("cash", 250.0)]
     assert "💶 Cash remis" in txt(h.tg.last(L1))
+
+
+async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
+    """Le plus proche n'a pas de US : la course part d'abord à celui qui en a. Personne n'en a assez :
+    la course part quand même au plus proche, ravitailleurs et dispatch sont prévenus une fois."""
+    import dataclasses
+
+    from bot import config
+    from bot.services import sheets
+
+    config.set_config(dataclasses.replace(test_config, stock_alerts=True, broadcast_wave_size=1))
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    reads = []
+
+    async def fake_action(action, client=None):
+        reads.append(action)
+        return {"ok": True, "livreurs": {"Livreur 1": {"US": 0, "DIV": 4}, "Livreur 2": {"US": 5, "DIV": 0}}}
+
+    async def fake_stock(livreur, client=None):
+        return None, livreur["display_name"]
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    monkeypatch.setattr(sheets, "fetch_stock", fake_stock)
+    await db.create_product("US", "us", [])
+    EXTRACTIONS["deux us"] = [{**RIVOLI, "products": "2 US", "price": 60}]
+    f1, f2, (l1, l2) = await setup_network(h)
+    await register(h, R1, "ravitailleur", "Sam")
+    await go_on_duty(h, L1, BASTILLE)       # le plus proche de Rivoli, mais 0 US
+    await go_on_duty(h, L2, REPUBLIQUE)
+
+    c1 = await order(h, F1, "deux us")
+    assert h.tg.last(L2).text.startswith(f"🆕 Course #{c1['id']}")
+    assert not [t for t in h.tg.texts(L1) if t.startswith(f"🆕 Course #{c1['id']}")]
+    assert not [t for t in h.tg.texts(R1) if "aucun livreur en service n'a tout" in t]
+    await h.press(L2, h.tg.last(L2), "course_take:")
+
+    # Livreur 2 est occupé ; Livreur 1 n'a pas de US : il reçoit quand même la course, alerte envoyée.
+    c2 = await order(h, F1, "deux us")
+    assert h.tg.last(L1).text.startswith(f"🆕 Course #{c2['id']}")
+    alert = h.tg.find(R1, f"⚠️ Course #{c2['id']}").text.replace("\xa0", " ")
+    assert "aucun livreur en service n'a tout en stock" in alert and "• Livreur 1 : 0/2 US" in alert
+    assert h.tg.find(DISPATCH, f"⚠️ Course #{c2['id']}")
+    assert reads == ["stock_livreurs"]      # feuille lue une fois, gardée une minute
+
+    # Nouvelle vague pour la même course : pas de deuxième alerte.
+    await broadcast.run_wave(h.context, c2["id"], advance=True)
+    assert len([t for t in h.tg.texts(R1) if t.startswith(f"⚠️ Course #{c2['id']}")]) == 1

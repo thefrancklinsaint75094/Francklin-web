@@ -37,7 +37,9 @@ def add_inflight(livreur_id: str, token: str, deltas: dict[str, int]) -> None:
 
 
 def remove_inflight(livreur_id: str, token: str) -> None:
+    global _sheet_cache
     _inflight.get(livreur_id, {}).pop(token, None)
+    _sheet_cache = None   # le mouvement est maintenant dans la feuille : relire la feuille
 
 
 def inflight_deltas(livreur_id: str) -> dict[str, int]:
@@ -239,6 +241,96 @@ async def livreurs_now() -> dict:
         user = by_name.get(_key(name))
         out[name] = apply_deltas(values, inflight_deltas(user["id"])) if user else values
     return {"ok": True, "livreurs": out}
+
+
+# ---------------------------------------------------------------- dispatch selon le stock
+
+SHEET_CACHE_SECONDS = 60
+_sheet_cache: tuple[float, dict] | None = None   # (expire, {nom feuille: {produit: qté}})
+_dispatch_alerted: set[int] = set()
+
+
+async def _sheet_livreurs() -> dict | None:
+    """Stock de chaque livreur d'après le script, gardé une minute (une vague par course et par
+    minute ne relit pas la feuille à chaque fois). None si illisible."""
+    global _sheet_cache
+    now = time.monotonic()
+    if _sheet_cache and _sheet_cache[0] > now:
+        return _sheet_cache[1]
+    data = await sheets.fetch_action("stock_livreurs")
+    if not data or not data.get("ok"):
+        return None
+    _sheet_cache = (now + SHEET_CACHE_SECONDS, data.get("livreurs") or {})
+    return _sheet_cache[1]
+
+
+async def availability(course: dict, livreurs: list[dict]) -> dict[str, list[tuple[str, int, float]] | None]:
+    """Pour chaque livreur : [] s'il a tout ce que demande la course, [(produit, commandé, dispo)]
+    s'il lui manque quelque chose, None si son stock est inconnu. {} si rien n'est lisible.
+    Dispo = feuille + mouvements en vol − ses autres courses attribuées pas encore livrées.
+    Les produits absents des colonnes de la feuille (coca…) sont ignorés."""
+    sheet = await _sheet_livreurs()
+    if not sheet:
+        return {}
+    catalog = await sheets.load_catalog()
+    known = {_key(p) for values in sheet.values() for p in (values or {})}
+    need = {p: q for p, q in course_quantities(course, catalog).items() if _key(p) in known}
+    if not need:
+        return {}
+    by_name = {_key(name): values or {} for name, values in sheet.items()}
+    reserved: dict[str, dict[str, int]] = {}
+    for c in await db.list_assigned_for_livreurs([lv["id"] for lv in livreurs]):
+        if c["id"] == course["id"]:
+            continue
+        mine = reserved.setdefault(c["livreur_id"], {})
+        for p, q in course_quantities(c, catalog).items():
+            mine[p] = mine.get(p, 0) - q
+    out: dict[str, list[tuple[str, int, float]] | None] = {}
+    for lv in livreurs:
+        values = by_name.get(_key(lv.get("display_name") or ""))
+        if values is None:
+            out[lv["id"]] = None
+            continue
+        have = apply_deltas(apply_deltas(values, inflight_deltas(lv["id"])), reserved.get(lv["id"], {}))
+        out[lv["id"]] = [(p, q, _have(have, p)) for p, q in need.items() if _have(have, p) < q]
+    return out
+
+
+async def rank_by_stock(context, course: dict, eligible: list[tuple[dict, float | None]]):
+    """Livreurs éligibles réordonnés : d'abord ceux qui ont tout en stock, puis stock inconnu,
+    puis ceux à qui il manque quelque chose (l'ordre par distance est gardé dans chaque groupe).
+    Si aucun n'a tout, ravitailleurs et dispatch sont prévenus une fois pour la course.
+    Ne lève jamais d'exception : en cas de problème, l'ordre reste celui des distances."""
+    if not enabled() or not eligible:
+        return eligible
+    try:
+        avail = await availability(course, [lv for lv, _ in eligible])
+        if not avail:
+            return eligible
+
+        def group(item):
+            missing = avail.get(item[0]["id"])
+            return 1 if missing is None else (0 if not missing else 2)
+
+        ranked = sorted(eligible, key=group)   # tri stable : la distance départage
+        known = [m for m in avail.values() if m is not None]
+        if known and all(known) and course["id"] not in _dispatch_alerted:
+            _dispatch_alerted.add(course["id"])
+            await _alert_no_stock(context, course, eligible, avail)
+        return ranked
+    except Exception:  # noqa: BLE001
+        log.exception("Dispatch selon le stock impossible")
+        return eligible
+
+
+async def _alert_no_stock(context, course: dict, eligible, avail) -> None:
+    short = [(lv, avail[lv["id"]]) for lv, _ in eligible if avail.get(lv["id"])]
+    text = texts.stock_dispatch_alert(course, short)
+    await db.log_event("stock_dispatch_alert", course["id"],
+                       payload={"livreurs": [lv["id"] for lv, _ in short]})
+    for user in await db.list_users(role="ravitailleur", status="active"):
+        await messaging.send(context.bot, user, text)
+    await messaging.notify_dispatch(context.bot, text)
 
 
 def push_restock_later(restock: dict) -> None:

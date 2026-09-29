@@ -752,6 +752,16 @@ def stock_empty_alert(course: dict, livreur: dict, sheet_name: str, products: li
     return f"📭 {who} n'a plus de {what} sur lui (course #{course['id']} livrée). Pense à le recharger (/recharge)."
 
 
+def stock_dispatch_alert(course: dict, short: list[tuple[dict, list[tuple[str, int, float]]]]) -> str:
+    """Aucun livreur éligible n'a tout ce que demande la course."""
+    lines = [f"⚠️ Course #{course['id']} ({esc(course['district'])}) : aucun livreur en service n'a tout en stock."]
+    for livreur, missing in short[:6]:
+        what = ", ".join(f"{_n(have)}/{need} {esc(p)}" for p, need, have in missing)
+        lines.append(f"• {esc(livreur.get('display_name') or '?')} : {what}")
+    lines.append("La course part quand même au plus proche. Pense à recharger (/recharge).")
+    return "\n".join(lines)
+
+
 def arrival_for_franchise(course: dict, livreur: dict, distance_label: str, minutes: int) -> str:
     return (f"📍 {esc(livreur.get('display_name') or 'Le livreur')} arrive — course #{course['id']} : "
             f"à {distance_label} (≈ {minutes} min)\n{course_summary(course)}")

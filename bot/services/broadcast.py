@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from bot import config, db, keyboards, messaging, texts
-from bot.services import lifecycle
+from bot.services import lifecycle, stock
 from bot.services.distance import format_distance, haversine_m
 from bot.timeutil import now_utc, parse_ts
 
@@ -63,7 +63,7 @@ def select_eligible(
     return [(lv, dist) for lv, dist, _ in located] + [(lv, None) for lv in unlocated]
 
 
-async def eligible_for(course: dict, already: set[str]) -> list[tuple[dict, float]]:
+async def eligible_for(course: dict, already: set[str], context=None) -> list[tuple[dict, float]]:
     cfg = config.get()
     livreurs = await db.list_on_duty_livreurs()
     if not livreurs:
@@ -73,10 +73,14 @@ async def eligible_for(course: dict, already: set[str]) -> list[tuple[dict, floa
     counts: dict[str, int] = defaultdict(int)
     for c in await db.list_assigned_for_livreurs(ids):
         counts[c["livreur_id"]] += 1
-    return select_eligible(
+    eligible = select_eligible(
         livreurs, positions, counts, already, course["lat"], course["lon"], now_utc(),
         cfg.position_stale_minutes, cfg.max_distance_km,
     )
+    if context is None:
+        return eligible
+    # Ceux qui ont tout en stock d'abord (si les alertes de stock sont activées).
+    return await stock.rank_by_stock(context, course, eligible)
 
 
 # ---------------------------------------------------------------- jobs
@@ -123,7 +127,7 @@ async def run_wave(context, course_id: int, advance: bool = False) -> bool:
         round_ = course["broadcast_round"]
         if advance and any(b["round"] == round_ for b in broadcasts):
             round_ += 1
-        eligible = await eligible_for(course, {b["livreur_id"] for b in broadcasts})
+        eligible = await eligible_for(course, {b["livreur_id"] for b in broadcasts}, context)
         targets = eligible[: cfg.broadcast_wave_size]
 
         if not targets:
