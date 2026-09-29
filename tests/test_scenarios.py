@@ -84,6 +84,9 @@ async def h(database, monkeypatch):
 
     stock_service._inflight.clear()
     stock_service._sheet_cache = None
+    from bot.services import transport as transport_service
+
+    transport_service._stats.clear()
     stock_service._dispatch_alerted.clear()
     from bot.handlers import cloture as cloture_h
 
@@ -1852,3 +1855,77 @@ async def test_close_day_picks_the_night_that_just_ended(h, monkeypatch):
     assert (await close_day.closing_night()).isoformat() == "2026-09-28"
     monkeypatch.setattr(close_day, "now_utc", lambda: datetime(2026, 9, 29, 22, 0, tzinfo=PARIS))
     assert (await close_day.closing_night()).isoformat() == "2026-09-29"
+
+
+async def test_transport_mode_declared_and_metro_detected(h):
+    """/dispo : le livreur choisit 🛵 ; pendant la course il disparaît près d'une station et réapparaît
+    près d'une autre : « semble avoir pris le métro » au dispatch ; /close et /livreurs le montrent."""
+    from datetime import timedelta
+
+    from bot.services import stations
+    from bot.timeutil import iso, now_utc
+
+    stations.set_stations([(48.8532, 2.3691, "Bastille"), (48.8484, 2.3959, "Nation")])
+    try:
+        f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+        await h.text(L1, "/dispo")
+        prompt = h.tg.last(L1)
+        assert prompt.text == texts.DISPO_PROMPT
+        assert [d for _, d in prompt.buttons] == ["tmode:t", "tmode:d", "tmode:v"]
+        await h.press_data(L1, prompt, "tmode:d")
+        assert h.tg.answers()[-1]["text"] == "🛵 Deux-roues noté."
+        assert (await db.get_user(l1["id"]))["transport_mode"] == "deux_roues"
+        assert h.tg.messages[(L1, prompt.message_id)].buttons[1][0].startswith("✅ 🛵")
+
+        await h.location(L1, 48.8532, 2.3691, message_id=L1)        # à Bastille
+        course = await order(h, F1, "rivoli")
+        await h.press(L1, h.tg.last(L1), "course_take:")
+
+        # Il a pris la course il y a 10 min, sa dernière position (Bastille) date de 7 min…
+        await db._t("courses").update({"assigned_at": iso(now_utc() - timedelta(minutes=10))}).eq(
+            "id", course["id"]).execute()
+        await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(minutes=7))}).eq(
+            "livreur_id", l1["id"]).execute()
+        # … et il réapparaît à Nation.
+        await h.location(L1, 48.8484, 2.3959, edited=True, message_id=L1)
+        alert = h.tg.find(DISPATCH, f"🚇 #{course['id']}").text.replace("\xa0", " ")
+        assert "Livreur 1 semble avoir pris le métro (Bastille → Nation, 2 km en 7 min)" in alert
+        assert "déclaré 🛵 deux-roues" in alert
+        assert (await db.get_course(course["id"]))["detected_mode"] == "metro"
+
+        await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
+        assert (await db.get_course(course["id"]))["detected_mode"] == "metro"
+        await h.text(DISPATCH, "/close")
+        debrief = h.tg.last(DISPATCH).text
+        assert "• Livreur 1 🛵 — 1 course" in debrief
+        assert f"⚠️ #{course['id']} Livreur 1 : 🚇 métro · déclaré 🛵" in debrief
+        await h.text(DISPATCH, "/livreurs")
+        assert "Livreur 1 — 🟢 en service · 🛵" in h.tg.last(DISPATCH).text
+    finally:
+        stations.set_stations([])
+
+
+async def test_transport_declared_but_vehicle_speed(h):
+    """Déclaré 🚶 transport mais trois positions de suite à ≈ 36 km/h : « semble rouler »."""
+    from datetime import timedelta
+
+    from bot.timeutil import iso, now_utc
+
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await h.text(L1, "/dispo")
+    await h.press_data(L1, h.tg.last(L1), "tmode:t")
+    await h.location(L1, 48.8532, 2.3691, message_id=L1)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await db._t("courses").update({"assigned_at": iso(now_utc() - timedelta(minutes=5))}).eq(
+        "id", course["id"]).execute()
+    lat = 48.8532
+    for _ in range(3):
+        # 30 s entre deux positions, 300 m parcourus : ≈ 36 km/h.
+        await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(seconds=30))}).eq(
+            "livreur_id", l1["id"]).execute()
+        lat += 0.0027
+        await h.location(L1, lat, 2.3691, edited=True, message_id=L1)
+    alert = h.tg.find(DISPATCH, f"🛵 #{course['id']}").text
+    assert "Livreur 1 semble rouler (≈ 36 km/h) · déclaré 🚶 transport / à pied" in alert
+    assert (await db.get_course(course["id"]))["detected_mode"] == "vehicule"

@@ -6,10 +6,11 @@ import logging
 
 from telegram import Update
 
-from bot import config, db, messaging, texts
+from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
-from bot.services import arrival, broadcast
+from bot.services import arrival, broadcast, transport
 from bot.services.distance import haversine_m
+from bot.timeutil import now_utc
 
 log = logging.getLogger(__name__)
 
@@ -38,13 +39,17 @@ async def on_location(update: Update, context) -> None:
     await db.upsert_position(user["id"], loc.latitude, loc.longitude)
     # Le livreur approche d'une adresse : franchisé et dispatch prévenus (une fois par course).
     await arrival.check(context, user, loc.latitude, loc.longitude, previous)
+    # Métro, véhicule, à pied : comparé au moyen de déplacement déclaré.
+    await transport.observe(context, user, loc.latitude, loc.longitude, previous, now_utc(), live_update=edited)
     became_available = False
     if not edited:
         if not user.get("on_duty"):
             user = await db.update_user(user["id"], {"on_duty": True}) or user
             await db.log_event("livreur_on_duty", user_id=user["id"], payload={"live": bool(loc.live_period)})
             became_available = True
-            await messaging.reply(update, texts.ON_DUTY)
+            # Mode de déplacement pas encore choisi : les boutons sous le message.
+            markup = None if user.get("transport_mode") else keyboards.transport_mode(None)
+            await messaging.reply(update, texts.ON_DUTY, markup)
         if not loc.live_period:
             await messaging.reply(update, texts.STATIC_POSITION_WARNING)
 

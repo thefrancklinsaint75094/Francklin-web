@@ -111,6 +111,11 @@ async def deliver(context, course: dict, by_dispatch: bool = False, payment: str
     fields = {"status": "delivered", "delivered_at": iso(now), "closed_at": iso(now)}
     if payment in PAYMENTS.values():
         fields["payment"] = payment
+    from bot.services import transport
+
+    detected = transport.final_mode(course)
+    if detected and detected != course.get("detected_mode"):
+        fields["detected_mode"] = detected
     far_label = None
     if livreur and not by_dispatch:
         pos = await db.get_position(livreur["id"])

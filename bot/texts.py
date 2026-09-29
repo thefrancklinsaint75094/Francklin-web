@@ -54,7 +54,8 @@ WELCOME_FRANCHISE = (
 
 WELCOME_LIVREUR = (
     "✅ Tu es validé.\n\n"
-    "/dispo — te mettre en service (tu partageras ta position en direct)\n"
+    "/dispo — te mettre en service (tu partageras ta position en direct et diras comment tu te déplaces : "
+    "🚶 transport, 🛵 deux-roues ou 🚗 voiture)\n"
     "/pause — te retirer temporairement\n"
     "/macourse — revoir ta course en cours\n"
     "/depense — noter une dépense (essence, repas…) ou une avance sur ta paye\n"
@@ -334,7 +335,8 @@ def mes_courses(courses: list[dict], livreurs: dict[str, dict]) -> str:
 
 DISPO_PROMPT = (
     "Partage-moi ta position en direct (📎 → Position → Partager ma position en direct → 8 heures). "
-    "Tant que je la reçois, tu es visible pour les courses."
+    "Tant que je la reçois, tu es visible pour les courses.\n\n"
+    "Et tu te déplaces comment aujourd'hui ? 🚶 Transport (à pied, métro, bus) · 🛵 Deux-roues · 🚗 Voiture"
 )
 ON_DUTY = "✅ Tu es en service. Je t'envoie les courses proches de toi."
 PAUSED = "⏸ Tu es en pause. Relance /dispo pour reprendre."
@@ -786,6 +788,9 @@ def livreurs_list(rows: list[tuple[dict, bool, int]]) -> str:
         else:
             state = "⏸ pause"
         extra = f" · {busy} course{'s' if busy > 1 else ''} en cours" if busy else ""
+        from bot.services.transport import ICON
+
+        extra += f" · {ICON[lv['transport_mode']]}" if lv.get("transport_mode") in ICON else " · ❔"
         lines.append(f"{esc(lv.get('display_name') or '?')} — {state}{extra}")
     lines += ["", "Un livreur mis en service ici reçoit les courses même sans position partagée."]
     return "\n".join(lines)
@@ -1176,7 +1181,9 @@ def cloture_unavailable(error: str) -> str:
 def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelled: int, on_site: int,
                 still_open: int, livreurs: list, franchises: list, charges: float, payes: float, restocks: int,
                 recovered: float, cash_rows: list[dict] | None, alerts: list[dict] | None,
-                sheets_on: bool) -> str:
+                sheets_on: bool, moves: list | None = None) -> str:
+    from bot.services.transport import DETECTED_ICON, ICON
+
     lines = [f"🔒 <b>Journée close — nuit du {esc(label)}</b>", ""]
     if delivered:
         lines.append(f"📦 <b>{plural(delivered, 'course')} livrée{'s' if delivered > 1 else ''} — {eur(total)}</b>")
@@ -1195,7 +1202,8 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
     if livreurs:
         lines += ["", "🚴 <b>Par livreur</b>"]
         for name, s in livreurs:
-            text = f"• {esc(name)} — {plural(s['n'], 'course')} — {eur(s['total'])}"
+            icon = f" {ICON[s['mode']]}" if s.get("mode") in ICON else ""
+            text = f"• {esc(name)}{icon} — {plural(s['n'], 'course')} — {eur(s['total'])}"
             if s["n"]:
                 text += f" (💵 {eur(s['especes'])} · 💳 {eur(s['virement'])})"
             if s["depenses"]:
@@ -1204,6 +1212,15 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
     if franchises:
         lines += ["", "🏪 <b>Par franchisé</b>"]
         lines += [f"• {esc(name)} — {plural(s['n'], 'course')} — {eur(s['total'])}" for name, s in franchises]
+
+    if moves:
+        lines += ["", "🚦 <b>Déplacements détectés</b>"]
+        for course_id, name, detected, declared in moves:
+            wrong = (detected == "metro" and declared in ("deux_roues", "voiture")) or \
+                    (detected == "vehicule" and declared == "transport")
+            said = f" · déclaré {ICON[declared]}" if declared in ICON else ""
+            lines.append(f"{'⚠️' if wrong else '•'} #{course_id} {esc(name)} : {DETECTED_ICON[detected]}"
+                         f" {({'metro': 'métro', 'vehicule': 'véhicule', 'pied': 'à pied'})[detected]}{said}")
 
     lines += ["", f"🧾 Dépenses : {eur(charges + payes)} (charges {eur(charges)} · payes {eur(payes)})",
               f"📦 Rechargements : {restocks} — cash récupéré {eur(recovered)}"]
@@ -1223,3 +1240,26 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
                 lines.append(f"{icon} {esc(t['produit'])} : {_n(t.get('total') or 0)} (seuil {_n(t.get('seuil') or 0)})")
     lines += ["", "✅ Journée terminée. Bon repos !"]
     return "\n".join(lines)
+
+
+# ================================================================ moyen de déplacement
+
+def transport_set(mode: str) -> str:
+    from bot.services.transport import ICON, LABEL
+
+    return f"{ICON[mode]} {LABEL[mode]} noté."
+
+
+def transport_mismatch(course: dict, livreur: dict, mode: str, detail: dict) -> str:
+    from bot.services.transport import ICON, LABEL
+
+    declared = livreur.get("transport_mode")
+    said = f"{ICON[declared]} {LABEL[declared].lower()}" if declared else "?"
+    who = esc(livreur.get("display_name") or "?")
+    if mode == "metro":
+        where = ""
+        if detail.get("from") and detail.get("to"):
+            where = f" ({esc(detail['from'])} → {esc(detail['to'])}"
+            where += f", {_n(detail['km'])} km en {detail['minutes']} min)"
+        return (f"🚇 #{course['id']} — {who} semble avoir pris le métro{where} · déclaré {said}")
+    return f"🛵 #{course['id']} — {who} semble rouler (≈ {detail.get('kmh', '?')} km/h) · déclaré {said}"

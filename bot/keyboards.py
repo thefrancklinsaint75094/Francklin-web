@@ -354,3 +354,13 @@ def cash_overview(rows: list[dict]) -> M:
 
 def cloture_confirm() -> M:
     return M([[B("✅ Reset de la semaine", callback_data="cl_go")], [B("❌ Annuler", callback_data="cl_x")]])
+
+
+def transport_mode(current: str | None) -> M:
+    from bot.services.transport import ICON, LABEL
+
+    buttons = []
+    for code, mode in (("t", "transport"), ("d", "deux_roues"), ("v", "voiture")):
+        mark = "✅ " if current == mode else ""
+        buttons.append(B(f"{mark}{ICON[mode]} {LABEL[mode].split(' /')[0]}", callback_data=f"tmode:{code}"))
+    return M([buttons])

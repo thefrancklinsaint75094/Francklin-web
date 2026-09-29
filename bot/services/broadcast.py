@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from bot import config, db, keyboards, messaging, texts
-from bot.services import lifecycle, stock
+from bot.services import lifecycle, stock, transport
 from bot.services.distance import format_distance, haversine_m
 from bot.timeutil import now_utc, parse_ts
 
@@ -37,6 +37,9 @@ def select_eligible(
 
     Un livreur mis en service par un admin (duty_forced) sans position fraîche reste
     éligible, distance inconnue (None), après ceux dont on connaît la position.
+
+    Moyen de déplacement : tri par temps de trajet estimé (🚶 transport, 🛵 deux-roues, 🚗 voiture),
+    et un livreur en transport ne reçoit pas de course au-delà de TRANSPORT_MAX_KM.
     """
     stale_before = now - timedelta(minutes=stale_minutes)
     located: list[tuple[dict, float, datetime]] = []
@@ -56,10 +59,11 @@ def select_eligible(
                 unlocated.append(lv)
             continue
         dist = haversine_m(pos["lat"], pos["lon"], course_lat, course_lon)
-        if dist > max_distance_km * 1000:
+        mode = lv.get("transport_mode")
+        if dist > min(max_distance_km, transport.max_distance_km(mode)) * 1000:
             continue
         located.append((lv, dist, updated))
-    located.sort(key=lambda x: (x[1], -x[2].timestamp()))
+    located.sort(key=lambda x: (transport.travel_minutes(x[1], x[0].get("transport_mode")), -x[2].timestamp()))
     return [(lv, dist) for lv, dist, _ in located] + [(lv, None) for lv in unlocated]
 
 

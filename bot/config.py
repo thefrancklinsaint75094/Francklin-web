@@ -88,6 +88,8 @@ class Config:
     stock_alerts: bool = True
     livreur_names: tuple[str, ...] = ()        # noms des livreurs dans les feuilles (vide : « Livreur 1 »…)
     ravitailleur_names: tuple[str, ...] = ()
+    transport_max_km: float = 5.0              # un livreur en transport / à pied ne reçoit pas de course plus loin
+    stations_url: str | None = None            # liste des stations IDF (vide : adresse par défaut, « - » : aucune)
 
     @property
     def uses_ai(self) -> bool:
@@ -132,6 +134,8 @@ class Config:
             stock_alerts=(_raw("STOCK_ALERTS") or "1").lower() not in ("0", "non", "false", "off"),
             livreur_names=_names("LIVREUR_NAMES", "Livreur A,Livreur B,Livreur C,Livreur D,Livreur R,Livreur X"),
             ravitailleur_names=_names("RAVITAILLEUR_NAMES", "Ravitailleur 1,Ravitailleur 2"),
+            transport_max_km=float(_raw("TRANSPORT_MAX_KM") or 5),
+            stations_url=_raw("STATIONS_URL"),
         )
         if cfg.extraction_mode == "ia" and not cfg.anthropic_api_key:
             raise ConfigError("EXTRACTION_MODE=ia demande ANTHROPIC_API_KEY")

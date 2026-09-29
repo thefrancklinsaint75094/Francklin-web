@@ -102,6 +102,9 @@ async def startup(context) -> None:
         log.exception("Rafraîchissement des menus impossible")
     await broadcast.resume_all(context)
     await db.log_event("bot_started")
+    from bot.services import stations
+
+    await stations.load()
 
 
 def _safe(job):
