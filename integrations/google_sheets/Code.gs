@@ -33,8 +33,10 @@
  * (+ chargé, − repris, colonne trouvée par le nom du produit en ligne 2),
  * S heure, T Ravitailleur. Noms : table PARAMETRES!J4:K40 du tableau Rechargement.
  *
- * Stock (« action: stock ») : renvoie le stock actuel d'un livreur lu dans l'onglet SOLDES
- * du tableau Rechargement (en-têtes produits ligne 4, un livreur par ligne à partir de la 5).
+ * Stock (« action: stock ») : stock actuel d'un livreur, calculé EN DIRECT sans attendre les
+ * IMPORTRANGE entre fichiers : « chargé net » (SOLDES ②, calculé dans le tableau Rechargement)
+ * moins les ventes au statut OK comptées directement dans les 7 onglets de la feuille Dispatch.
+ * Si la section ② est introuvable : repli sur SOLDES ① (stock déjà calculé par la feuille).
  *
  * Le script refuse toute requête sans le bon SECRET.
  */
@@ -61,10 +63,13 @@ const R_NOTE_PREFIX = 'Bot R#';
 const R_NAMES_RANGE = 'PARAMETRES!J4:K40';
 
 const STOCK_SHEET = 'SOLDES';
-const STOCK_HEADER_ROW = 4;
+const STOCK_HEADER_ROW = 4;  // ① stock actuel (repli)
 const STOCK_FIRST_ROW = 5;
 const STOCK_MAX_ROWS = 25;
 const STOCK_COLS = 16;       // A (livreur) à P
+const LOADED_TITLE = '②';    // titre de la section « chargé net » dans SOLDES
+const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+const SALE_COLS = [[5, 6], [8, 9], [11, 12]];  // (Produit, Qté) 1 à 3, colonnes F-G, I-J, L-M
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -210,25 +215,68 @@ function writeRecharge_(ss, names, r) {
   return true;
 }
 
-// Stock actuel d'un livreur (onglet SOLDES du tableau Rechargement).
+// Stock actuel d'un livreur : chargé net (SOLDES ②) − ventes OK lues en direct dans Dispatch.
 function stock_(data) {
   if (!RECHARGE_SPREADSHEET_ID) return { ok: false, error: 'RECHARGE_SPREADSHEET_ID vide dans le script' };
   const rss = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID);
   const name = name_(names_(rss, R_NAMES_RANGE), data.livreur, data.livreur_nom);
   const sheet = rss.getSheetByName(STOCK_SHEET);
   if (!sheet) return { ok: false, error: 'onglet « ' + STOCK_SHEET + ' » introuvable' };
-  const header = sheet.getRange(STOCK_HEADER_ROW, 2, 1, STOCK_COLS - 1).getDisplayValues()[0];
-  const rows = sheet.getRange(STOCK_FIRST_ROW, 1, STOCK_MAX_ROWS, STOCK_COLS).getValues();
+
+  const loaded = section_(sheet, LOADED_TITLE, name);
+  if (!loaded.found) {
+    const current = sectionAt_(sheet, STOCK_HEADER_ROW, name);
+    return { ok: true, livreur: name, stock: current.found ? current.values : null, source: 'soldes' };
+  }
+  const ds = spreadsheet_();
+  const dname = name_(names_(ds, NAMES_RANGE), data.livreur, data.livreur_nom);
+  const sold = sold_(ds, [key_(name), key_(dname)]);
+  const stock = {};
+  Object.keys(loaded.values).forEach(function (p) { stock[p] = loaded.values[p] - (sold[key_(p)] || 0); });
+  return { ok: true, livreur: name, stock: stock, source: 'direct' };
+}
+
+// Ligne d'un livreur dans la section de SOLDES dont le titre (colonne A) commence par `title`.
+function section_(sheet, title, name) {
+  const col = sheet.getRange(1, 1, 200, 1).getDisplayValues();
+  for (let i = 0; i < col.length; i++) {
+    if (String(col[i][0]).trim().indexOf(title) === 0) return sectionAt_(sheet, i + 2, name);
+  }
+  return { found: false, values: {} };
+}
+
+function sectionAt_(sheet, headerRow, name) {
+  const header = sheet.getRange(headerRow, 2, 1, STOCK_COLS - 1).getDisplayValues()[0];
+  const rows = sheet.getRange(headerRow + 1, 1, STOCK_MAX_ROWS, STOCK_COLS).getValues();
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][0]).trim() === '') break;
     if (key_(rows[i][0]) !== key_(name)) continue;
-    const stock = {};
+    const values = {};
     header.forEach(function (p, j) {
-      if (String(p).trim()) stock[String(p).trim()] = Number(rows[i][j + 1]) || 0;
+      if (String(p).trim()) values[String(p).trim()] = Number(rows[i][j + 1]) || 0;
     });
-    return { ok: true, livreur: name, stock: stock };
+    return { found: true, values: values };
   }
-  return { ok: true, livreur: name, stock: null };
+  return { found: false, values: {} };
+}
+
+// Ventes au statut OK du livreur, lues directement dans les 7 onglets de la feuille Dispatch.
+function sold_(ds, keys) {
+  const sold = {};
+  JOURS.forEach(function (day) {
+    const sheet = ds.getSheetByName(day);
+    if (!sheet) return;
+    const values = sheet.getRange(FIRST_ROW, 1, LAST_ROW - FIRST_ROW + 1, COLS).getValues();
+    values.forEach(function (row) {
+      if (key_(row[2]) !== 'ok' || keys.indexOf(key_(row[1])) < 0) return;
+      SALE_COLS.forEach(function (pq) {
+        const p = key_(row[pq[0]]);
+        const q = Number(row[pq[1]]) || 0;
+        if (p && q) sold[p] = (sold[p] || 0) + q;
+      });
+    });
+  });
+  return sold;
 }
 
 function names_(ss, a1) {

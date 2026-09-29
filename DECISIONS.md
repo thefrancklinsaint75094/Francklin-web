@@ -276,3 +276,15 @@ simple qui respecte le mur de confidentialité (§12).
 83. Prévenus : franchisé de la course, livreur, ravitailleurs actifs et dispatch — celui qui recharge doit
     savoir. Les lectures se font en tâche de fond : la prise et la livraison ne sont jamais ralenties ni
     bloquées, et sans stock lisible il n'y a simplement pas d'alerte (`STOCK_ALERTS=0` pour couper).
+84. **Stock calculé en parallèle des feuilles** (demande de l'exploitant : pas de retard). SOLDES ① dépend
+    d'un IMPORTRANGE (ventes de la feuille Dispatch importées dans Rechargement) qui peut prendre du temps. Le
+    script calcule donc lui-même, à chaque demande : chargé net (SOLDES ②, formules locales au tableau
+    Rechargement, immédiates) − ventes au statut OK lues directement dans les 7 onglets de Dispatch (colonnes
+    Produit/Qté 1 à 3). Nom du livreur comparé avec les deux tables de noms (Dispatch Q/R et Rechargement J/K).
+    Sans section ②, repli sur SOLDES ①.
+85. Le bot ajoute les mouvements qu'il connaît mais que les feuilles n'ont pas encore (« en vol ») : une vente
+    est comptée dès la livraison et jusqu'à ce que la feuille confirme l'avoir écrite ; idem pour un
+    rechargement. Un mouvement jamais confirmé (feuille injoignable) est gardé 2 h, le temps d'un /synchro.
+86. À l'attribution, le stock disponible retire les quantités des autres courses du livreur, attribuées mais pas
+    encore livrées (cas « 1 + 1 » ou attribution par un admin) : « c'est le dernier US » tient compte de ce qu'il
+    doit déjà livrer.

@@ -67,3 +67,23 @@ async def test_fetch_stock(configured):
     async with httpx.AsyncClient(transport=httpx.MockTransport(
             lambda r: httpx.Response(200, text="<html><title>Fout</title></html>"))) as c:
         assert await sheets.fetch_stock(LIVREUR, client=c) == (None, "Livreur 1")
+
+
+def test_inflight_and_deltas():
+    stock._inflight.clear()
+    stock.add_inflight("l1", "course:1", {"US": -2})
+    stock.add_inflight("l1", "restock:5", {"us": 3, "DIV": 1})
+    assert stock.inflight_deltas("l1") == {"US": -2, "us": 3, "DIV": 1}
+    assert stock.apply_deltas({"US": 2, "KT": 1}, stock.inflight_deltas("l1")) == {"US": 3.0, "KT": 1, "DIV": 1.0}
+    stock.remove_inflight("l1", "course:1")
+    assert stock.inflight_deltas("l1") == {"us": 3, "DIV": 1}
+    # Un mouvement jamais confirmé finit par être oublié.
+    stock.add_inflight("l1", "course:9", {"DIV": -1})
+    stock._inflight["l1"]["restock:5"] = (0.0, {"us": 3, "DIV": 1})
+    assert stock.inflight_deltas("l1") == {"DIV": -1}
+    stock._inflight.clear()
+
+
+def test_last_one_text():
+    assert texts.stock_assignment_alert({"id": 7}, LIVREUR, "Livreur 1", [("US", 1, 1.0)]).splitlines()[1] == (
+        "• C'est le dernier US de Livreur 1")
