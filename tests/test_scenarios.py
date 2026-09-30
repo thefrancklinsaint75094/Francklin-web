@@ -2051,3 +2051,37 @@ async def test_dispatch_sees_livreur_positions_and_alerts(h):
     await db.delete_position(l2["id"])
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"loc:{l2['id']}")
     assert h.tg.answers()[-1]["text"] == texts.NO_POSITION
+
+
+async def test_dispo_without_position_reminder_and_pause_details(h):
+    """/dispo sans position : marche à suivre « jusqu'à ce que je l'arrête » ; 3 min plus tard, relance du
+    livreur et alerte au dispatch ; /livreurs détaille les livreurs en pause."""
+    from types import SimpleNamespace
+
+    from bot.handlers import livreur as livreur_h
+
+    f1, f2, (l1, l2) = await setup_network(h)
+    welcome = h.tg.find(L1, "Tu es validé").text
+    assert "Jusqu'à ce que je l'arrête" in welcome
+
+    await h.text(L1, "/dispo")
+    assert "Jusqu'à ce que je l'arrête" in h.tg.last(L1).text
+    jobs_ = h.app.job_queue.get_jobs_by_name(f"dispo:{l1['id']}")
+    assert len(jobs_) == 1
+
+    await h.text(DISPATCH, "/livreurs")
+    listing = h.tg.last(DISPATCH).text
+    assert "Livreur 1 — ⏸ pause · /dispo à l'instant, position pas encore reçue" in listing
+    assert "Livreur 2 — ⏸ pause · jamais de position" in listing
+
+    # 3 min après, toujours rien : relance et alerte.
+    ctx = SimpleNamespace(bot=h.app.bot, job=SimpleNamespace(data=jobs_[0].data))
+    await livreur_h.dispo_reminder(ctx)
+    assert h.tg.last(L1).text == texts.DISPO_REMINDER
+    assert "Livreur 1 a fait /dispo il y a 3 min mais n'a pas partagé sa position" in h.tg.last(DISPATCH).text
+
+    # Il partage sa position : la relance suivante ne dit plus rien.
+    await h.location(L1, *BASTILLE, message_id=L1)
+    before = len(h.tg.texts(DISPATCH))
+    await livreur_h.dispo_reminder(ctx)
+    assert len(h.tg.texts(DISPATCH)) == before

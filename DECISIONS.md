@@ -416,3 +416,8 @@ simple qui respecte le mur de confidentialité (§12).
      fois par position (mémoire du processus), avant la sortie de service à 30 min, elle aussi signalée
      maintenant au dispatch. Vérification toutes les 2 min au lieu de 5. Un livreur mis en service par un
      admin (sans position) n'est jamais concerné.
+118. **Partage « jusqu'à ce que je l'arrête »** plutôt que 8 heures : Telegram n'autorise aucun bot à lancer le
+     partage en direct (ni un bouton qui le ferait) ; le bouton « envoyer ma position » ne donne qu'une position
+     fixe, à revalider sans cesse (refusé par l'exploitant). Le livreur partage donc une seule fois, sans fin ;
+     `/dispo` le met ensuite en service directement. Marche à suivre dans la bienvenue et `/dispo`, relance
+     3 min après un `/dispo` resté sans position (job par livreur, remplacé à chaque `/dispo`), dispatch prévenu.
