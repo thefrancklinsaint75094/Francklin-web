@@ -7,7 +7,7 @@ from __future__ import annotations
 from telegram import Update
 
 from bot import config, messaging, texts
-from bot.handlers import cash, common, franchise, livreur, onboarding, restock
+from bot.handlers import cash, common, franchise, livreur, onboarding, restock, sales
 
 
 async def on_message(update: Update, context) -> None:
@@ -32,6 +32,9 @@ async def on_message(update: Update, context) -> None:
     # États communs à plusieurs rôles (admins : dispatch et franchisés).
     if state == livreur.EDIT_STATE and payload.get("sel") is not None:
         await livreur.edit_typed_price(update, context, user)
+        return
+    if state in (sales.STATE_INPUT, sales.STATE_CONFIRM) and common.is_admin(user) and update.message.text:
+        await sales.on_message(update, context, user)
         return
     if state == cash.STATE and update.message.text:
         await cash.on_message(update, context, user, payload)

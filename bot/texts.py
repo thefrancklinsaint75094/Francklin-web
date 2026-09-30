@@ -93,6 +93,7 @@ WELCOME_DISPATCH = (
     "/caisse — cash à récupérer chez chaque livreur\n"
     "/depense — noter une dépense d'un livreur\n"
     "/synchro — renvoyer les courses de la nuit vers Google Sheets\n"
+    "/ventes — ajouter un récap de ventes au tableau (par livreur)\n"
     "/close — débrief de la journée (la journée est finie)\n"
     "/reset — remise à zéro de la semaine : archives dans Drive, onglets vidés"
 )
@@ -135,7 +136,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
+    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
 )
 
 
@@ -1063,14 +1064,16 @@ def catalog_summary(summary: dict) -> str:
 SHEETS_DISABLED = "Google Sheets n'est pas encore relié au bot."
 
 
-def sheets_synced(total: int, added: int, restocks: int = 0, expenses: int = 0) -> str:
-    if total == 0 and restocks == 0 and expenses == 0:
+def sheets_synced(total: int, added: int, restocks: int = 0, expenses: int = 0, sold: int = 0) -> str:
+    if total == 0 and restocks == 0 and expenses == 0 and sold == 0:
         return "📗 Aucune course livrée ni rechargement cette nuit : rien à envoyer."
     what = [plural(total, "course")] if total else []
     if restocks:
         what.append(plural(restocks, "rechargement"))
     if expenses:
         what.append(plural(expenses, "dépense"))
+    if sold:
+        what.append(plural(sold, "vente saisie") if sold == 1 else f"{sold} ventes saisies")
     return (f"📗 Google Sheets à jour : {added} ajout{'s' if added > 1 else ''} sur "
             f"{', '.join(what[:-1]) + ' et ' + what[-1] if len(what) > 1 else what[0]} de la nuit.")
 
@@ -1383,3 +1386,53 @@ def d_static_position(livreur: dict) -> str:
 def d_dispo_without_position(livreur: dict, minutes: int) -> str:
     return (f"⚠️ {esc(livreur.get('display_name') or '?')} a fait /dispo il y a {minutes} min mais n'a pas partagé "
             "sa position : il n'est pas en service. Je lui ai renvoyé la marche à suivre.")
+
+
+# ================================================================ récap de ventes (/ventes)
+
+SALES_HELP = (
+    "🧾 <b>Récap des ventes</b> — envoie-le ici, un bloc par livreur :\n\n"
+    "<code>Livreur A\n"
+    "Espèces 2 US 60\n"
+    "Virement 1 DIV 30\n\n"
+    "Livreur B\n"
+    "Espèces 3 MSX 90</code>\n\n"
+    "Chaque ligne : paiement (espèces ou virement), quantité, produit, prix total de la ligne "
+    "(de 10 en 10 €). Je te montre le récap avant de remplir le tableau."
+)
+SALES_EMPTY = "Je n'ai trouvé aucune vente dans ton message.\n\n" + SALES_HELP
+SALES_EXPIRED = "Récap expiré : renvoie /ventes."
+SALES_CANCELLED = "Récap annulé : rien n'a été ajouté."
+
+
+def sales_errors(errors: list[str]) -> str:
+    lines = ["⚠️ Je n'ai pas tout compris, rien n'est ajouté :"]
+    lines += [f"• {esc(e)}" for e in errors[:10]]
+    lines += ["", "Corrige et renvoie le récap entier (ou /ventes pour revoir l'exemple)."]
+    return "\n".join(lines)
+
+
+def sales_preview(blocks: list[dict], tab: str, done: bool = False) -> str:
+    head = "🧾 <b>Ventes ajoutées" if done else "🧾 <b>Ventes à ajouter"
+    lines = [f"{head} — onglet {esc(tab)}</b>"]
+    totals = {"especes": 0.0, "virement": 0.0}
+    n = 0
+    for b in blocks:
+        lines += ["", f"<b>{esc(b['livreur'])}</b>"]
+        for line in b["lines"]:
+            icon = "💵" if line["pay"] == "especes" else "💳"
+            lines.append(f"{icon} {line['q']} {esc(line['p'])} — {eur(line['x'])}")
+            totals[line["pay"]] += float(line["x"])
+            n += 1
+    lines += ["", f"Total : 💵 espèces {eur(totals['especes'])} · 💳 virement {eur(totals['virement'])} "
+                  f"— {plural(n, 'ligne')}"]
+    if not done:
+        lines += ["", "Tout est bon ?"]
+    return "\n".join(lines)
+
+
+def sales_done(count: int, tab: str, added: int, error: str | None) -> str:
+    if error:
+        return (f"⚠️ {plural(count, 'vente')} enregistrée{'s' if count > 1 else ''}, mais le tableau n'a pas pu "
+                f"être rempli : {esc(error[:200])}\n/synchro les renverra.")
+    return f"✅ {plural(count, 'vente')} ajoutée{'s' if count > 1 else ''} au tableau (onglet {esc(tab)})."

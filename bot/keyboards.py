@@ -377,3 +377,7 @@ def transport_mode(current: str | None) -> M:
         mark = "✅ " if current == mode else ""
         buttons.append(B(f"{mark}{ICON[mode]} {LABEL[mode].split(' /')[0]}", callback_data=f"tmode:{code}"))
     return M([buttons])
+
+
+def sales_confirm() -> M:
+    return M([[B("✅ Ajouter au tableau", callback_data="sl_ok")], [B("❌ Annuler", callback_data="sl_x")]])

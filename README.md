@@ -157,6 +157,29 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
 
+### Récap de ventes (`/ventes`)
+
+Pour les admins : envoyer un récap de ventes qui remplit directement la feuille Dispatch, un bloc par livreur.
+
+```
+/ventes
+Livreur A
+Espèces 2 US 60
+Virement 1 DIV 30
+
+Livreur B
+Espèces 3 MSX 90
+```
+
+Chaque ligne : paiement (espèces / virement, abréviations acceptées : esp, cash, vir), quantité, produit (nom
+du catalogue ou alias), prix total de la ligne (de 10 en 10 €). `/ventes` seul donne l'exemple et attend le
+récap. Le bot montre l'aperçu (par livreur, totaux espèces / virement) ; **✅ Ajouter au tableau** écrit une
+ligne au statut OK par vente dans l'onglet de la nuit (adresse « Récap ventes »). Ces ventes comptent dans le
+stock et la caisse du livreur comme des courses, et `/synchro` les renvoie. Une erreur (livreur ou produit
+inconnu, prix hors pas de 10 €, ligne mal écrite) est expliquée ligne par ligne et rien n'est ajouté.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/009_sales.sql`.
+
 ### Où sont les livreurs (`/livreurs`)
 
 Chaque livreur a une ligne avec l'état de sa position :

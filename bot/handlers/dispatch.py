@@ -540,18 +540,19 @@ async def synchro(update: Update, context) -> None:
     delivered = await db.list_delivered_between(start, end)
     restocks = await db.list_restocks_between(start, end)
     expenses = await db.list_expenses_between(start, end)
+    sold = await db.list_sales_between(start, end)
     users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered]
                                + [r["livreur_id"] for r in restocks] + [r["by_user_id"] for r in restocks]
                                + [e["livreur_id"] for e in expenses])
     try:
         catalog = await sheets.load_catalog()
         rows = ([sheets.row(c, users, catalog) for c in delivered] + [sheets.restock_row(r, users) for r in restocks]
-                + [sheets.expense_row(e, users) for e in expenses])
+                + [sheets.expense_row(e, users) for e in expenses] + [sheets.sale_row(s) for s in sold])
         added = await sheets.send_rows(rows)
     except RuntimeError as exc:
         await messaging.reply(update, texts.sheets_failed(str(exc)))
         return
-    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks), len(expenses)))
+    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks), len(expenses), len(sold)))
 
 
 # ================================================================ /livreurs : service et pause par un admin

@@ -421,3 +421,14 @@ simple qui respecte le mur de confidentialité (§12).
      fixe, à revalider sans cesse (refusé par l'exploitant). Le livreur partage donc une seule fois, sans fin ;
      `/dispo` le met ensuite en service directement. Marche à suivre dans la bienvenue et `/dispo`, relance
      3 min après un `/dispo` resté sans position (job par livreur, remplacé à chaque `/dispo`), dispatch prévenu.
+
+## Récap de ventes
+
+119. **`/ventes`** : un admin colle un récap (un bloc par livreur, une ligne « paiement quantité produit prix »).
+     Tout ou rien : la moindre ligne incomprise bloque l'ajout et chaque problème est listé avec son numéro de
+     ligne. Aperçu puis confirmation, parce que ça écrit de l'argent dans le tableau.
+120. Une vente = une ligne OK dans l'onglet de la nuit (paiement par ligne, le mode peut varier), numéro
+     « V<id> » en note contre les doublons, adresse « Récap ventes ». Enregistrées aussi en base (`sales`)
+     pour `/synchro`. Livreur reconnu par son nom de feuille (`LIVREUR_NAMES`) ou son nom dans le bot
+     (« A » suffit pour « Livreur A ») ; s'il a un compte, ses ventes comptent « en vol » (stock, espèces)
+     jusqu'à confirmation de la feuille. Même règle des 10 € que les commandes.

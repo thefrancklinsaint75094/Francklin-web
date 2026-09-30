@@ -2085,3 +2085,61 @@ async def test_dispo_without_position_reminder_and_pause_details(h):
     before = len(h.tg.texts(DISPATCH))
     await livreur_h.dispo_reminder(ctx)
     assert len(h.tg.texts(DISPATCH)) == before
+
+
+async def test_sales_recap_fills_the_sheet(h, monkeypatch):
+    """/ventes : exemple, erreurs expliquées, aperçu, ✅ → ventes en base et lignes OK dans la feuille ;
+    /synchro les renvoie ; un franchisé (admin) peut aussi le faire, le dispatch est prévenu."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    for name in ("US", "DIV"):
+        await db.create_product(name, name.lower(), [])
+    f1, f2, (l1, l2) = await setup_network(h)
+
+    await h.text(L1, "/ventes")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    await h.text(DISPATCH, "/ventes")
+    assert h.tg.last(DISPATCH).text == texts.SALES_HELP
+    await h.text(DISPATCH, "Livreur 1\nEspèces 2 US 65")
+    assert "prix 65 € — les prix vont de 10 en 10 €" in h.tg.last(DISPATCH).text
+    await h.text(DISPATCH, "Livreur 1\nEspèces 2 US 60\nVirement 1 DIV 30\n\nLivreur 2\nEspece 1 us 30")
+    preview = h.tg.last(DISPATCH)
+    text = preview.text.replace("\xa0", " ")
+    assert "<b>Livreur 1</b>\n💵 2 US — 60 €\n💳 1 DIV — 30 €" in text and "<b>Livreur 2</b>\n💵 1 US — 30 €" in text
+    assert "Total : 💵 espèces 90 € · 💳 virement 30 € — 3 lignes" in text
+    assert [d for _, d in preview.buttons] == ["sl_ok", "sl_x"]
+    await h.press_data(DISPATCH, preview, "sl_ok")
+    assert "✅ 3 ventes ajoutées au tableau (onglet" in h.tg.messages[(DISPATCH, preview.message_id)].text
+    rows = (await db._t("sales").select("*").order("id").execute()).data
+    assert [(r["livreur_name"], r["livreur_id"], r["payment"], r["product"], r["qty"], float(r["price"])) for r in rows] == [
+        ("Livreur 1", l1["id"], "especes", "US", 2, 60.0), ("Livreur 1", l1["id"], "virement", "DIV", 1, 30.0),
+        ("Livreur 2", l2["id"], "especes", "US", 1, 30.0)]
+    assert [(r["numero"], r["livreur"], r["statut"], r["paiement"], r["lignes"]) for r in sent] == [
+        (f"V{rows[0]['id']}", "Livreur 1", "OK", "Espèces", [{"produit": "US", "qte": 2, "prix": 60.0}]),
+        (f"V{rows[1]['id']}", "Livreur 1", "OK", "Virement", [{"produit": "DIV", "qte": 1, "prix": 30.0}]),
+        (f"V{rows[2]['id']}", "Livreur 2", "OK", "Espèces", [{"produit": "US", "qte": 1, "prix": 30.0}])]
+    # Bouton de nouveau : expiré.
+    await h.press_data(DISPATCH, preview, "sl_ok")
+    assert h.tg.answers()[-1]["text"] == texts.SALES_EXPIRED
+
+    sent.clear()
+    await h.text(DISPATCH, "/synchro")
+    assert "3 ventes saisies" in h.tg.last(DISPATCH).text and len(sent) == 3
+
+    # Un franchisé, récap dans le même message que la commande ; annulé puis refait.
+    await h.text(F1, "/ventes\nLivreur 2\nVirement 2 DIV 60")
+    await h.press_data(F1, h.tg.last(F1), "sl_x")
+    assert h.tg.last(F1).text == texts.SALES_CANCELLED
+    await h.text(F1, "/ventes\nLivreur 2\nVirement 2 DIV 60")
+    await h.press_data(F1, h.tg.last(F1), "sl_ok")
+    assert "🧾 <b>Ventes ajoutées" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
