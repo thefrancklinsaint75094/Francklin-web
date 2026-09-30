@@ -81,6 +81,8 @@ async def retention(context) -> None:
     await db.scrub_old_courses(before)
     n_msg = await db.scrub_messages(ids)
     n_drafts = await db.scrub_old_drafts(before)
+    # Messages envoyés de plus de 48 h : Telegram ne laisse plus les effacer, inutile de les garder.
+    await db.forget_messages(before=now_utc() - timedelta(hours=48))
     await db.log_event("retention", payload={"courses": len(ids), "messages": n_msg, "drafts": n_drafts})
 
 

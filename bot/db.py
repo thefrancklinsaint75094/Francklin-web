@@ -79,11 +79,11 @@ async def count_display_names(role: str) -> int:
 
 
 async def list_users(role: str | None = None, status: str | None = None) -> list[dict]:
+    """Sans statut demandé : tous les comptes sauf les comptes supprimés."""
     q = _t("users").select("*")
     if role:
         q = q.eq("role", role)
-    if status:
-        q = q.eq("status", status)
+    q = q.eq("status", status) if status else q.neq("status", "deleted")
     return (await q.order("created_at").execute()).data
 
 
@@ -432,6 +432,30 @@ async def list_expenses_for_livreur(livreur_id: str, since: datetime) -> list[di
         .order("created_at").execute()
     )
     return res.data
+
+
+async def remember_message(chat_id: int, message_id: int) -> None:
+    await _t("bot_messages").upsert({"chat_id": chat_id, "message_id": message_id},
+                                    on_conflict="chat_id,message_id").execute()
+
+
+async def recent_message_ids(chat_id: int, since: datetime) -> list[int]:
+    res = await (_t("bot_messages").select("message_id").eq("chat_id", chat_id).gte("created_at", iso(since))
+                 .order("message_id").execute())
+    return [r["message_id"] for r in res.data]
+
+
+async def forget_messages(chat_id: int | None = None, before: datetime | None = None) -> None:
+    q = _t("bot_messages").delete()
+    if chat_id is not None:
+        q = q.eq("chat_id", chat_id)
+    if before is not None:
+        q = q.lt("created_at", iso(before))
+    await q.execute()
+
+
+async def delete_position(livreur_id: str) -> None:
+    await _t("livreur_positions").delete().eq("livreur_id", livreur_id).execute()
 
 
 async def log_event(type_: str, course_id: int | None = None, user_id: str | None = None, payload: dict | None = None) -> None:

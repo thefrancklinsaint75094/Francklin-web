@@ -129,6 +129,7 @@ def register_handlers(app: Application) -> None:
     cmd("users", dispatch.users)
     cmd("exclure", dispatch.exclure)
     cmd("reactiver", dispatch.reactiver)
+    cmd("supprimer", dispatch.supprimer)
     cmd("produits", dispatch.produits)
     cmd("ajouter", dispatch.ajouter)
     cmd("modele", franchise.modele)
@@ -186,6 +187,8 @@ def register_handlers(app: Application) -> None:
         (r"^ban:", dispatch.ban_ask),
         (r"^ban_yes:", dispatch.ban_do),
         (r"^unban:", dispatch.unban),
+        (r"^del:", dispatch.delete_ask),
+        (r"^del_yes:", dispatch.delete_do),
         (r"^prod_add$", dispatch.catalog_add),
         (r"^prod_cancel$", dispatch.catalog_cancel),
         (r"^prod_del:", dispatch.catalog_delete),

@@ -313,6 +313,27 @@ async def reactiver(update: Update, context) -> None:
     await messaging.reply(update, texts.REACTIVER_HEADER, keyboards.user_buttons(targets, "unban"))
 
 
+async def _remove_access(context, user: dict, status: str) -> dict:
+    """Exclusion ou suppression : plus de service, courses rendues ou annulées, menu retiré,
+    messages du bot des dernières 48 h effacés chez lui ; il ne reçoit plus rien ensuite."""
+    user = await db.update_user(user["id"], {
+        "status": status, "on_duty": False, "soon_free": False, "duty_forced": False,
+        "conversation_state": None, "state_payload": None, "state_expires_at": None,
+    })
+    if user["role"] == "livreur":
+        for course in await db.list_assigned_for_livreur(user["id"]):
+            await lifecycle.release(context, course, reason="ban")
+        await db.delete_position(user["id"])
+    elif user["role"] == "franchise":
+        for course in await db.list_courses_by_status("pending"):
+            if course["franchise_id"] == user["id"]:
+                await lifecycle.cancel(context, course, by="ban")
+    wiped = await messaging.wipe(context.bot, user["telegram_id"])
+    await common.clear_commands(context.bot, user)
+    user["wiped"] = wiped
+    return user
+
+
 @common.callback
 async def ban_ask(update: Update, context):
     if await _dispatch(update) is None:
@@ -336,23 +357,68 @@ async def ban_do(update: Update, context):
         return texts.ALREADY_HANDLED
     if user["id"] == dispatcher["id"]:
         return texts.CANNOT_BAN_SELF, True
-    user = await db.update_user(user["id"], {
-        "status": "banned", "on_duty": False, "soon_free": False,
-        "conversation_state": None, "state_payload": None, "state_expires_at": None,
-    })
-    if user["role"] == "livreur":
-        for course in await db.list_assigned_for_livreur(user["id"]):
-            await lifecycle.release(context, course, reason="ban")
-    elif user["role"] == "franchise":
-        for course in await db.list_courses_by_status("pending"):
-            if course["franchise_id"] == user["id"]:
-                await lifecycle.cancel(context, course, by="ban")
-    await messaging.send(context.bot, user, texts.BANNED_NOTICE)
-    await common.clear_commands(context.bot, user)
+    user = await _remove_access(context, user, "banned")
+    await messaging.send(context.bot, user, texts.BANNED_NOTICE, even_if_removed=True)
     await db.log_event("user_banned", user_id=user["id"], payload={"by": dispatcher["id"]})
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.banned_done(user))
     return "Exclu"
+
+
+# ================================================================ /supprimer (définitif)
+
+async def supprimer(update: Update, context) -> None:
+    if not await _guard_command(update):
+        return
+    me = update.effective_user.id
+    targets = [u for u in await db.list_users() if u["role"] != "dispatch" and u["telegram_id"] != me]
+    if not targets:
+        await messaging.reply(update, texts.SUPPRIMER_EMPTY)
+        return
+    await messaging.reply(update, texts.SUPPRIMER_HEADER, keyboards.user_buttons(targets, "del", with_status=True))
+
+
+@common.callback
+async def delete_ask(update: Update, context):
+    if await _dispatch(update) is None:
+        return None
+    user = await db.get_user(common.arg(update))
+    if user is None or user["status"] == "deleted" or user["role"] == "dispatch":
+        return texts.ALREADY_HANDLED
+    if user["telegram_id"] == update.effective_user.id:
+        return texts.CANNOT_BAN_SELF, True
+    await messaging.reply(update, texts.delete_confirm(user), keyboards.delete_confirm(user["id"]))
+    return None
+
+
+@common.callback
+async def delete_do(update: Update, context):
+    """Compte supprimé : accès retiré comme une exclusion, puis le compte est détaché de son
+    Telegram (la personne peut se réinscrire de zéro avec /start, dans le rôle de son choix) et
+    son nom de feuille est libéré. Les courses passées gardent son nom dans l'historique."""
+    admin = await _dispatch(update)
+    if admin is None:
+        return None
+    user = await db.get_user(common.arg(update))
+    if user is None or user["status"] == "deleted" or user["role"] == "dispatch":
+        return texts.ALREADY_HANDLED
+    if user["id"] == admin["id"]:
+        return texts.CANNOT_BAN_SELF, True
+    telegram_id = user["telegram_id"]
+    user = await _remove_access(context, user, "deleted")
+    await messaging.send(context.bot, user, texts.DELETED_NOTICE, even_if_removed=True)
+    await db.forget_messages(chat_id=telegram_id)
+    # Détaché de son compte Telegram : un /start repart de zéro.
+    detached = -abs(telegram_id)
+    while await db.get_user_by_tg(detached):
+        detached -= 10 ** 12
+    await db.update_user(user["id"], {"telegram_id": detached, "telegram_username": None, "real_name": None})
+    await db.log_event("user_deleted", user_id=user["id"], payload={"by": admin["id"], "role": user["role"]})
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         texts.deleted_done(user))
+    if admin["role"] != "dispatch":
+        await messaging.notify_dispatch(context.bot, f"{texts.deleted_done(user)} (par {texts.esc(admin['display_name'])})")
+    return "Supprimé"
 
 
 @common.callback

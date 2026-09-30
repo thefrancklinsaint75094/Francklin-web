@@ -1929,3 +1929,57 @@ async def test_transport_declared_but_vehicle_speed(h):
     alert = h.tg.find(DISPATCH, f"🛵 #{course['id']}").text
     assert "Livreur 1 semble rouler (≈ 36 km/h) · déclaré 🚶 transport / à pied" in alert
     assert (await db.get_course(course["id"]))["detected_mode"] == "vehicule"
+
+
+async def test_exclude_and_delete_remove_access_and_wipe_messages(h):
+    """/exclure et /supprimer : la personne ne voit plus les messages récents du bot (effacés), ne
+    reçoit plus rien, ses courses sont rendues ; supprimée, elle peut se réinscrire de zéro."""
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{course['id']}"), "course_take:")
+    assert any("12 Rue de Rivoli" in t for t in h.tg.texts(L1))           # il a vu l'adresse
+
+    # Exclusion du livreur : course rendue, messages du bot effacés chez lui, plus rien ensuite.
+    await h.text(DISPATCH, "/exclure")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"ban:{l1['id']}")
+    await h.press(DISPATCH, h.tg.last(DISPATCH), "ban_yes:")
+    done = h.tg.find(DISPATCH, "⛔ Livreur 1").text
+    assert "est exclu" in done and "🧹" in done and "effacé" in done
+    assert h.tg.texts(L1) == [texts.BANNED_NOTICE]                        # tout le reste a disparu
+    assert (await db.get_course(course["id"]))["status"] == "pending"
+    assert await db.get_position(l1["id"]) is None
+    await h.text(L1, "/dispo")
+    assert h.tg.texts(L1) == [texts.BANNED_NOTICE]                        # ignoré
+
+    # Suppression d'un franchisé (actif) : sa course en attente est annulée, il peut se réinscrire.
+    await h.text(DISPATCH, "/supprimer")
+    listing = h.tg.last(DISPATCH)
+    labels = [b for b, _ in listing.buttons]
+    assert any(b.startswith("⛔ Livreur 1") for b in labels) and any(b.startswith("Franchisé 2") for b in labels)
+    c2 = await order(h, F2, "oberkampf")
+    await h.press_data(DISPATCH, listing, f"del:{f2['id']}")
+    confirm = h.tg.last(DISPATCH)
+    assert "Supprimer définitivement Franchisé 2" in confirm.text and "/start" in confirm.text
+    await h.press(DISPATCH, confirm, "del_yes:")
+    assert h.tg.find(DISPATCH, "🗑 Franchisé 2 est supprimé.")
+    assert (await db.get_course(c2["id"]))["status"] == "cancelled"
+    assert h.tg.texts(F2) == [texts.DELETED_NOTICE]
+    gone = await db.get_user(f2["id"])
+    assert gone["status"] == "deleted" and gone["telegram_id"] < 0 and gone["real_name"] is None
+    assert gone["display_name"] == "Franchisé 2"                          # l'historique garde le nom
+    assert f2["id"] not in [u["id"] for u in await db.list_users()]
+    await h.text(DISPATCH, "/users")
+    assert "Franchisé 2" not in h.tg.last(DISPATCH).text
+
+    # Il revient avec le même compte Telegram : inscription de zéro, cette fois comme livreur.
+    again = await register(h, F2, "livreur", "Paul")
+    assert again["id"] != f2["id"] and again["role"] == "livreur" and again["status"] == "active"
+
+    # Supprimer le livreur exclu : son accès reste coupé, le compte disparaît des listes.
+    await h.text(DISPATCH, "/supprimer")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"del:{l1['id']}")
+    await h.press(DISPATCH, h.tg.last(DISPATCH), "del_yes:")
+    assert (await db.get_user(l1["id"]))["status"] == "deleted"
+    await h.text(DISPATCH, "/reactiver")
+    assert h.tg.last(DISPATCH).text == texts.REACTIVER_EMPTY

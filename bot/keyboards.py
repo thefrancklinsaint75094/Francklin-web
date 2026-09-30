@@ -178,12 +178,23 @@ def pending_users(users: list[dict]) -> M | None:
     return M(rows) if rows else None
 
 
-def user_buttons(users: list[dict], prefix: str) -> M:
-    return M([[B(_user_label(u), callback_data=f"{prefix}:{u['id']}")] for u in users])
+STATUS_MARK = {"pending": "⏳ ", "banned": "⛔ "}
+
+
+def user_buttons(users: list[dict], prefix: str, with_status: bool = False) -> M:
+    def label(u: dict) -> str:
+        return (STATUS_MARK.get(u["status"], "") if with_status else "") + _user_label(u)
+
+    return M([[B(label(u)[:60], callback_data=f"{prefix}:{u['id']}")] for u in users])
 
 
 def ban_confirm(user_id: str) -> M:
     return M([[B("Oui", callback_data=f"ban_yes:{user_id}"), B("Non", callback_data="op_cancel")]])
+
+
+def delete_confirm(user_id: str) -> M:
+    return M([[B("🗑 Supprimer définitivement", callback_data=f"del_yes:{user_id}")],
+              [B("Annuler", callback_data="op_cancel")]])
 
 
 

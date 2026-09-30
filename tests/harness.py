@@ -149,6 +149,13 @@ class FakeTelegram(BaseRequest):
                 m.history.append(m.text)
             m.text, m.markup = new_text, new_markup
             return self._ok(self._message_json(m))
+        if api in ("deleteMessage", "deleteMessages"):
+            ids = params.get("message_ids", [params.get("message_id")])
+            if isinstance(ids, str):
+                ids = json.loads(ids)
+            for message_id in ids:
+                self.messages.pop((chat_id, int(message_id)), None)
+            return self._ok(True)
         if api == "getFile":
             fid = params["file_id"]
             return self._ok({"file_id": fid, "file_unique_id": fid, "file_path": fid})

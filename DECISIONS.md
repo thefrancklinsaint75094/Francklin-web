@@ -388,3 +388,14 @@ simple qui respecte le mur de confidentialité (§12).
 111. Le dispatch n'est prévenu que d'une **contradiction** (métro alors que deux-roues/voiture déclaré,
      véhicule alors que transport déclaré), une fois par course et par mode. Les autres détections sont
      seulement enregistrées (`courses.detected_mode`, événement `transport_detected`) et montrées au `/close`.
+
+## Retirer quelqu'un
+
+112. **`/supprimer`** en plus de `/exclure` : exclure garde le compte (réactivable) ; supprimer le passe au
+     statut `deleted`, efface son vrai nom et son @pseudo, et **détache son identifiant Telegram** (rendu
+     négatif) : un `/start` du même compte crée une inscription neuve, dans le rôle choisi. La ligne reste en
+     base pour l'historique (courses, récap, journal), sans jamais apparaître dans les listes.
+113. Retirer l'accès (les deux cas) : le bot **efface les messages qu'il a envoyés** à la personne. Il note
+     chaque message envoyé à un utilisateur (hors dispatch) dans `bot_messages`, gardés 48 h (limite de
+     Telegram pour qu'un bot efface un message) ; l'effacement se fait par lots de 100. Ensuite
+     `messaging.send` n'envoie plus rien à un compte exclu ou supprimé (sauf l'avis de retrait lui-même).
