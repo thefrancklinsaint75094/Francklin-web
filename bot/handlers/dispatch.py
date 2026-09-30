@@ -1,4 +1,4 @@
-"""Commandes d'administration (§13) : /recap, /journal, /encours, /livreurs, /users, /exclure, /reactiver…
+"""Commandes d'administration (§13) : /recap, /journal, /encours, /livreurs, /users, /bannir (ex-/exclure), /reactiver…
 
 Ouvertes au dispatch et aux franchisés (pleins pouvoirs, voir common.is_admin)."""
 from __future__ import annotations
@@ -256,7 +256,7 @@ async def users(update: Update, context) -> None:
         on_site[c["franchise_id"]] += 1
 
     def status_label(u: dict) -> str:
-        return "⛔ exclu" if u["status"] == "banned" else "actif"
+        return "⛔ banni" if u["status"] == "banned" else "actif"
 
     def sort_key(u: dict):
         name = u.get("display_name") or ""
@@ -271,7 +271,7 @@ async def users(update: Update, context) -> None:
         franchises.append(line)
     for u in sorted((u for u in all_users if u["role"] == "livreur" and u["status"] != "pending"), key=sort_key):
         if u["status"] == "banned":
-            livreurs.append(f"{texts.user_who(u)} — ⛔ exclu")
+            livreurs.append(f"{texts.user_who(u)} — ⛔ banni")
         else:
             duty = "en service" if u.get("on_duty") else "pause"
             n = u.get("cancel_count") or 0
@@ -290,7 +290,7 @@ async def users(update: Update, context) -> None:
                           keyboards.pending_users(pending_users))
 
 
-# ================================================================ /exclure, /reactiver
+# ================================================================ /bannir (ex-/exclure), /reactiver
 
 async def exclure(update: Update, context) -> None:
     if not await _guard_command(update):
@@ -362,7 +362,7 @@ async def ban_do(update: Update, context):
     await db.log_event("user_banned", user_id=user["id"], payload={"by": dispatcher["id"]})
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.banned_done(user))
-    return "Exclu"
+    return "Banni"
 
 
 # ================================================================ /supprimer (définitif)

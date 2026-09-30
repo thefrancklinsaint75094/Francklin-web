@@ -399,3 +399,6 @@ simple qui respecte le mur de confidentialité (§12).
      chaque message envoyé à un utilisateur (hors dispatch) dans `bot_messages`, gardés 48 h (limite de
      Telegram pour qu'un bot efface un message) ; l'effacement se fait par lots de 100. Ensuite
      `messaging.send` n'envoie plus rien à un compte exclu ou supprimé (sauf l'avis de retrait lui-même).
+114. `/exclure` renommée **`/bannir`** à la demande de l'exploitant (l'ancien nom reste accepté). Un banni ne
+     reçoit plus aucune réponse, même à `/start` : la conversation est morte pour lui. Telegram ne permet pas
+     à un bot de se cacher d'un utilisateur précis ; un nouveau compte Telegram reste bloqué à la validation.

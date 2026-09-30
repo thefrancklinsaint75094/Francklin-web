@@ -175,9 +175,9 @@ async def test_reject_and_unknown(h):
 
 async def test_banned_user_gets_silence(h):
     f1, f2, (l1, l2) = await setup_network(h)
-    await h.text(DISPATCH, "/exclure")
+    await h.text(DISPATCH, "/bannir")
     await h.press(DISPATCH, h.tg.last(DISPATCH), f"ban:{l2['id']}")
-    assert "Exclure Livreur 2 (Livreur-3002) ?" in h.tg.last(DISPATCH).text
+    assert "Bannir Livreur 2 (Livreur-3002) ?" in h.tg.last(DISPATCH).text
     await h.press(DISPATCH, h.tg.last(DISPATCH), "ban_yes:")
     assert h.tg.last(L2).text == texts.BANNED_NOTICE
     n = len(h.tg.inbox(L2))
@@ -1303,7 +1303,7 @@ async def test_franchise_has_full_admin_powers(h):
     await h.text(F1, "/journal")
     assert "📋 Journal nuit du" in h.tg.find(F1, "📋 Journal").text
     assert len([p for m, p in h.tg.calls if m == "sendDocument" and int(p["chat_id"]) == F1]) == 1
-    await h.text(F1, "/exclure")
+    await h.text(F1, "/bannir")
     assert "Franchisé 1" not in " ".join(b for b, _ in h.tg.last(F1).buttons)
     await h.press_data(F1, h.tg.last(F1), f"ban:{f1['id']}")
     assert h.tg.answers()[-1]["text"] == texts.CANNOT_BAN_SELF
@@ -1932,7 +1932,7 @@ async def test_transport_declared_but_vehicle_speed(h):
 
 
 async def test_exclude_and_delete_remove_access_and_wipe_messages(h):
-    """/exclure et /supprimer : la personne ne voit plus les messages récents du bot (effacés), ne
+    """/bannir et /supprimer : la personne ne voit plus les messages récents du bot (effacés), ne
     reçoit plus rien, ses courses sont rendues ; supprimée, elle peut se réinscrire de zéro."""
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
@@ -1941,11 +1941,11 @@ async def test_exclude_and_delete_remove_access_and_wipe_messages(h):
     assert any("12 Rue de Rivoli" in t for t in h.tg.texts(L1))           # il a vu l'adresse
 
     # Exclusion du livreur : course rendue, messages du bot effacés chez lui, plus rien ensuite.
-    await h.text(DISPATCH, "/exclure")
+    await h.text(DISPATCH, "/bannir")
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"ban:{l1['id']}")
     await h.press(DISPATCH, h.tg.last(DISPATCH), "ban_yes:")
     done = h.tg.find(DISPATCH, "⛔ Livreur 1").text
-    assert "est exclu" in done and "🧹" in done and "effacé" in done
+    assert "est banni" in done and "🧹" in done and "effacé" in done
     assert h.tg.texts(L1) == [texts.BANNED_NOTICE]                        # tout le reste a disparu
     assert (await db.get_course(course["id"]))["status"] == "pending"
     assert await db.get_position(l1["id"]) is None
@@ -1976,7 +1976,7 @@ async def test_exclude_and_delete_remove_access_and_wipe_messages(h):
     again = await register(h, F2, "livreur", "Paul")
     assert again["id"] != f2["id"] and again["role"] == "livreur" and again["status"] == "active"
 
-    # Supprimer le livreur exclu : son accès reste coupé, le compte disparaît des listes.
+    # Supprimer le livreur banni : son accès reste coupé, le compte disparaît des listes.
     await h.text(DISPATCH, "/supprimer")
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"del:{l1['id']}")
     await h.press(DISPATCH, h.tg.last(DISPATCH), "del_yes:")
