@@ -73,7 +73,7 @@ WELCOME_DISPATCH = (
     "/encours — courses en attente et en cours (👤 Attribuer à un livreur)\n"
     "/livreurs — mettre un livreur en service ou en pause\n"
     "/users — tous les utilisateurs\n"
-    "/exclure — retirer un accès (compte gardé, réactivable)\n"
+    "/bannir — bannir quelqu'un : plus aucun accès au bot (réactivable avec /reactiver)\n"
     "/reactiver — rendre un accès\n"
     "/supprimer — supprimer un compte (définitif, la personne peut se réinscrire de zéro)\n"
     "/produits — catalogue des produits (ajouter, supprimer)\n"
@@ -124,7 +124,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /close · /reset · /exclure · /reactiver · /supprimer"
+    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
 )
 
 
@@ -659,7 +659,7 @@ def d_error(kind: str) -> str:
     return f"⚠️ Erreur technique : {esc(kind)}"
 
 
-CANNOT_BAN_SELF = "Tu ne peux pas t'exclure toi-même."
+CANNOT_BAN_SELF = "Tu ne peux pas te bannir toi-même."
 
 STOCK_MENU = "📦 <b>Stock</b> — que veux-tu voir ?"
 
@@ -926,22 +926,22 @@ def users_list(franchises: list[str], livreurs: list[str], pending: list[str],
     return "\n".join(lines)
 
 
-EXCLURE_HEADER = "Qui veux-tu exclure ?"
-EXCLURE_EMPTY = "Aucun utilisateur actif à exclure."
-SUPPRIMER_HEADER = ("🗑 Quel compte supprimer ? (⏳ en attente de validation, ⛔ exclu)\n"
-                    "Pour couper l'accès en gardant le compte, utilise plutôt /exclure.")
+EXCLURE_HEADER = "⛔ Qui veux-tu bannir ?"
+EXCLURE_EMPTY = "Aucun utilisateur actif à bannir."
+SUPPRIMER_HEADER = ("🗑 Quel compte supprimer ? (⏳ en attente de validation, ⛔ banni)\n"
+                    "Pour empêcher quelqu'un de revenir, utilise plutôt /bannir : supprimé, il peut se réinscrire.")
 SUPPRIMER_EMPTY = "Aucun compte à supprimer."
 DELETED_NOTICE = "Ton compte a été supprimé. Pour revenir un jour, envoie /start."
 REACTIVER_HEADER = "Qui veux-tu réactiver ?"
-REACTIVER_EMPTY = "Aucun utilisateur exclu."
+REACTIVER_EMPTY = "Aucun utilisateur banni."
 
 
 def ban_confirm(user: dict) -> str:
-    return f"Exclure {esc(user.get('display_name') or ROLE_LABEL[user['role']])} ({esc(user.get('real_name'))}) ?"
+    return f"Bannir {esc(user.get('display_name') or ROLE_LABEL[user['role']])} ({esc(user.get('real_name'))}) ?"
 
 
 def banned_done(user: dict) -> str:
-    return (f"⛔ {esc(user.get('display_name'))} ({esc(user.get('real_name'))}) est exclu."
+    return (f"⛔ {esc(user.get('display_name'))} ({esc(user.get('real_name'))}) est banni."
             + _wiped(user))
 
 

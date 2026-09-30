@@ -127,7 +127,8 @@ def register_handlers(app: Application) -> None:
     cmd("journal", dispatch.journal)
     cmd("encours", dispatch.encours)
     cmd("users", dispatch.users)
-    cmd("exclure", dispatch.exclure)
+    cmd("bannir", dispatch.exclure)
+    cmd("exclure", dispatch.exclure)   # ancien nom, gardé
     cmd("reactiver", dispatch.reactiver)
     cmd("supprimer", dispatch.supprimer)
     cmd("produits", dispatch.produits)

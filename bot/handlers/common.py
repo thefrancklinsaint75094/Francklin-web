@@ -25,7 +25,7 @@ _ADMIN_COMMANDS = [("encours", "Courses en attente et en cours"), ("livreurs", "
                    ("users", "Tous les utilisateurs"), ("recharge", "Charger / reprendre un livreur"),
                    ("stock", "Stock des box et des livreurs"), ("caisse", "Cash à récupérer chez les livreurs"),
                    ("depense", "Noter une dépense d'un livreur"),
-                   ("synchro", "Renvoyer la nuit vers Google Sheets"), ("close", "Débrief de la journée"), ("reset", "Remise à zéro de la semaine (archives)"), ("exclure", "Retirer un accès"), ("supprimer", "Supprimer un compte (définitif)"),
+                   ("synchro", "Renvoyer la nuit vers Google Sheets"), ("close", "Débrief de la journée"), ("reset", "Remise à zéro de la semaine (archives)"), ("bannir", "Bannir quelqu'un (plus aucun accès)"), ("supprimer", "Supprimer un compte (définitif)"),
                    ("reactiver", "Rendre un accès")]
 
 COMMANDS = {

@@ -157,9 +157,10 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
 
-### Retirer quelqu'un : `/exclure` ou `/supprimer`
+### Retirer quelqu'un : `/bannir` ou `/supprimer`
 
-- **`/exclure`** : l'accès est coupé mais le compte est gardé (`/reactiver` le rend).
+- **`/bannir`** (ancien nom `/exclure`, toujours accepté) : plus aucun accès, et la personne ne peut pas se
+  réinscrire avec le même compte Telegram. Le compte est gardé : `/reactiver` le rend.
 - **`/supprimer`** : définitif. Le compte est détaché de son Telegram : la personne peut se réinscrire de zéro
   avec `/start`, dans le rôle de son choix (utile quand quelqu'un s'est inscrit dans le mauvais rôle pour
   tester), et tu la valides comme un nouveau. Son nom de feuille est libéré ; récap, journal et feuilles gardent
@@ -248,7 +249,7 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
   franchisé) : le livreur reçoit directement sa fiche ;
 - sur son message de course, le franchisé a aussi **✏️ Modifier** et **📦 Livrée** ;
 - toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/stock`,
-  `/caisse`, `/depense`, `/synchro`, `/close`, `/reset`, `/exclure`, `/reactiver`, `/produits`.
+  `/caisse`, `/depense`, `/synchro`, `/close`, `/reset`, `/bannir`, `/reactiver`, `/supprimer`, `/produits`.
 
 Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
