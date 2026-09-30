@@ -176,6 +176,8 @@ def register_handlers(app: Application) -> None:
         (r"^cs_", cash.cash_action),
         (r"^cl_(go|x)$", cloture.action),
         (r"^sname:", dispatch.name_ask),
+        (r"^loc:", dispatch.show_position),
+        (r"^loc_all$", dispatch.show_all_positions),
         (r"^sname_set:", dispatch.name_set),
         (r"^sname_done:", dispatch.name_done),
         (r"^relay_start:", relay.start),

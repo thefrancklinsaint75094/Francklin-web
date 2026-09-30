@@ -157,6 +157,25 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
 
+### Où sont les livreurs (`/livreurs`)
+
+Chaque livreur a une ligne avec l'état de sa position :
+
+- **🟢 en service · 📍 il y a 2 min · en direct** : tout va bien ;
+- **⚠️ position fixe** : il a envoyé une position qui ne se met pas à jour (le dispatch est prévenu tout de
+  suite) — il doit partager sa position **en direct** ;
+- **position perdue (dernière il y a 42 min)** / **sans position** (mis en service par un admin).
+
+Boutons : **📍** à côté de chaque livreur → son point sur une carte Telegram (ouvrable dans Maps), avec
+l'adresse la plus proche, l'âge de la position, en direct ou fixe, et l'heure de fin du partage choisie dans
+Telegram ; **🗺 Tous les livreurs** → un point par livreur en service.
+
+Alertes au dispatch : un livreur en service qui n'envoie plus sa position depuis `POSITION_ALERT_MINUTES`
+(10 min) → « ⚠️ Livreur A : plus de position depuis 12 min (dernière : près de …) », et le livreur reçoit un
+rappel ; à `POSITION_STALE_MINUTES` (30 min) il sort du service → « ⏸ Livreur A retiré du service ».
+
+Base créée avant cette version : exécuter une fois `sql/migrations/008_positions_live.sql`.
+
 ### Retirer quelqu'un : `/bannir` ou `/supprimer`
 
 - **`/bannir`** (ancien nom `/exclure`, toujours accepté) : plus aucun accès, et la personne ne peut pas se

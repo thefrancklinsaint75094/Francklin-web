@@ -282,7 +282,9 @@ def livreurs_duty(livreurs: list[dict]) -> M | None:
             duty = B(f"⏸ Pause — {name}", callback_data=f"duty_off:{lv['id']}")
         else:
             duty = B(f"🟢 En service — {name}", callback_data=f"duty_on:{lv['id']}")
-        rows.append([duty, B("🏷 Nom", callback_data=f"sname:{lv['id']}")])
+        rows.append([duty, B("🏷 Nom", callback_data=f"sname:{lv['id']}"), B("📍", callback_data=f"loc:{lv['id']}")])
+    if rows:
+        rows.append([B("🗺 Tous les livreurs", callback_data="loc_all")])
     return M(rows) if rows else None
 
 

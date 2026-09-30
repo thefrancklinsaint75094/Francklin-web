@@ -134,6 +134,15 @@ async def edit(
     return None
 
 
+async def send_venue(bot, chat_id: int, lat: float, lon: float, title: str, address: str) -> Message | None:
+    """Point sur une carte (titre + adresse), ouvrable dans Maps. Ne lève jamais."""
+    try:
+        return await bot.send_venue(chat_id, latitude=lat, longitude=lon, title=title, address=address)
+    except TelegramError as exc:
+        log.warning("Envoi d'un point impossible : %s", exc)
+    return None
+
+
 async def edit_markup(bot, chat_id: int, message_id: int | None, markup: InlineKeyboardMarkup | None = None) -> None:
     if message_id is None:
         return

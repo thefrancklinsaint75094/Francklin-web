@@ -402,3 +402,17 @@ simple qui respecte le mur de confidentialité (§12).
 114. `/exclure` renommée **`/bannir`** à la demande de l'exploitant (l'ancien nom reste accepté). Un banni ne
      reçoit plus aucune réponse, même à `/start` : la conversation est morte pour lui. Telegram ne permet pas
      à un bot de se cacher d'un utilisateur précis ; un nouveau compte Telegram reste bloqué à la validation.
+
+## Positions des livreurs pour le dispatch
+
+115. La position garde **en direct / fixe** (`live`) et la **fin du partage** choisie dans Telegram
+     (`live_until`, calculée au premier message : heure + `live_period` ; « sans fin » = vide). Une mise à jour
+     en direct ne touche pas `live_until`. Une position fixe envoyée pour se mettre en service prévient le
+     dispatch immédiatement (le livreur, lui, était déjà prévenu).
+116. **📍** envoie un *venue* Telegram (point + titre + adresse) : ouvrable dans Maps d'un appui, sans lien
+     externe. Adresse la plus proche par l'API Adresse (`/reverse/`, même adresse de base que la recherche) ;
+     sans réponse, les coordonnées.
+117. Silence de position : alerte au dispatch et rappel au livreur à `POSITION_ALERT_MINUTES` (10 min), une
+     fois par position (mémoire du processus), avant la sortie de service à 30 min, elle aussi signalée
+     maintenant au dispatch. Vérification toutes les 2 min au lieu de 5. Un livreur mis en service par un
+     admin (sans position) n'est jamais concerné.

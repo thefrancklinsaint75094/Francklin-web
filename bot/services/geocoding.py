@@ -125,3 +125,29 @@ async def geocode(address: str, client: httpx.AsyncClient | None = None) -> Geoc
     finally:
         if own:
             await client.aclose()
+
+
+REVERSE_TIMEOUT = 8.0
+
+
+def reverse_url() -> str:
+    """Même API que la recherche : …/search/ → …/reverse/."""
+    url = ban_url()
+    return url[: url.rstrip("/").rfind("/") + 1] + "reverse/" if "search" in url else url.rstrip("/") + "/reverse/"
+
+
+async def reverse(lat: float, lon: float, client: httpx.AsyncClient | None = None) -> str | None:
+    """Adresse la plus proche d'un point (« 12 Rue de Rivoli 75004 Paris »), ou None. Ne lève jamais."""
+    own = client is None
+    client = client or httpx.AsyncClient()
+    try:
+        resp = await client.get(reverse_url(), params={"lat": lat, "lon": lon, "limit": 1}, timeout=REVERSE_TIMEOUT)
+        resp.raise_for_status()
+        features = resp.json().get("features") or []
+        return (features[0].get("properties") or {}).get("label") or None if features else None
+    except (httpx.HTTPError, ValueError) as exc:
+        log.info("Adresse inverse indisponible : %s", exc)
+        return None
+    finally:
+        if own:
+            await client.aclose()

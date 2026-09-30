@@ -292,9 +292,10 @@ async def scrub_old_drafts(before: datetime) -> int:
 
 # ---------------------------------------------------------------- positions
 
-async def upsert_position(livreur_id: str, lat: float, lon: float) -> None:
+async def upsert_position(livreur_id: str, lat: float, lon: float, **extra) -> None:
+    """extra : live (bool) et live_until (texte ISO ou None) ; absents = inchangés."""
     await _t("livreur_positions").upsert(
-        {"livreur_id": livreur_id, "lat": lat, "lon": lon, "updated_at": iso(now_utc())},
+        {"livreur_id": livreur_id, "lat": lat, "lon": lon, "updated_at": iso(now_utc()), **extra},
         on_conflict="livreur_id",
     ).execute()
 

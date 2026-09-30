@@ -10,7 +10,9 @@ from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
 from bot.services import arrival, broadcast, transport
 from bot.services.distance import haversine_m
-from bot.timeutil import now_utc
+from datetime import timedelta
+
+from bot.timeutil import iso, now_utc
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +38,12 @@ async def on_location(update: Update, context) -> None:
 
     loc = msg.location
     previous = await db.get_position(user["id"])
-    await db.upsert_position(user["id"], loc.latitude, loc.longitude)
+    # En direct ou fixe, et jusqu'à quand (durée choisie dans Telegram ; 0x7FFFFFFF = sans fin).
+    extra = {"live": bool(loc.live_period)}
+    if not edited:
+        forever = not loc.live_period or loc.live_period >= 0x7FFFFFFF
+        extra["live_until"] = None if forever else iso(now_utc() + timedelta(seconds=loc.live_period))
+    await db.upsert_position(user["id"], loc.latitude, loc.longitude, **extra)
     # Le livreur approche d'une adresse : franchisé et dispatch prévenus (une fois par course).
     await arrival.check(context, user, loc.latitude, loc.longitude, previous)
     # Métro, véhicule, à pied : comparé au moyen de déplacement déclaré.
@@ -52,6 +59,7 @@ async def on_location(update: Update, context) -> None:
             await messaging.reply(update, texts.ON_DUTY, markup)
         if not loc.live_period:
             await messaging.reply(update, texts.STATIC_POSITION_WARNING)
+            await messaging.notify_dispatch(context.bot, texts.d_static_position(user))
 
     # Détection automatique « bientôt libre » (§10).
     if not user.get("soon_free"):

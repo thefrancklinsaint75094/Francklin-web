@@ -87,6 +87,9 @@ async def h(database, monkeypatch):
     from bot.services import transport as transport_service
 
     transport_service._stats.clear()
+    from bot import jobs as jobs_module
+
+    jobs_module._silence_alerted.clear()
     stock_service._dispatch_alerted.clear()
     from bot.handlers import cloture as cloture_h
 
@@ -97,6 +100,11 @@ async def h(database, monkeypatch):
         return {"ok": False, "error": "script non simulé"}
 
     monkeypatch.setattr(sheets, "fetch_action", no_script)
+
+    async def fake_reverse(lat, lon, client=None):   # adresse la plus proche d'un point, sans réseau
+        return "12 Rue de Rivoli 75004 Paris"
+
+    monkeypatch.setattr(geocoding, "reverse", fake_reverse)
     harness = await Harness.create()
     yield harness
     await harness.close()
@@ -1900,7 +1908,7 @@ async def test_transport_mode_declared_and_metro_detected(h):
         assert "• Livreur 1 🛵 — 1 course" in debrief
         assert f"⚠️ #{course['id']} Livreur 1 : 🚇 métro · déclaré 🛵" in debrief
         await h.text(DISPATCH, "/livreurs")
-        assert "Livreur 1 — 🟢 en service · 🛵" in h.tg.last(DISPATCH).text
+        assert "Livreur 1 — 🟢 en service · 📍 à l'instant · en direct · 🛵" in h.tg.last(DISPATCH).text
     finally:
         stations.set_stations([])
 
@@ -1983,3 +1991,63 @@ async def test_exclude_and_delete_remove_access_and_wipe_messages(h):
     assert (await db.get_user(l1["id"]))["status"] == "deleted"
     await h.text(DISPATCH, "/reactiver")
     assert h.tg.last(DISPATCH).text == texts.REACTIVER_EMPTY
+
+
+async def test_dispatch_sees_livreur_positions_and_alerts(h):
+    """/livreurs : âge et type de partage ; 📍 et 🗺 envoient un point sur une carte ; position fixe
+    signalée ; silence de 10 min signalé une fois ; à 30 min, retrait du service signalé."""
+    from datetime import timedelta
+
+    from bot import jobs
+    from bot.timeutil import iso, now_utc
+
+    f1, f2, (l1, l2) = await setup_network(h)
+    await h.text(L1, "/dispo")
+    await h.press_data(L1, h.tg.last(L1), "tmode:d")
+    await h.location(L1, *BASTILLE, message_id=L1)                  # en direct
+    await h.text(L2, "/dispo")
+    await h.location(L2, *REPUBLIQUE, live=False, message_id=L2)    # position fixe
+    assert "Livreur 2 a envoyé une position fixe" in h.tg.last(DISPATCH).text
+
+    await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(minutes=5))}).eq(
+        "livreur_id", l1["id"]).execute()
+    await h.text(DISPATCH, "/livreurs")
+    listing = h.tg.last(DISPATCH)
+    assert "Livreur 1 — 🟢 en service · 📍 il y a 5 min · en direct · 🛵" in listing.text
+    assert "Livreur 2 — 🟢 en service · ⚠️ position fixe (à l'instant)" in listing.text
+    datas = [d for _, d in listing.buttons]
+    assert f"loc:{l1['id']}" in datas and datas[-1] == "loc_all"
+
+    # 📍 : un point sur la carte, avec l'adresse la plus proche.
+    await h.press_data(DISPATCH, listing, f"loc:{l1['id']}")
+    pin = h.tg.last(DISPATCH).text
+    assert pin.startswith("[carte] 🛵 Livreur 1 — il y a 5 min | près de 12 Rue de Rivoli 75004 Paris · ✅ en direct")
+    assert "jusqu'à" in pin and "🟢 en service" in pin and f"@ {BASTILLE[0]},{BASTILLE[1]}" in pin
+    # 🗺 : tous les livreurs en service.
+    await h.press_data(DISPATCH, listing, "loc_all")
+    pins = [t for t in h.tg.texts(DISPATCH) if t.startswith("[carte]")]
+    assert len(pins) == 3 and "Livreur 2" in pins[-1] and "⚠️ position fixe" in pins[-1]
+
+    # Plus de position depuis 12 min : dispatch et livreur prévenus, une seule fois.
+    await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(minutes=12))}).eq(
+        "livreur_id", l1["id"]).execute()
+    await jobs.stale_positions(h.context)
+    await jobs.stale_positions(h.context)
+    silent = [t for t in h.tg.texts(DISPATCH) if t.startswith("⚠️ Livreur 1 : plus de position")]
+    assert len(silent) == 1 and "depuis 12 min (dernière : près de 12 Rue de Rivoli" in silent[0]
+    assert h.tg.last(L1).text == texts.POSITION_SILENT
+    assert (await db.get_user(l1["id"]))["on_duty"] is True
+
+    # 31 min : retiré du service, dispatch prévenu.
+    await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(minutes=31))}).eq(
+        "livreur_id", l1["id"]).execute()
+    await jobs.stale_positions(h.context)
+    assert "⏸ Livreur 1 retiré du service : plus de position depuis 30 min." in h.tg.texts(DISPATCH)
+    assert (await db.get_user(l1["id"]))["on_duty"] is False
+    await h.text(DISPATCH, "/livreurs")
+    assert "Livreur 1 — ⏸ pause" in h.tg.last(DISPATCH).text
+
+    # Livreur sans aucune position : 📍 répond qu'il n'y en a pas.
+    await db.delete_position(l2["id"])
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"loc:{l2['id']}")
+    assert h.tg.answers()[-1]["text"] == texts.NO_POSITION

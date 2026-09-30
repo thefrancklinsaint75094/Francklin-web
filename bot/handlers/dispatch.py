@@ -563,13 +563,59 @@ async def _livreurs_view() -> tuple[str, object]:
     counts: dict[str, int] = defaultdict(int)
     for c in await db.list_assigned_for_livreurs([lv["id"] for lv in livreurs]):
         counts[c["livreur_id"]] += 1
-    stale_before = now_utc() - timedelta(minutes=config.get().position_stale_minutes)
+    now = now_utc()
+    stale_before = now - timedelta(minutes=config.get().position_stale_minutes)
     rows = []
     for lv in livreurs:
         pos = positions.get(lv["id"])
-        located = bool(pos) and parse_ts(pos["updated_at"]) >= stale_before
-        rows.append((lv, located, counts[lv["id"]]))
+        at = parse_ts(pos["updated_at"]) if pos else None
+        located = at is not None and at >= stale_before
+        minutes = (now - at).total_seconds() / 60 if at else None
+        rows.append((lv, located, counts[lv["id"]], pos, minutes))
     return texts.livreurs_list(rows), keyboards.livreurs_duty(livreurs)
+
+
+async def _send_position(context, chat_id: int, livreur: dict, pos: dict) -> None:
+    """Point du livreur sur une carte, avec l'adresse la plus proche, l'âge et le type de partage."""
+    from bot.services import geocoding
+
+    now = now_utc()
+    at = parse_ts(pos["updated_at"])
+    minutes = (now - at).total_seconds() / 60
+    fresh = at >= now - timedelta(minutes=config.get().position_stale_minutes)
+    address = await geocoding.reverse(pos["lat"], pos["lon"])
+    await messaging.send_venue(context.bot, chat_id, pos["lat"], pos["lon"], texts.venue_title(livreur, minutes),
+                               texts.venue_address(livreur, pos, address, fresh))
+
+
+@common.callback
+async def show_position(update: Update, context):
+    """loc:<livreur> — 📍 dans /livreurs."""
+    if await _dispatch(update) is None:
+        return None
+    livreur = await db.get_user(common.arg(update))
+    if livreur is None or livreur["role"] != "livreur":
+        return texts.ALREADY_HANDLED, True
+    pos = await db.get_position(livreur["id"])
+    if pos is None:
+        return texts.NO_POSITION, True
+    await _send_position(context, update.effective_chat.id, livreur, pos)
+    return None
+
+
+@common.callback
+async def show_all_positions(update: Update, context):
+    """loc_all — 🗺 un point par livreur en service."""
+    if await _dispatch(update) is None:
+        return None
+    livreurs = sorted(await db.list_on_duty_livreurs(), key=lambda u: u.get("display_name") or "")
+    positions = await db.get_positions(lv["id"] for lv in livreurs)
+    shown = [lv for lv in livreurs if lv["id"] in positions]
+    if not shown:
+        return texts.NO_POSITIONS, True
+    for lv in shown:
+        await _send_position(context, update.effective_chat.id, lv, positions[lv["id"]])
+    return None
 
 
 async def livreurs(update: Update, context) -> None:

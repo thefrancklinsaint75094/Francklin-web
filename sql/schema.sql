@@ -66,7 +66,9 @@ create table livreur_positions (
   livreur_id      uuid primary key references users(id),
   lat             double precision not null,
   lon             double precision not null,
-  updated_at      timestamptz not null default now()
+  updated_at      timestamptz not null default now(),
+  live            boolean,                           -- position en direct (sinon fixe)
+  live_until      timestamptz                        -- fin du partage en direct choisie dans Telegram
 );
 
 create table broadcasts (
