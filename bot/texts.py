@@ -52,6 +52,16 @@ WELCOME_FRANCHISE = (
     "/mescourses — voir mes courses de la nuit"
 )
 
+LIVE_GUIDE = (
+    "📍 <b>Partage ta position une fois pour toutes</b> (depuis ton téléphone) :\n"
+    "1. Touche 📎 en bas de cette conversation\n"
+    "2. Choisis <b>Position</b>, puis <b>Partager ma position en direct</b>\n"
+    "3. Choisis <b>« Jusqu'à ce que je l'arrête »</b>\n"
+    "C'est tout : ensuite, un simple /dispo te met en service chaque jour.\n"
+    "Si rien ne se passe : autorise la localisation pour Telegram dans les réglages du téléphone. "
+    "« Envoyer ma position actuelle » ne suffit pas (elle ne bouge plus)."
+)
+
 WELCOME_LIVREUR = (
     "✅ Tu es validé.\n\n"
     "/dispo — te mettre en service (tu partageras ta position en direct et diras comment tu te déplaces : "
@@ -64,6 +74,7 @@ WELCOME_LIVREUR = (
     "quand tu termines pour enchaîner.\n\n"
     "Le client prend autre chose ? « ✏️ Modifier la commande » sur ta course : ➖ / ➕ pour les quantités, "
     "➕ Ajouter un produit pour choisir dans la liste, et les boutons de prix (de 10 en 10 €). Rien à taper."
+    "\n\n" + LIVE_GUIDE
 )
 
 WELCOME_DISPATCH = (
@@ -335,20 +346,22 @@ def mes_courses(courses: list[dict], livreurs: dict[str, dict]) -> str:
 # ================================================================ livreur
 
 DISPO_PROMPT = (
-    "Partage-moi ta position en direct (📎 → Position → Partager ma position en direct → 8 heures). "
-    "Tant que je la reçois, tu es visible pour les courses.\n\n"
+    LIVE_GUIDE + "\n\n"
+    "Tant que je reçois ta position, tu es visible pour les courses.\n\n"
     "Et tu te déplaces comment aujourd'hui ? 🚶 Transport (à pied, métro, bus) · 🛵 Deux-roues · 🚗 Voiture"
 )
+DISPO_REMINDER = "⏳ Je n'ai toujours pas reçu ta position, tu n'es pas encore en service.\n\n" + LIVE_GUIDE
 ON_DUTY = "✅ Tu es en service. Je t'envoie les courses proches de toi."
 PAUSED = "⏸ Tu es en pause. Relance /dispo pour reprendre."
 STATIC_POSITION_WARNING = (
     "⚠️ Position reçue, mais elle ne se mettra pas à jour. Pour rester visible plus de 30 min, "
-    "partage ta position <b>en direct</b>."
+    "partage ta position <b>en direct</b> : 📎 → Position → Partager ma position en direct → "
+    "« Jusqu'à ce que je l'arrête »."
 )
 POSITION_LOST = "📍 Je ne reçois plus ta position, tu n'es plus visible. Relance /dispo quand tu reprends."
 POSITION_SILENT = ("📍 Je ne reçois plus ta position depuis quelques minutes. Vérifie que le partage en direct est "
-                   "toujours actif (📎 → Position → Partager ma position en direct → 8 heures), sinon tu vas "
-                   "sortir du service.")
+                   "toujours actif (📎 → Position → Partager ma position en direct → « Jusqu'à ce que je "
+                   "l'arrête »), sinon tu vas sortir du service.")
 SOON_FREE_ACK = "👍 Tu vas recevoir la prochaine course proche de toi."
 SOON_FREE_AUTO = "📍 Tu arrives — je peux te proposer la course suivante."
 SOON_FREE_NO_COURSE = "Tu n'as pas de course en cours."
@@ -808,12 +821,16 @@ def livreurs_list(rows: list[tuple]) -> str:
         return "🚴 Aucun livreur actif."
     lines = ["🚴 <b>Livreurs</b>", ""]
     for lv, located, busy, *where in rows:
-        pos, minutes = (where + [None, None])[:2]
+        pos, minutes, waiting = (where + [None, None, None])[:3]
         if lv.get("on_duty"):
             if lv.get("duty_forced") and not located:
                 state = "🟢 en service · sans position"
             else:
                 state = "🟢 en service · " + position_state(pos, minutes, located)
+        elif waiting is not None:
+            state = f"⏸ pause · /dispo {ago(waiting)}, position pas encore reçue"
+        elif pos is None:
+            state = "⏸ pause · jamais de position"
         else:
             state = "⏸ pause"
         extra = f" · {busy} course{'s' if busy > 1 else ''} en cours" if busy else ""
@@ -1361,3 +1378,8 @@ def d_position_lost(livreur: dict, minutes: int) -> str:
 def d_static_position(livreur: dict) -> str:
     return (f"⚠️ {esc(livreur.get('display_name') or '?')} a envoyé une position fixe : elle ne se mettra pas à "
             "jour. Demande-lui de partager sa position en direct.")
+
+
+def d_dispo_without_position(livreur: dict, minutes: int) -> str:
+    return (f"⚠️ {esc(livreur.get('display_name') or '?')} a fait /dispo il y a {minutes} min mais n'a pas partagé "
+            "sa position : il n'est pas en service. Je lui ai renvoyé la marche à suivre.")

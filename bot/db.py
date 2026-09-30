@@ -465,5 +465,12 @@ async def log_event(type_: str, course_id: int | None = None, user_id: str | Non
     ).execute()
 
 
+async def last_user_events(type_: str, since: datetime) -> dict[str, str]:
+    """{utilisateur: heure du dernier événement de ce type} depuis une date."""
+    res = await (_t("events").select("user_id,created_at").eq("type", type_).gte("created_at", iso(since))
+                 .order("created_at").execute())
+    return {r["user_id"]: r["created_at"] for r in res.data if r.get("user_id")}
+
+
 async def list_events(course_id: int, type_: str) -> list[dict]:
     return (await _t("events").select("*").eq("course_id", course_id).eq("type", type_).execute()).data

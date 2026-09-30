@@ -11,7 +11,7 @@ from telegram import Update
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, relay
 from bot.services import broadcast, catalog, lifecycle, order_edit
-from bot.timeutil import now_utc, parse_ts
+from bot.timeutil import iso, now_utc, parse_ts
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +43,31 @@ async def dispo(update: Update, context) -> None:
         await broadcast.kick_pending(context)
     else:
         await messaging.reply(update, texts.DISPO_PROMPT, keyboards.transport_mode(user.get("transport_mode")))
+        # Pas de position dans DISPO_REMINDER_SECONDS : on relance le livreur et on prévient le dispatch.
+        await db.log_event("dispo_asked", user_id=user["id"])
+        if context.job_queue is not None:
+            name = f"dispo:{user['id']}"
+            for job in context.job_queue.get_jobs_by_name(name):
+                job.schedule_removal()
+            context.job_queue.run_once(dispo_reminder, when=DISPO_REMINDER_SECONDS, name=name,
+                                       data={"user_id": user["id"], "asked_at": iso(now_utc())})
+
+
+DISPO_REMINDER_SECONDS = 180
+
+
+async def dispo_reminder(context) -> None:
+    """3 min après un /dispo : toujours pas de position → marche à suivre au livreur, dispatch prévenu."""
+    data = context.job.data
+    user = await db.get_user(data["user_id"])
+    if user is None or user["status"] != "active" or user.get("on_duty"):
+        return
+    pos = await db.get_position(user["id"])
+    if pos and parse_ts(pos["updated_at"]) >= parse_ts(data["asked_at"]):
+        return
+    await messaging.send(context.bot, user, texts.DISPO_REMINDER)
+    await messaging.notify_dispatch(context.bot, texts.d_dispo_without_position(user, DISPO_REMINDER_SECONDS // 60))
+    await db.log_event("dispo_no_position", user_id=user["id"])
 
 
 @common.callback

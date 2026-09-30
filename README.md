@@ -164,7 +164,14 @@ Chaque livreur a une ligne avec l'état de sa position :
 - **🟢 en service · 📍 il y a 2 min · en direct** : tout va bien ;
 - **⚠️ position fixe** : il a envoyé une position qui ne se met pas à jour (le dispatch est prévenu tout de
   suite) — il doit partager sa position **en direct** ;
-- **position perdue (dernière il y a 42 min)** / **sans position** (mis en service par un admin).
+- **position perdue (dernière il y a 42 min)** / **sans position** (mis en service par un admin) ;
+- en pause : **⏸ pause · /dispo il y a 5 min, position pas encore reçue** ou **⏸ pause · jamais de position**.
+
+**Partage une fois pour toutes** : le message de bienvenue et `/dispo` expliquent au livreur comment partager
+sa position en direct avec la durée **« Jusqu'à ce que je l'arrête »** (📎 → Position → Partager ma position en
+direct). Il ne le fait qu'une fois ; ensuite un simple `/dispo` le met en service chaque jour. Un bot ne peut
+pas lancer ce partage à sa place (règle de Telegram). S'il fait `/dispo` sans partager sa position, il reçoit
+la marche à suivre 3 minutes plus tard et le dispatch est prévenu.
 
 Boutons : **📍** à côté de chaque livreur → son point sur une carte Telegram (ouvrable dans Maps), avec
 l'adresse la plus proche, l'âge de la position, en direct ou fixe, et l'heure de fin du partage choisie dans

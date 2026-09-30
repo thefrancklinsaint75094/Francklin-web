@@ -565,13 +565,17 @@ async def _livreurs_view() -> tuple[str, object]:
         counts[c["livreur_id"]] += 1
     now = now_utc()
     stale_before = now - timedelta(minutes=config.get().position_stale_minutes)
+    asked = await db.last_user_events("dispo_asked", now - timedelta(hours=2))
     rows = []
     for lv in livreurs:
         pos = positions.get(lv["id"])
         at = parse_ts(pos["updated_at"]) if pos else None
         located = at is not None and at >= stale_before
         minutes = (now - at).total_seconds() / 60 if at else None
-        rows.append((lv, located, counts[lv["id"]], pos, minutes))
+        # /dispo récent sans position reçue depuis : « position pas encore reçue ».
+        asked_at = parse_ts(asked.get(lv["id"])) if asked.get(lv["id"]) else None
+        waiting = (now - asked_at).total_seconds() / 60 if asked_at and (at is None or at < asked_at) else None
+        rows.append((lv, located, counts[lv["id"]], pos, minutes, waiting))
     return texts.livreurs_list(rows), keyboards.livreurs_duty(livreurs)
 
 
