@@ -435,6 +435,16 @@ async def list_expenses_for_livreur(livreur_id: str, since: datetime) -> list[di
     return res.data
 
 
+async def create_sales(rows: list[dict]) -> list[dict]:
+    return (await _t("sales").insert(rows).execute()).data
+
+
+async def list_sales_between(start: datetime, end: datetime) -> list[dict]:
+    res = await (_t("sales").select("*").gte("created_at", iso(start)).lt("created_at", iso(end))
+                 .order("id").execute())
+    return res.data
+
+
 async def remember_message(chat_id: int, message_id: int) -> None:
     await _t("bot_messages").upsert({"chat_id": chat_id, "message_id": message_id},
                                     on_conflict="chat_id,message_id").execute()

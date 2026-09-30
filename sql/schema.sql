@@ -127,6 +127,22 @@ create table expenses (
   created_at  timestamptz not null default now()
 );
 
+create table sales (                                 -- ventes saisies par un admin (/ventes)
+  id            serial primary key,
+  livreur_name  text not null,                         -- nom dans la feuille (Livreur A…)
+  livreur_id    uuid references users(id),             -- compte du bot, s'il existe
+  by_user_id    uuid not null references users(id),
+  payment       text not null check (payment in ('especes','virement')),
+  product       text not null,
+  qty           integer not null check (qty > 0),
+  price         numeric(8,2) not null check (price > 0),
+  created_at    timestamptz not null default now()
+);
+
+create index on sales (created_at);
+create index on sales (livreur_id);
+create index on sales (by_user_id);
+
 create table bot_messages (                          -- messages envoyés (48 h), effacés si l'accès est retiré
   chat_id     bigint not null,
   message_id  bigint not null,
@@ -159,3 +175,4 @@ alter table products enable row level security;
 alter table restocks enable row level security;
 alter table expenses enable row level security;
 alter table bot_messages enable row level security;
+alter table sales enable row level security;

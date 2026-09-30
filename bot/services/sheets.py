@@ -159,6 +159,23 @@ def push_restock_later(restock: dict) -> None:
     task.add_done_callback(_tasks.discard)
 
 
+def sale_row(sale: dict) -> dict:
+    """Vente saisie par /ventes : une ligne OK de la feuille Dispatch (une vente = une ligne)."""
+    price = round(float(sale["price"]), 2)
+    return {
+        "numero": f"V{sale['id']}",
+        "onglet": day_tab(sale["created_at"]),
+        "vendeur": "",
+        "livreur": sale["livreur_name"],
+        "livreur_nom": "",
+        "statut": STATUT_LIVRE,
+        "paiement": PAYMENT_SHEET.get(sale["payment"], ""),
+        "adresse": "Récap ventes",
+        "lignes": [{"produit": sale["product"], "qte": int(sale["qty"]), "prix": price}],
+        "prix": price,
+    }
+
+
 def expense_row(expense: dict, users: dict[str, dict]) -> dict:
     """Dépense d'un livreur pour la zone DÉPENSES LIVREURS de l'onglet de la nuit (feuille Dispatch)."""
     from bot.services import cash
