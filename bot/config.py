@@ -88,6 +88,7 @@ class Config:
     stock_alerts: bool = True
     livreur_names: tuple[str, ...] = ()        # noms des livreurs dans les feuilles (vide : « Livreur 1 »…)
     ravitailleur_names: tuple[str, ...] = ()
+    position_alert_minutes: int = 10           # dispatch prévenu quand un livreur en service n'envoie plus sa position
     transport_max_km: float = 5.0              # un livreur en transport / à pied ne reçoit pas de course plus loin
     stations_url: str | None = None            # liste des stations IDF (vide : adresse par défaut, « - » : aucune)
 
@@ -134,6 +135,7 @@ class Config:
             stock_alerts=(_raw("STOCK_ALERTS") or "1").lower() not in ("0", "non", "false", "off"),
             livreur_names=_names("LIVREUR_NAMES", "Livreur A,Livreur B,Livreur C,Livreur D,Livreur R,Livreur X"),
             ravitailleur_names=_names("RAVITAILLEUR_NAMES", "Ravitailleur 1,Ravitailleur 2"),
+            position_alert_minutes=_int("POSITION_ALERT_MINUTES", 10),
             transport_max_km=float(_raw("TRANSPORT_MAX_KM") or 5),
             stations_url=_raw("STATIONS_URL"),
         )

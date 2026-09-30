@@ -346,6 +346,9 @@ STATIC_POSITION_WARNING = (
     "partage ta position <b>en direct</b>."
 )
 POSITION_LOST = "📍 Je ne reçois plus ta position, tu n'es plus visible. Relance /dispo quand tu reprends."
+POSITION_SILENT = ("📍 Je ne reçois plus ta position depuis quelques minutes. Vérifie que le partage en direct est "
+                   "toujours actif (📎 → Position → Partager ma position en direct → 8 heures), sinon tu vas "
+                   "sortir du service.")
 SOON_FREE_ACK = "👍 Tu vas recevoir la prochaine course proche de toi."
 SOON_FREE_AUTO = "📍 Tu arrives — je peux te proposer la course suivante."
 SOON_FREE_NO_COURSE = "Tu n'as pas de course en cours."
@@ -778,14 +781,39 @@ def d_arrival(course: dict, livreur: dict, distance_label: str, minutes: int) ->
             f"à {distance_label} (≈ {minutes} min) — {esc(course['district'])}")
 
 
-def livreurs_list(rows: list[tuple[dict, bool, int]]) -> str:
-    """rows : (livreur, position fraîche ?, nombre de courses en cours)."""
+def ago(minutes: float) -> str:
+    """0 → « à l'instant » ; 7 → « il y a 7 min » ; 95 → « il y a 1 h 35 »."""
+    m = int(minutes)
+    if m < 1:
+        return "à l'instant"
+    if m < 60:
+        return f"il y a {m} min"
+    return f"il y a {m // 60} h {m % 60:02d}" if m % 60 else f"il y a {m // 60} h"
+
+
+def position_state(pos: dict | None, minutes: float | None, fresh: bool) -> str:
+    """« 📍 il y a 2 min · en direct », « ⚠️ position fixe (il y a 5 min) »…"""
+    if pos is None or minutes is None:
+        return "pas de position"
+    if not fresh:
+        return f"position perdue (dernière {ago(minutes)})"
+    if pos.get("live") is False:
+        return f"⚠️ position fixe ({ago(minutes)})"
+    return f"📍 {ago(minutes)} · en direct"
+
+
+def livreurs_list(rows: list[tuple]) -> str:
+    """rows : (livreur, position fraîche ?, nombre de courses en cours, position, minutes depuis la position)."""
     if not rows:
         return "🚴 Aucun livreur actif."
     lines = ["🚴 <b>Livreurs</b>", ""]
-    for lv, located, busy in rows:
+    for lv, located, busy, *where in rows:
+        pos, minutes = (where + [None, None])[:2]
         if lv.get("on_duty"):
-            state = "🟢 en service" + ("" if located else " · sans position" if lv.get("duty_forced") else " · position perdue")
+            if lv.get("duty_forced") and not located:
+                state = "🟢 en service · sans position"
+            else:
+                state = "🟢 en service · " + position_state(pos, minutes, located)
         else:
             state = "⏸ pause"
         extra = f" · {busy} course{'s' if busy > 1 else ''} en cours" if busy else ""
@@ -1288,3 +1316,48 @@ def transport_mismatch(course: dict, livreur: dict, mode: str, detail: dict) -> 
             where += f", {_n(detail['km'])} km en {detail['minutes']} min)"
         return (f"🚇 #{course['id']} — {who} semble avoir pris le métro{where} · déclaré {said}")
     return f"🛵 #{course['id']} — {who} semble rouler (≈ {detail.get('kmh', '?')} km/h) · déclaré {said}"
+
+
+# ================================================================ positions des livreurs (dispatch)
+
+NO_POSITION = "Aucune position connue pour ce livreur."
+NO_POSITIONS = "Aucun livreur en service n'a de position."
+
+
+def venue_title(livreur: dict, minutes: float) -> str:
+    from bot.services.transport import ICON
+
+    icon = ICON.get(livreur.get("transport_mode") or "", "🚴")
+    return f"{icon} {livreur.get('display_name') or '?'} — {ago(minutes)}"[:100]
+
+
+def venue_address(livreur: dict, pos: dict, address: str | None, fresh: bool) -> str:
+    where = f"près de {address}" if address else f"{pos['lat']:.5f}, {pos['lon']:.5f}"
+    if not fresh:
+        share = "position perdue"
+    elif pos.get("live") is False:
+        share = "⚠️ position fixe"
+    else:
+        share = "✅ en direct"
+        until = pos.get("live_until")
+        if until:
+            from bot.timeutil import hhmm, parse_ts
+
+            share += f" jusqu'à {hhmm(parse_ts(until))}"
+    duty = "🟢 en service" if livreur.get("on_duty") else "⏸ pause"
+    return f"{where} · {share} · {duty}"[:200]
+
+
+def d_position_silent(livreur: dict, minutes: float, address: str | None, off_after: int) -> str:
+    where = f" (dernière : près de {esc(address)})" if address else ""
+    return (f"⚠️ {esc(livreur.get('display_name') or '?')} : plus de position depuis {int(minutes)} min{where}. "
+            f"Il reste en service ; sans nouvelle, il en sortira à {off_after} min.")
+
+
+def d_position_lost(livreur: dict, minutes: int) -> str:
+    return f"⏸ {esc(livreur.get('display_name') or '?')} retiré du service : plus de position depuis {minutes} min."
+
+
+def d_static_position(livreur: dict) -> str:
+    return (f"⚠️ {esc(livreur.get('display_name') or '?')} a envoyé une position fixe : elle ne se mettra pas à "
+            "jour. Demande-lui de partager sa position en direct.")

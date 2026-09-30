@@ -128,6 +128,14 @@ class FakeTelegram(BaseRequest):
             m = Msg(chat_id, next(self._ids), params["text"], params.get("reply_markup"))
             self.messages[(chat_id, m.message_id)] = m
             return self._ok(self._message_json(m))
+        if api == "sendVenue":
+            m = Msg(chat_id, next(self._ids), f"[carte] {params['title']} | {params['address']} "
+                                              f"@ {params['latitude']},{params['longitude']}")
+            self.messages[(chat_id, m.message_id)] = m
+            data = self._message_json(m)
+            data["venue"] = {"location": {"latitude": float(params["latitude"]), "longitude": float(params["longitude"])},
+                             "title": params["title"], "address": params["address"]}
+            return self._ok(data)
         if api == "sendDocument":
             m = Msg(chat_id, next(self._ids), "[document]")
             self.messages[(chat_id, m.message_id)] = m

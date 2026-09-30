@@ -30,19 +30,41 @@ async def expire_drafts(context) -> None:
                                  texts.DRAFT_EXPIRED, resend_if_old=False)
 
 
+_silence_alerted: set[tuple[str, str]] = set()   # (livreur, heure de sa dernière position) déjà signalés
+
+
 async def stale_positions(context) -> None:
+    """Livreur en service sans nouvelle position : au bout de POSITION_ALERT_MINUTES, le dispatch
+    (et le livreur) sont prévenus ; au bout de POSITION_STALE_MINUTES, il sort du service."""
+    from bot.services import geocoding
+
     cfg = config.get()
-    limit = now_utc() - timedelta(minutes=cfg.position_stale_minutes)
+    now = now_utc()
+    limit = now - timedelta(minutes=cfg.position_stale_minutes)
+    alert = now - timedelta(minutes=cfg.position_alert_minutes)
     livreurs = await db.list_on_duty_livreurs()
     positions = await db.get_positions(lv["id"] for lv in livreurs)
     for lv in livreurs:
         if lv.get("duty_forced"):
             continue  # mis en service par un admin : pas besoin de position
         pos = positions.get(lv["id"])
-        if pos is None or parse_ts(pos["updated_at"]) < limit:
+        at = parse_ts(pos["updated_at"]) if pos else None
+        if at is None or at < limit:
             await db.update_user(lv["id"], {"on_duty": False, "soon_free": False})
             await db.log_event("position_stale", user_id=lv["id"])
             await messaging.send(context.bot, lv, texts.POSITION_LOST)
+            await messaging.notify_dispatch(context.bot, texts.d_position_lost(lv, cfg.position_stale_minutes))
+        elif 0 < cfg.position_alert_minutes < cfg.position_stale_minutes and at < alert:
+            key = (lv["id"], pos["updated_at"])
+            if key in _silence_alerted:
+                continue
+            _silence_alerted.add(key)
+            address = await geocoding.reverse(pos["lat"], pos["lon"])
+            minutes = (now - at).total_seconds() / 60
+            await db.log_event("position_silent", user_id=lv["id"], payload={"minutes": int(minutes)})
+            await messaging.notify_dispatch(context.bot, texts.d_position_silent(
+                lv, minutes, address, cfg.position_stale_minutes))
+            await messaging.send(context.bot, lv, texts.POSITION_SILENT)
 
 
 async def stuck_courses(context) -> None:
@@ -127,7 +149,7 @@ def register(job_queue) -> None:
     cfg = config.get()
     job_queue.run_once(_safe(startup), when=1, name="startup")
     job_queue.run_repeating(_safe(expire_drafts), interval=60, first=30, name="expire_drafts")
-    job_queue.run_repeating(_safe(stale_positions), interval=300, first=60, name="stale_positions")
+    job_queue.run_repeating(_safe(stale_positions), interval=120, first=60, name="stale_positions")
     job_queue.run_repeating(_safe(stuck_courses), interval=300, first=90, name="stuck_courses")
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")
     job_queue.run_daily(_safe(daily_journal), time=time(cfg.night_end_hour, 0, tzinfo=PARIS), name="daily_journal")

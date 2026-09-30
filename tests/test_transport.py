@@ -90,3 +90,30 @@ def test_final_mode_walk_only_when_clear():
     assert transport.final_mode({"id": 3}) is None  # trop peu de positions
     assert transport.final_mode({"id": 4, "detected_mode": "metro"}) == "metro"
     assert transport._stats == {}
+
+
+def test_ago_and_reverse_url(monkeypatch):
+    from bot import texts
+    from bot.services import geocoding
+
+    assert texts.ago(0.4) == "à l'instant" and texts.ago(7.9) == "il y a 7 min"
+    assert texts.ago(95) == "il y a 1 h 35" and texts.ago(120) == "il y a 2 h"
+    monkeypatch.delenv("BAN_URL", raising=False)
+    assert geocoding.reverse_url() == "https://api-adresse.data.gouv.fr/reverse/"
+    monkeypatch.setenv("BAN_URL", "https://data.geopf.fr/geocodage/search")
+    assert geocoding.reverse_url() == "https://data.geopf.fr/geocodage/reverse/"
+
+
+async def test_reverse_reads_label_and_never_raises():
+    import httpx
+
+    from bot.services import geocoding
+
+    def ok(request):
+        assert request.url.params["lat"] == "48.85"
+        return httpx.Response(200, json={"features": [{"properties": {"label": "12 Rue de Rivoli 75004 Paris"}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(ok)) as client:
+        assert await geocoding.reverse(48.85, 2.35, client) == "12 Rue de Rivoli 75004 Paris"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(500))) as client:
+        assert await geocoding.reverse(48.85, 2.35, client) is None
