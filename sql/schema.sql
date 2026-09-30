@@ -10,7 +10,7 @@ create table users (
   real_name       text,                          -- nom donné à l'inscription, visible du dispatch seulement
   display_name    text,                          -- « Franchisé 3 », « Livreur 4 » — visible de l'autre partie
   role            text not null check (role in ('dispatch','franchise','livreur','ravitailleur')),
-  status          text not null default 'pending' check (status in ('pending','active','banned')),
+  status          text not null default 'pending' check (status in ('pending','active','banned','deleted')),
   on_duty         boolean not null default false,   -- livreur en service
   soon_free       boolean not null default false,   -- livreur a signalé qu'il termine
   duty_forced     boolean not null default false,   -- mis en service par un admin (même sans position)
@@ -125,6 +125,14 @@ create table expenses (
   created_at  timestamptz not null default now()
 );
 
+create table bot_messages (                          -- messages envoyés (48 h), effacés si l'accès est retiré
+  chat_id     bigint not null,
+  message_id  bigint not null,
+  created_at  timestamptz not null default now(),
+  primary key (chat_id, message_id)
+);
+
+create index on bot_messages (created_at);
 create index on expenses (created_at);
 create index on expenses (livreur_id);
 create index on expenses (by_user_id);
@@ -148,3 +156,4 @@ alter table events enable row level security;
 alter table products enable row level security;
 alter table restocks enable row level security;
 alter table expenses enable row level security;
+alter table bot_messages enable row level security;

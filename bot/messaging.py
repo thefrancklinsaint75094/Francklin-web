@@ -4,6 +4,9 @@
 - Un message de plus de 47 h n'est jamais édité : on en envoie un nouveau.
 - Un utilisateur qui a bloqué le bot (Forbidden) : livreur mis hors service,
   dispatch prévenu (une seule fois tant que l'utilisateur ne revient pas).
+- Un compte exclu ou supprimé ne reçoit plus rien.
+- Chaque message envoyé à un utilisateur (hors dispatch) est noté 48 h : si son accès est
+  retiré, le bot efface ce qu'il lui a envoyé (Telegram n'autorise pas plus ancien).
 """
 from __future__ import annotations
 
@@ -19,7 +22,39 @@ from bot.timeutil import now_utc
 log = logging.getLogger(__name__)
 
 MAX_EDIT_AGE = timedelta(hours=47)
+DELETE_WINDOW = timedelta(hours=47)       # Telegram : un bot n'efface que les messages de moins de 48 h
+REMOVED = ("banned", "deleted")
 _blocked: set[int] = set()
+
+
+async def _remember(message: Message | None) -> None:
+    """Note le message pour pouvoir l'effacer si l'accès est retiré. Ne lève jamais."""
+    if message is None or message.chat_id == config.get().dispatch_telegram_id:
+        return
+    try:
+        await db.remember_message(message.chat_id, message.message_id)
+    except Exception:  # noqa: BLE001
+        log.warning("Message %s/%s non noté", message.chat_id, message.message_id)
+
+
+async def wipe(bot, telegram_id: int) -> int:
+    """Efface les messages envoyés par le bot à ce compte ces dernières 48 h. Renvoie leur nombre."""
+    ids = await db.recent_message_ids(telegram_id, now_utc() - DELETE_WINDOW)
+    deleted = 0
+    for i in range(0, len(ids), 100):
+        chunk = ids[i:i + 100]
+        try:
+            await bot.delete_messages(telegram_id, chunk)
+            deleted += len(chunk)
+        except TelegramError:
+            for message_id in chunk:
+                try:
+                    await bot.delete_message(telegram_id, message_id)
+                    deleted += 1
+                except TelegramError:
+                    pass
+    await db.forget_messages(chat_id=telegram_id)
+    return deleted
 
 
 def unblocked(telegram_id: int) -> None:
@@ -40,9 +75,14 @@ async def _handle_blocked(bot, user: dict) -> None:
     await notify_dispatch(bot, texts.d_blocked(user))
 
 
-async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None = None, **kwargs) -> Message | None:
+async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None = None,
+               even_if_removed: bool = False, **kwargs) -> Message | None:
+    if user.get("status") in REMOVED and not even_if_removed:
+        return None                       # accès retiré : plus rien ne lui est envoyé
     try:
-        return await bot.send_message(user["telegram_id"], text, reply_markup=markup, **kwargs)
+        sent = await bot.send_message(user["telegram_id"], text, reply_markup=markup, **kwargs)
+        await _remember(sent)
+        return sent
     except Forbidden:
         await _handle_blocked(bot, user)
     except TelegramError as exc:
@@ -108,7 +148,9 @@ async def reply(update, text: str, markup: InlineKeyboardMarkup | None = None) -
     if chat is None:
         return None
     try:
-        return await chat.send_message(text, reply_markup=markup)
+        sent = await chat.send_message(text, reply_markup=markup)
+        await _remember(sent)
+        return sent
     except TelegramError as exc:
         log.warning("Réponse impossible : %s", exc)
     return None

@@ -157,6 +157,22 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
 
+### Retirer quelqu'un : `/exclure` ou `/supprimer`
+
+- **`/exclure`** : l'accès est coupé mais le compte est gardé (`/reactiver` le rend).
+- **`/supprimer`** : définitif. Le compte est détaché de son Telegram : la personne peut se réinscrire de zéro
+  avec `/start`, dans le rôle de son choix (utile quand quelqu'un s'est inscrit dans le mauvais rôle pour
+  tester), et tu la valides comme un nouveau. Son nom de feuille est libéré ; récap, journal et feuilles gardent
+  ses anciennes courses.
+
+Dans les deux cas : plus de service, ses courses en cours sont rendues (livreur) ou annulées si elles attendent
+encore (franchisé), son menu de commandes disparaît, le bot ne lui envoie plus rien et **efface chez lui tous
+les messages qu'il lui a envoyés ces dernières 48 h** (fiches, adresses, digicodes). Limite fixée par
+Telegram : un bot ne peut pas effacer plus ancien ; ce qui a plus de 48 h reste dans son historique, mais
+les boutons ne répondent plus. Pense aussi à lui retirer le partage des feuilles Google s'il y avait accès.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/007_removed_users.sql`.
+
 ### Moyen de déplacement des livreurs
 
 Trois modes : **🚶 Transport** (à pied, métro, bus : c'est pareil), **🛵 Deux-roues**, **🚗 Voiture**. Le livreur

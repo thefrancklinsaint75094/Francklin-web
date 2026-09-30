@@ -72,7 +72,7 @@ async def relay_text(update: Update, context, user: dict, course_id: int | None,
         return
     other_id = course["livreur_id"] if user["id"] == course["franchise_id"] else course["franchise_id"]
     other = await db.get_user(other_id)
-    if other is None or other["status"] == "banned":
+    if other is None or other["status"] in ("banned", "deleted"):
         await messaging.reply(update, texts.COURSE_FINISHED)
         return
     row = await db.add_message(course["id"], user["id"], content)

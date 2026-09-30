@@ -73,8 +73,9 @@ WELCOME_DISPATCH = (
     "/encours — courses en attente et en cours (👤 Attribuer à un livreur)\n"
     "/livreurs — mettre un livreur en service ou en pause\n"
     "/users — tous les utilisateurs\n"
-    "/exclure — retirer un accès\n"
+    "/exclure — retirer un accès (compte gardé, réactivable)\n"
     "/reactiver — rendre un accès\n"
+    "/supprimer — supprimer un compte (définitif, la personne peut se réinscrire de zéro)\n"
     "/produits — catalogue des produits (ajouter, supprimer)\n"
     "/recharge — charger ou reprendre un livreur, cash récupéré\n"
     "/stock — ce qui reste dans chaque box et chez les livreurs\n"
@@ -123,7 +124,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /close · /reset · /exclure · /reactiver"
+    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /synchro · /close · /reset · /exclure · /reactiver · /supprimer"
 )
 
 
@@ -927,6 +928,10 @@ def users_list(franchises: list[str], livreurs: list[str], pending: list[str],
 
 EXCLURE_HEADER = "Qui veux-tu exclure ?"
 EXCLURE_EMPTY = "Aucun utilisateur actif à exclure."
+SUPPRIMER_HEADER = ("🗑 Quel compte supprimer ? (⏳ en attente de validation, ⛔ exclu)\n"
+                    "Pour couper l'accès en gardant le compte, utilise plutôt /exclure.")
+SUPPRIMER_EMPTY = "Aucun compte à supprimer."
+DELETED_NOTICE = "Ton compte a été supprimé. Pour revenir un jour, envoie /start."
 REACTIVER_HEADER = "Qui veux-tu réactiver ?"
 REACTIVER_EMPTY = "Aucun utilisateur exclu."
 
@@ -936,7 +941,27 @@ def ban_confirm(user: dict) -> str:
 
 
 def banned_done(user: dict) -> str:
-    return f"⛔ {esc(user.get('display_name'))} ({esc(user.get('real_name'))}) est exclu."
+    return (f"⛔ {esc(user.get('display_name'))} ({esc(user.get('real_name'))}) est exclu."
+            + _wiped(user))
+
+
+def _wiped(user: dict) -> str:
+    n = user.get("wiped") or 0
+    return f"\n🧹 {plural(n, 'message')} du bot effacé{'s' if n > 1 else ''} chez lui." if n else ""
+
+
+def delete_confirm(user: dict) -> str:
+    name = esc(user.get("display_name") or ROLE_LABEL[user["role"]])
+    return (f"🗑 Supprimer définitivement {name} ({esc(user.get('real_name'))}) ?\n\n"
+            "• il n'a plus accès au bot, ses courses en cours sont rendues ou annulées ;\n"
+            "• les messages du bot des dernières 48 h sont effacés chez lui ;\n"
+            "• son nom dans les feuilles est libéré ;\n"
+            "• l'historique (récap, journal, feuilles) garde ses anciennes courses ;\n"
+            "• il pourra se réinscrire de zéro avec /start, et tu devras le valider.")
+
+
+def deleted_done(user: dict) -> str:
+    return f"🗑 {esc(user.get('display_name'))} est supprimé." + _wiped(user)
 
 
 def unbanned_done(user: dict) -> str:
