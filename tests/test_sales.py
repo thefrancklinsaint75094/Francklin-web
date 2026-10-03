@@ -34,3 +34,10 @@ def test_parse_reports_every_problem():
         "ligne 6 : « CB deux US » — attendu : quantité, produit, prix (ex. 2 US 60, ou CB 2 US 60)",
         "ligne 7 : « 2 US » — attendu : quantité, produit, prix (ex. 2 US 60, ou CB 2 US 60)",
     ]
+
+
+def test_parse_accepts_free_products():
+    out = sales.parse("Livreur A\n1 US 0\n2 DIV 0€\nCB 1 MSX 0", CAT, NAMES, USERS)
+    assert out.errors == []
+    assert [(line["p"], line["x"], line["pay"]) for line in out.blocks[0].lines] == [
+        ("US", 0.0, "especes"), ("DIV", 0.0, "especes"), ("MSX", 0.0, "virement")]

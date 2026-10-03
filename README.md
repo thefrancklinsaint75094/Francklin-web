@@ -172,7 +172,8 @@ Livreur B
 ```
 
 Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €).
-**Espèces par défaut** ; sinon « CB » ou « virement » (aussi : vir, carte) n'importe où avant le prix. CB est
+**Espèces par défaut** ; sinon « CB » ou « virement » (aussi : vir, carte) n'importe où avant le prix.
+**0 € = produit offert** (`1 US 0`) : il sort du stock du livreur sans rien rapporter. CB est
 écrit « Virement » dans la feuille, qui ne connaît que Espèces et Virement. `/ventes` seul donne l'exemple et attend le
 récap. Le bot montre l'aperçu (par livreur, totaux espèces / virement) ; **✅ Ajouter au tableau** écrit une
 ligne au statut OK par vente dans l'onglet de la nuit (adresse « Récap ventes »). Ces ventes comptent dans le

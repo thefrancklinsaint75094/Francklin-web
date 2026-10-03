@@ -1397,7 +1397,7 @@ SALES_HELP = (
     "CB 1 DIV 30\n\n"
     "Livreur B\n"
     "3 MSX 90</code>\n\n"
-    "Chaque ligne : quantité, produit, prix total de la ligne (de 10 en 10 €). "
+    "Chaque ligne : quantité, produit, prix total de la ligne (de 10 en 10 €, ou 0 si c'est offert). "
     "<b>Espèces par défaut</b> ; sinon écris « CB » ou « virement » au début de la ligne. "
     "Je te montre le récap avant de remplir le tableau."
 )
@@ -1422,7 +1422,8 @@ def sales_preview(blocks: list[dict], tab: str, done: bool = False) -> str:
         lines += ["", f"<b>{esc(b['livreur'])}</b>"]
         for line in b["lines"]:
             icon = "💵" if line["pay"] == "especes" else "💳"
-            lines.append(f"{icon} {line['q']} {esc(line['p'])} — {eur(line['x'])}")
+            price = "🎁 offert" if float(line["x"]) == 0 else eur(line["x"])
+            lines.append(f"{icon} {line['q']} {esc(line['p'])} — {price}")
             totals[line["pay"]] += float(line["x"])
             n += 1
     lines += ["", f"Total : 💵 espèces {eur(totals['especes'])} · 💳 virement {eur(totals['virement'])} "
