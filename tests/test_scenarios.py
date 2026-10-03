@@ -2110,9 +2110,9 @@ async def test_sales_recap_fills_the_sheet(h, monkeypatch):
 
     await h.text(DISPATCH, "/ventes")
     assert h.tg.last(DISPATCH).text == texts.SALES_HELP
-    await h.text(DISPATCH, "Livreur 1\nEspèces 2 US 65")
+    await h.text(DISPATCH, "Livreur 1\n2 US 65")
     assert "prix 65 € — les prix vont de 10 en 10 €" in h.tg.last(DISPATCH).text
-    await h.text(DISPATCH, "Livreur 1\nEspèces 2 US 60\nVirement 1 DIV 30\n\nLivreur 2\nEspece 1 us 30")
+    await h.text(DISPATCH, "Livreur 1\n2 US 60\nCB 1 DIV 30\n\nLivreur 2\n1 us 30")
     preview = h.tg.last(DISPATCH)
     text = preview.text.replace("\xa0", " ")
     assert "<b>Livreur 1</b>\n💵 2 US — 60 €\n💳 1 DIV — 30 €" in text and "<b>Livreur 2</b>\n💵 1 US — 30 €" in text

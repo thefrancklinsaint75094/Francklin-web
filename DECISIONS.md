@@ -432,3 +432,6 @@ simple qui respecte le mur de confidentialité (§12).
      pour `/synchro`. Livreur reconnu par son nom de feuille (`LIVREUR_NAMES`) ou son nom dans le bot
      (« A » suffit pour « Livreur A ») ; s'il a un compte, ses ventes comptent « en vol » (stock, espèces)
      jusqu'à confirmation de la feuille. Même règle des 10 € que les commandes.
+121. `/ventes` : **espèces par défaut** (demande de l'exploitant) ; « CB » ou « virement » se précise sur la
+     ligne, à n'importe quelle place avant le prix. CB est enregistré comme virement (paiement non liquide) :
+     la liste PAIEMENT de la feuille n'a que Espèces et Virement, et la caisse ne compte que les espèces.

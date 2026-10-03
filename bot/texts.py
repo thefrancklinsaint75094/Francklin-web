@@ -1393,12 +1393,13 @@ def d_dispo_without_position(livreur: dict, minutes: int) -> str:
 SALES_HELP = (
     "🧾 <b>Récap des ventes</b> — envoie-le ici, un bloc par livreur :\n\n"
     "<code>Livreur A\n"
-    "Espèces 2 US 60\n"
-    "Virement 1 DIV 30\n\n"
+    "2 US 60\n"
+    "CB 1 DIV 30\n\n"
     "Livreur B\n"
-    "Espèces 3 MSX 90</code>\n\n"
-    "Chaque ligne : paiement (espèces ou virement), quantité, produit, prix total de la ligne "
-    "(de 10 en 10 €). Je te montre le récap avant de remplir le tableau."
+    "3 MSX 90</code>\n\n"
+    "Chaque ligne : quantité, produit, prix total de la ligne (de 10 en 10 €). "
+    "<b>Espèces par défaut</b> ; sinon écris « CB » ou « virement » au début de la ligne. "
+    "Je te montre le récap avant de remplir le tableau."
 )
 SALES_EMPTY = "Je n'ai trouvé aucune vente dans ton message.\n\n" + SALES_HELP
 SALES_EXPIRED = "Récap expiré : renvoie /ventes."
