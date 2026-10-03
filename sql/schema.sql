@@ -135,7 +135,7 @@ create table sales (                                 -- ventes saisies par un ad
   payment       text not null check (payment in ('especes','virement')),
   product       text not null,
   qty           integer not null check (qty > 0),
-  price         numeric(8,2) not null check (price > 0),
+  price         numeric(8,2) not null check (price >= 0),   -- 0 : produit offert
   created_at    timestamptz not null default now()
 );
 

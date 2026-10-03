@@ -435,3 +435,6 @@ simple qui respecte le mur de confidentialité (§12).
 121. `/ventes` : **espèces par défaut** (demande de l'exploitant) ; « CB » ou « virement » se précise sur la
      ligne, à n'importe quelle place avant le prix. CB est enregistré comme virement (paiement non liquide) :
      la liste PAIEMENT de la feuille n'a que Espèces et Virement, et la caisse ne compte que les espèces.
+122. `/ventes` accepte **0 €** (produit offert, demande de l'exploitant) : la ligne part dans la feuille avec un
+     prix 0 et sort du stock du livreur, sans rien ajouter à sa caisse. Les autres prix restent de 10 en 10 €.
+     Migration 010 : `sales.price >= 0`.

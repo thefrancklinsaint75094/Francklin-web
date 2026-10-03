@@ -6,7 +6,8 @@ Format (un bloc par livreur, autant de blocs que voulu) :
     2 US 60
     CB 1 DIV 30
 
-Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €).
+Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €, ou 0 € pour un
+produit offert : il sort du stock du livreur sans rien rapporter).
 Espèces par défaut ; sinon « CB » ou « virement » n'importe où avant le prix (CB compte comme virement :
 la feuille ne connaît que Espèces et Virement). Fonctions pures ici ; l'enregistrement est dans
 handlers/sales.py.
@@ -95,7 +96,7 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             product = match.product["name"] if match and match.product else None
             if product is None:
                 out.errors.append(f"ligne {n} : produit inconnu « {m['product']} »")
-            elif not valid_price(price):
+            elif price != 0 and not valid_price(price):   # 0 € : produit offert
                 out.errors.append(f"ligne {n} : prix {m['price']} € — les prix vont de 10 en 10 €")
             elif int(m["qty"]) <= 0:
                 out.errors.append(f"ligne {n} : quantité à 0")
