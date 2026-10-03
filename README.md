@@ -164,15 +164,16 @@ Pour les admins : envoyer un récap de ventes qui remplit directement la feuille
 ```
 /ventes
 Livreur A
-Espèces 2 US 60
-Virement 1 DIV 30
+2 US 60
+CB 1 DIV 30
 
 Livreur B
-Espèces 3 MSX 90
+3 MSX 90
 ```
 
-Chaque ligne : paiement (espèces / virement, abréviations acceptées : esp, cash, vir), quantité, produit (nom
-du catalogue ou alias), prix total de la ligne (de 10 en 10 €). `/ventes` seul donne l'exemple et attend le
+Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €).
+**Espèces par défaut** ; sinon « CB » ou « virement » (aussi : vir, carte) n'importe où avant le prix. CB est
+écrit « Virement » dans la feuille, qui ne connaît que Espèces et Virement. `/ventes` seul donne l'exemple et attend le
 récap. Le bot montre l'aperçu (par livreur, totaux espèces / virement) ; **✅ Ajouter au tableau** écrit une
 ligne au statut OK par vente dans l'onglet de la nuit (adresse « Récap ventes »). Ces ventes comptent dans le
 stock et la caisse du livreur comme des courses, et `/synchro` les renvoie. Une erreur (livreur ou produit

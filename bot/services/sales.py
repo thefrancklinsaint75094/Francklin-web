@@ -3,11 +3,13 @@
 Format (un bloc par livreur, autant de blocs que voulu) :
 
     Livreur A
-    Espèces 2 US 60
-    Virement 1 DIV 30
+    2 US 60
+    CB 1 DIV 30
 
-Chaque ligne : mode de paiement (espèces / virement), quantité, produit (nom du catalogue ou alias),
-prix total de la ligne (de 10 en 10 €). Fonctions pures ici ; l'enregistrement est dans handlers/sales.py.
+Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €).
+Espèces par défaut ; sinon « CB » ou « virement » n'importe où avant le prix (CB compte comme virement :
+la feuille ne connaît que Espèces et Virement). Fonctions pures ici ; l'enregistrement est dans
+handlers/sales.py.
 """
 from __future__ import annotations
 
@@ -18,9 +20,10 @@ from bot.services.order_edit import valid_price
 
 PAY_WORDS = {
     "especes": ("espece", "especes", "espèce", "espèces", "esp", "cash", "liquide"),
-    "virement": ("virement", "virements", "vir", "vrt"),
+    "virement": ("virement", "virements", "vir", "vrt", "cb", "carte"),
 }
-LINE_RE = re.compile(r"^(?P<pay>\S+)\s+(?P<qty>\d{1,3})\s*[x×]?\s+(?P<product>.+?)\s+(?P<price>\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|e|eur|euros?)?$",
+DEFAULT_PAY = "especes"
+LINE_RE = re.compile(r"^(?P<qty>\d{1,3})\s*[x×]?\s+(?P<product>.+?)\s+(?P<price>\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|e|eur|euros?)?$",
                      re.I)
 MAX_LINES = 60
 
@@ -28,6 +31,18 @@ MAX_LINES = 60
 def payment_of(word: str) -> str | None:
     w = word.lower().strip(" :-")
     return next((mode for mode, words in PAY_WORDS.items() if w in words), None)
+
+
+def split_payment(line: str) -> tuple[str | None, str]:
+    """Retire le mot de paiement où qu'il soit (« CB 2 US 60 », « 2 CB US 60 », « 2 US CB 60 »)."""
+    pay, rest = None, []
+    for token in line.split():
+        mode = payment_of(token) if pay is None else None
+        if mode:
+            pay = mode
+        else:
+            rest.append(token)
+    return pay, " ".join(rest)
 
 
 @dataclass
@@ -69,8 +84,9 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
         line = raw.strip()
         if not line or line.lower().startswith("/ventes"):
             continue
-        m = LINE_RE.match(line)
-        if m and payment_of(m["pay"]):
+        pay, rest = split_payment(line)
+        m = LINE_RE.match(rest)
+        if m:
             if current is None:
                 out.errors.append(f"ligne {n} : écris d'abord le nom du livreur (ex. « Livreur A »)")
                 continue
@@ -84,11 +100,11 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             elif int(m["qty"]) <= 0:
                 out.errors.append(f"ligne {n} : quantité à 0")
             else:
-                current.lines.append({"pay": payment_of(m["pay"]), "q": int(m["qty"]), "p": product, "x": price})
+                current.lines.append({"pay": pay or DEFAULT_PAY, "q": int(m["qty"]), "p": product, "x": price})
             continue
-        if payment_of(line.split()[0]):
-            out.errors.append(f"ligne {n} : « {line} » — attendu : paiement, quantité, produit, prix "
-                              "(ex. Espèces 2 US 60)")
+        if pay is not None or rest[:1].isdigit():
+            out.errors.append(f"ligne {n} : « {line} » — attendu : quantité, produit, prix "
+                              "(ex. 2 US 60, ou CB 2 US 60)")
             continue
         name, user = resolve_livreur(line, names, users)
         if name is None:
