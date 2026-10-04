@@ -381,3 +381,7 @@ def transport_mode(current: str | None) -> M:
 
 def sales_confirm() -> M:
     return M([[B("✅ Ajouter au tableau", callback_data="sl_ok")], [B("❌ Annuler", callback_data="sl_x")]])
+
+
+def ravi_confirm() -> M:
+    return M([[B("✅ Enregistrer", callback_data="rv_ok")], [B("❌ Annuler", callback_data="rv_x")]])

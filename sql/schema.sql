@@ -108,8 +108,10 @@ create table products (
 
 create table restocks (
   id          serial primary key,
-  livreur_id  uuid not null references users(id),
+  livreur_id  uuid references users(id),              -- vide : livreur de la feuille sans compte bot
+  livreur_name text,                                  -- nom dans la feuille (rechargement saisi par /ravi)
   by_user_id  uuid not null references users(id),     -- ravitailleur ou dispatch qui a saisi
+  ravitailleur_name text,                             -- ravitailleur nommé dans /ravi (sinon by_user_id)
   kind        text not null check (kind in ('load','unload','cash')),  -- chargement, reprise, cash seul
   box         text,                                   -- « Box 1 »… (null pour le cash seul)
   items       jsonb not null default '[]',            -- [{"p": "DIV", "q": 12}] quantités positives

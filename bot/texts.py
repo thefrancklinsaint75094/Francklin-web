@@ -89,6 +89,7 @@ WELCOME_DISPATCH = (
     "/supprimer — supprimer un compte (définitif, la personne peut se réinscrire de zéro)\n"
     "/produits — catalogue des produits (ajouter, supprimer)\n"
     "/recharge — charger ou reprendre un livreur, cash récupéré\n"
+    "/ravi 1 — même chose en texte : livreur, box, quantités et produits\n"
     "/stock — ce qui reste dans chaque box et chez les livreurs\n"
     "/caisse — cash à récupérer chez chaque livreur\n"
     "/depense — noter une dépense d'un livreur\n"
@@ -123,6 +124,7 @@ WELCOME_FRANCHISE_RULES = (
 WELCOME_RAVITAILLEUR = (
     "✅ Tu es validé.\n\n"
     "/recharge — charger un livreur, reprendre du stock ou noter le cash récupéré.\n"
+    "/ravi — la même chose en un message (livreur, box, « 12 DIV », « -2 MSX », « cash 300 »).\n"
     "/stock — ce qui reste dans chaque box et chez les livreurs.\n"
     "/caisse — cash à récupérer chez chaque livreur (💶 Récupérer).\n\n"
     "Tout se fait par boutons : le livreur, chargement ou reprise, le box, les produits et les quantités, "
@@ -136,7 +138,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
+    "/recap · /journal · /users · /recharge · /ravi · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
 )
 
 
@@ -1438,3 +1440,60 @@ def sales_done(count: int, tab: str, added: int, error: str | None) -> str:
         return (f"⚠️ {plural(count, 'vente')} enregistrée{'s' if count > 1 else ''}, mais le tableau n'a pas pu "
                 f"être rempli : {esc(error[:200])}\n/synchro les renverra.")
     return f"✅ {plural(count, 'vente')} ajoutée{'s' if count > 1 else ''} au tableau (onglet {esc(tab)})."
+
+
+# ================================================================ rechargement en texte (/ravi)
+
+RAVI_WHO = "Précise le ravitailleur : /ravi 1 ou /ravi 2 (puis le livreur, le box et les produits)."
+RAVI_EXPIRED = "Rechargement expiré : renvoie /ravi."
+RAVI_CANCELLED = "Rechargement annulé : rien n'a été enregistré."
+
+
+def ravi_unknown(arg: str) -> str:
+    return f"Ravitailleur inconnu « {esc(arg)} ». Écris /ravi 1 ou /ravi 2."
+
+
+def ravi_help(ravi: str) -> str:
+    return (f"📦 <b>Rechargement — {esc(ravi)}</b> — envoie-le ici, un bloc par livreur :\n\n"
+            "<code>Livreur A\n"
+            "Box 1\n"
+            "12 DIV\n"
+            "6 US\n"
+            "-2 MSX\n"
+            "cash 300</code>\n\n"
+            "• une ligne par produit : quantité puis produit (chargé au livreur) ;\n"
+            "• avec un « - » devant : repris au livreur (retourne dans le box) ;\n"
+            "• « cash 300 » : cash récupéré (facultatif) ;\n"
+            "• le box reste le même pour les livreurs suivants, sauf si tu en écris un autre.\n"
+            "Je te montre le récap avant d'enregistrer.")
+
+
+def ravi_errors(errors: list[str]) -> str:
+    lines = ["⚠️ Je n'ai pas tout compris, rien n'est enregistré :"]
+    lines += [f"• {esc(e)}" for e in errors[:10]]
+    lines += ["", "Corrige et renvoie le rechargement entier."]
+    return "\n".join(lines)
+
+
+def _ravi_blocks(blocks: list[dict]) -> list[str]:
+    lines = []
+    for b in blocks:
+        head = f"<b>{esc(b['livreur'])}</b>" + (f" · {esc(b['box'])}" if b.get("box") else "")
+        lines += ["", head]
+        if b["load"]:
+            lines.append("📦 " + " · ".join(f"+{i['q']} {esc(i['p'])}" for i in b["load"]))
+        if b["unload"]:
+            lines.append("↩️ " + " · ".join(f"−{i['q']} {esc(i['p'])}" for i in b["unload"]))
+        if b.get("cash"):
+            lines.append(f"💶 cash récupéré {eur(b['cash'])}")
+    return lines
+
+
+def ravi_preview(ravi: str, blocks: list[dict]) -> str:
+    return "\n".join([f"📦 <b>Rechargement — {esc(ravi)}</b>"] + _ravi_blocks(blocks) + ["", "Tout est bon ?"])
+
+
+def ravi_done(ravi: str, blocks: list[dict], count: int) -> str:
+    return "\n".join([f"✅ <b>Rechargement enregistré — {esc(ravi)}</b>"] + _ravi_blocks(blocks)
+                     + ["", f"{plural(count, 'ligne')} envoyée{'s' if count > 1 else ''} au tableau Rechargement ; "
+                            "les livreurs sont prévenus."])

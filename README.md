@@ -157,6 +157,29 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
 
+### Rechargement en texte (`/ravi`)
+
+Même chose que `/recharge`, mais en un seul message, comme `/ventes` (ravitailleurs et admins) :
+
+```
+/ravi 1
+Livreur A
+Box 1
+12 DIV
+6 US
+-2 MSX
+cash 300
+```
+
+`/ravi 1` ou `/ravi 2` : le ravitailleur (Ravitailleur 1 / 2, écrit en colonne T du tableau) ; un ravitailleur
+peut écrire `/ravi` seul. Puis, par livreur : son nom, le box (gardé pour les livreurs suivants), une ligne
+par produit (quantité puis produit = chargé ; avec « - » devant = repris), et « cash 300 » pour le cash
+récupéré. Aperçu, puis **✅ Enregistrer** : mêmes effets qu'un `/recharge` (livreur et dispatch prévenus,
+tableau Rechargement rempli, stock et caisse à jour). Les erreurs (livreur, box ou produit inconnu, box
+manquant) sont listées ligne par ligne et rien n'est enregistré.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/011_restock_text.sql`.
+
 ### Récap de ventes (`/ventes`)
 
 Pour les admins : envoyer un récap de ventes qui remplit directement la feuille Dispatch, un bloc par livreur.
