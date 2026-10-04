@@ -438,3 +438,11 @@ simple qui respecte le mur de confidentialité (§12).
 122. `/ventes` accepte **0 €** (produit offert, demande de l'exploitant) : la ligne part dans la feuille avec un
      prix 0 et sort du stock du livreur, sans rien ajouter à sa caisse. Les autres prix restent de 10 en 10 €.
      Migration 010 : `sales.price >= 0`.
+
+## Rechargement en texte
+
+123. **`/ravi N`** : le format de `/ventes` appliqué aux rechargements (demande de l'exploitant). « N » désigne le
+     ravitailleur (`RAVITAILLEUR_NAMES` ou nom dans le bot) ; son nom va en colonne T même si c'est un admin qui
+     saisit (`restocks.ravitailleur_name`), et la ligne lui est attribuée s'il a un compte. Un bloc avec des
+     quantités positives et négatives donne deux rechargements (chargement, reprise) ; le cash va sur le premier.
+     Livreur de la feuille sans compte bot accepté (`restocks.livreur_id` facultatif, `livreur_name`).

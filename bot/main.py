@@ -16,7 +16,7 @@ from telegram.ext import (
 from bot import config, db, jobs, messaging, texts
 from bot.config import PARIS
 from bot.handlers import (
-    cash, close_day, cloture, common, sales, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
+    cash, close_day, cloture, common, restock_text, sales, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
 )
 
 log = logging.getLogger("bot")
@@ -144,6 +144,7 @@ def register_handlers(app: Application) -> None:
     cmd("reset", cloture.cloture)
     cmd("close", close_day.close)
     cmd("ventes", sales.ventes)
+    cmd("ravi", restock_text.ravi)
     cmd("cloture", cloture.cloture)   # ancien nom, gardé
 
     callbacks = [
@@ -177,6 +178,7 @@ def register_handlers(app: Application) -> None:
         (r"^cs_", cash.cash_action),
         (r"^cl_(go|x)$", cloture.action),
         (r"^sl_(ok|x)$", sales.action),
+        (r"^rv_(ok|x)$", restock_text.action),
         (r"^sname:", dispatch.name_ask),
         (r"^loc:", dispatch.show_position),
         (r"^loc_all$", dispatch.show_all_positions),

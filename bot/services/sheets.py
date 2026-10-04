@@ -124,13 +124,13 @@ def restock_row(restock: dict, users: dict[str, dict]) -> dict:
         "numero": restock["id"],
         "onglet": day_tab(restock["created_at"]),
         "heure": at.strftime("%H:%M"),
-        "livreur": livreur.get("display_name", ""),
+        "livreur": livreur.get("display_name") or restock.get("livreur_name") or "",
         "livreur_nom": livreur.get("real_name") or "",
         "box": restock.get("box") or "",
         "cash": round(float(restock.get("cash") or 0), 2),
         "produits": rs.signed_quantities(restock.get("items") or [], restock["kind"]),
-        "ravitailleur": by.get("display_name", ""),
-        "ravitailleur_nom": by.get("real_name") or "",
+        "ravitailleur": restock.get("ravitailleur_name") or by.get("display_name", ""),
+        "ravitailleur_nom": "" if restock.get("ravitailleur_name") else by.get("real_name") or "",
     }
 
 

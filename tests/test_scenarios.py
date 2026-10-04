@@ -2144,3 +2144,62 @@ async def test_sales_recap_fills_the_sheet(h, monkeypatch):
     await h.text(F1, "/ventes\nLivreur 2\nVirement 2 DIV 60")
     await h.press_data(F1, h.tg.last(F1), "sl_ok")
     assert "🧾 <b>Ventes ajoutées" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
+
+
+async def test_ravi_text_restock(h, monkeypatch):
+    """/ravi : rechargement en texte (livreur, box, « 12 DIV », « -2 MSX », « cash 300 ») → aperçu, ✅,
+    rechargements en base, livreur et dispatch prévenus, tableau Rechargement rempli."""
+    import asyncio
+
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    for name in ("DIV", "US", "MSX"):
+        await db.create_product(name, name.lower(), [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+
+    await h.text(L1, "/ravi 1")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    # Le ravitailleur, sans numéro : c'est lui. Erreur d'abord (pas de box), puis le bon texte.
+    await h.text(R1, "/ravi\nLivreur 1\n12 DIV")
+    assert "Livreur 1 : indique le box" in h.tg.last(R1).text
+    await h.text(R1, "Livreur 1\nBox 1\n12 DIV\n-2 MSX\ncash 300")
+    preview = h.tg.last(R1)
+    text = preview.text.replace("\xa0", " ")
+    assert "📦 <b>Rechargement — Ravitailleur 1</b>" in text
+    assert "<b>Livreur 1</b> · Box 1\n📦 +12 DIV\n↩️ −2 MSX\n💶 cash récupéré 300 €" in text
+    assert [d for _, d in preview.buttons] == ["rv_ok", "rv_x"]
+    await h.press_data(R1, preview, "rv_ok")
+    assert "✅ <b>Rechargement enregistré — Ravitailleur 1</b>" in h.tg.messages[(R1, preview.message_id)].text
+    await asyncio.gather(*list(sheets._tasks))
+    rows = (await db._t("restocks").select("*").order("id").execute()).data
+    assert [(r["kind"], r["box"], r["items"], float(r["cash"]), r["livreur_id"], r["by_user_id"], r["ravitailleur_name"])
+            for r in rows] == [
+        ("load", "Box 1", [{"p": "DIV", "q": 12}], 300.0, l1["id"], r1["id"], "Ravitailleur 1"),
+        ("unload", "Box 1", [{"p": "MSX", "q": 2}], 0.0, l1["id"], r1["id"], "Ravitailleur 1")]
+    assert [(s["livreur"], s["box"], s["produits"], s["cash"], s["ravitailleur"]) for s in sent] == [
+        ("Livreur 1", "Box 1", {"DIV": 12}, 300.0, "Ravitailleur 1"),
+        ("Livreur 1", "Box 1", {"MSX": -2}, 0.0, "Ravitailleur 1")]
+    assert any("Chargement reçu" in t for t in h.tg.texts(L1)) and any("Stock repris" in t for t in h.tg.texts(L1))
+    assert any(t.startswith(f"📦 R#{rows[0]['id']} — Ravitailleur 1 → Livreur 1") for t in h.tg.texts(DISPATCH))
+
+    # Le dispatch : /ravi sans numéro → il doit préciser ; /ravi 1 seul → exemple, puis le texte.
+    await h.text(DISPATCH, "/ravi")
+    assert h.tg.last(DISPATCH).text == texts.RAVI_WHO
+    await h.text(DISPATCH, "/ravi 1")
+    assert "📦 <b>Rechargement — Ravitailleur 1</b> — envoie-le ici" in h.tg.last(DISPATCH).text
+    await h.text(DISPATCH, "Livreur 2\nbox 2\n4 US")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "rv_ok")
+    last = (await db._t("restocks").select("*").order("id", desc=True).limit(1).execute()).data[0]
+    assert (last["livreur_id"], last["box"], last["by_user_id"], last["ravitailleur_name"]) == (
+        l2["id"], "Box 2", r1["id"], "Ravitailleur 1")
