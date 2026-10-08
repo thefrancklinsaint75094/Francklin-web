@@ -2,7 +2,7 @@
 
 « /swipe » + les blocs dans le même message → aperçu ; « /swipe » seul → exemple, puis le bot attend
 le texte (15 min). « tout » prend tout le stock du livreur d'après le tableau. ✅ : un rechargement
-« swipe » par transfert, écrit en une ligne dans le tableau Rechargement (colonne A celui qui donne,
+« swipe » par transfert (produits et/ou cash), écrit en une ligne dans le tableau Rechargement (colonne A celui qui donne,
 box « Swipe », quantités positives, colonne T celui qui reçoit) ; les deux livreurs et le dispatch
 prévenus, stock compté en attendant la feuille."""
 from __future__ import annotations
@@ -78,7 +78,7 @@ async def _process(update: Update, user: dict, text: str) -> None:
         await messaging.reply(update, texts.swipe_errors(errors) if errors else texts.SWIPE_HELP)
         return
     blocks = [{"src": b.src, "dst": b.dst, "src_id": b.src_user["id"] if b.src_user else None,
-               "dst_id": b.dst_user["id"] if b.dst_user else None, "items": b.items, "all": b.all}
+               "dst_id": b.dst_user["id"] if b.dst_user else None, "items": b.items, "all": b.all, "cash": b.cash}
               for b in parsed.blocks]
     sent = await messaging.reply(update, texts.swipe_preview(blocks, warnings), keyboards.swipe_confirm())
     await _save(user, STATE_CONFIRM, {"blocks": blocks, "msg": sent.message_id if sent else None})
@@ -103,7 +103,8 @@ async def action(update: Update, context):
     for b in payload["blocks"]:
         row = await db.create_restock({"livreur_id": b["src_id"], "livreur_name": b["src"], "by_user_id": user["id"],
                                        "to_livreur_id": b["dst_id"], "to_livreur_name": b["dst"],
-                                       "kind": "swipe", "box": SWIPE_BOX, "items": b["items"], "cash": 0})
+                                       "kind": "swipe", "box": SWIPE_BOX, "items": b["items"],
+                                       "cash": float(b.get("cash") or 0)})
         stock.push_restock_later(row)
         await db.log_event("swipe", user_id=user["id"], payload={"restock_id": row["id"], "from": b["src"], "to": b["dst"]})
         for uid, text in ((b["src_id"], texts.swipe_for_giver(b)), (b["dst_id"], texts.swipe_for_receiver(b))):

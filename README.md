@@ -192,7 +192,8 @@ Livreur A > Livreur B
 ```
 
 Première ligne : celui qui donne `>` celui qui reçoit (aussi `→`, `->` ou « vers »). Puis une ligne par
-produit, ou **« tout »** : tout le stock du livreur d'après le tableau. Plusieurs transferts : un bloc après
+produit, ou **« tout »** : tout le stock du livreur d'après le tableau, et/ou **`cash 350`** : du cash remis
+à l'autre livreur (seul, c'est un swipe de cash). Plusieurs transferts : un bloc après
 l'autre. L'aperçu prévient si le livreur n'a pas assez de stock d'après le tableau ; **✅ Enregistrer** :
 les deux livreurs et le dispatch sont prévenus, et le transfert part en **une ligne** dans le tableau
 Rechargement.
@@ -202,7 +203,10 @@ Dans le tableau (saisie à la main possible, même résultat) : colonne A le liv
 le livreur qui **reçoit** : le menu de T propose les ravitailleurs puis les livreurs (PARAMETRES M,
 `Lst_RaviLivreurs`). SOLDES ① et ② retirent au livreur de gauche et ajoutent à celui de droite ; les box ne
 bougent pas (ORGA ③ ne compte que les vrais box). La case T passe en orange si elle est vide, n'est pas un
-livreur ou répète celui de gauche. `/close` compte les swipes à part des rechargements.
+livreur ou répète celui de gauche. Le **cash** d'une ligne Swipe (colonne C) passe de la même façon : SOLDES ④
+le compte comme remis par le livreur de gauche et **à récupérer** chez celui de droite (le script fait le même
+calcul pour `/caisse`), et le total récupéré par le ravitailleur ne bouge pas. `/close` compte les swipes à
+part des rechargements.
 
 Base créée avant cette version : exécuter une fois `sql/migrations/012_swipe.sql`.
 

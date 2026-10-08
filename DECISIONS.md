@@ -464,3 +464,9 @@ simple qui respecte le mur de confidentialité (§12).
      les doublons. Après un `/reset`, un jour de la semaine passée tombe dans l'onglet vidé de la nouvelle
      semaine : le stock et la caisse du livreur restent justes (le report de clôture ne comptait pas ces
      ventes), seul le chiffre de la semaine se décale ; l'aperçu montre la date de la nuit.
+126. **Cash dans un Swipe** (signalé par l'exploitant : 350 € swipés de A vers D « disparaissaient » ; la
+     colonne C comptait comme cash récupéré par le ravitailleur chez A, sans rien ajouter chez D). SOLDES ④
+     D = `SUMIF(A=livreur; C) − SUMIFS(C; T=livreur; B="Swipe")` par onglet : le livreur de la colonne T doit le
+     cash à son tour. Le script (`cashLivreurs_`) fait le même calcul ; la somme des « récupérés » reste
+     celle du ravitailleur (+350 chez A, −350 chez D), donc RAVI du Compta n'est pas faussé. `/swipe` accepte
+     « cash 350 » (avec ou sans produits) ; le bot compte ce cash chez les deux livreurs en attendant la feuille.

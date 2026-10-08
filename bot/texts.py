@@ -1523,7 +1523,8 @@ SWIPE_HELP = (
     "2 MSX</code>\n\n"
     "• 1re ligne : celui qui donne &gt; celui qui reçoit ;\n"
     "• puis une ligne par produit : quantité puis produit ;\n"
-    "• ou « tout » : tout ce que le livreur a encore d'après le tableau.\n"
+    "• ou « tout » : tout ce que le livreur a encore d'après le tableau ;\n"
+    "• « cash 350 » : cash remis à l'autre livreur (avec ou sans produits).\n"
     "Les box ne bougent pas. Je te montre le récap avant d'enregistrer."
 )
 SWIPE_EXPIRED = "Swipe expiré : renvoie /swipe."
@@ -1544,8 +1545,11 @@ def swipe_errors(errors: list[str]) -> str:
 def _swipe_blocks(blocks: list[dict]) -> list[str]:
     lines = []
     for b in blocks:
-        lines += ["", f"<b>{esc(b['src'])}</b> ➜ <b>{esc(b['dst'])}</b>" + (" (tout)" if b.get("all") else ""),
-                  "🔁 " + " · ".join(f"{i['q']} {esc(i['p'])}" for i in b["items"])]
+        lines += ["", f"<b>{esc(b['src'])}</b> ➜ <b>{esc(b['dst'])}</b>" + (" (tout)" if b.get("all") else "")]
+        if b["items"]:
+            lines.append("🔁 " + " · ".join(f"{i['q']} {esc(i['p'])}" for i in b["items"]))
+        if b.get("cash"):
+            lines.append(f"💶 cash {eur(b['cash'])}")
     return lines
 
 
@@ -1563,11 +1567,18 @@ def swipe_done(blocks: list[dict], short: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _swipe_what(block: dict, sign: str) -> str:
+    lines = []
+    if block["items"]:
+        lines.append(esc(", ".join(f"{sign}{i['q']} {i['p']}" for i in block["items"])))
+    if block.get("cash"):
+        lines.append(f"💶 {sign}{eur(block['cash'])} de cash")
+    return "\n".join(lines)
+
+
 def swipe_for_giver(block: dict) -> str:
-    items = ", ".join(f"−{i['q']} {i['p']}" for i in block["items"])
-    return f"🔁 Swipe : tu donnes à {esc(block['dst'])}\n{esc(items)}"
+    return f"🔁 Swipe : tu donnes à {esc(block['dst'])}\n{_swipe_what(block, '−')}"
 
 
 def swipe_for_receiver(block: dict) -> str:
-    items = ", ".join(f"+{i['q']} {i['p']}" for i in block["items"])
-    return f"🔁 Swipe : tu reçois de {esc(block['src'])}\n{esc(items)}"
+    return f"🔁 Swipe : tu reçois de {esc(block['src'])}\n{_swipe_what(block, '+')}"

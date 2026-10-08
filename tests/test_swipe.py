@@ -33,9 +33,9 @@ def test_parse_reports_problems():
         "ligne 3 : le même livreur des deux côtés",
         "ligne 4 : « Livreur A » — attendu : « Livreur A > Livreur B », puis quantité et produit (ex. 3 DIV) ou « tout »",
         "ligne 6 : produit inconnu « KT »",
-        "Livreur A > Livreur B : indique les produits (ex. 3 DIV) ou « tout »",
+        "Livreur A > Livreur B : indique les produits (ex. 3 DIV), « tout » ou le cash (ex. cash 350)",
         "Livreur B > Livreur C : « tout » ou des produits, pas les deux",
-        "Livreur C > Livreur A : indique les produits (ex. 3 DIV) ou « tout »",
+        "Livreur C > Livreur A : indique les produits (ex. 3 DIV), « tout » ou le cash (ex. cash 350)",
     ]
 
 
@@ -46,3 +46,12 @@ def test_stock_helpers():
     assert sw.everything(have) == [{"p": "DIV", "q": 3}, {"p": "KT", "q": 2}]
     assert sw.shortages([{"p": "DIV", "q": 5}, {"p": "KT", "q": 2}, {"p": "US", "q": 1}], have) == [
         ("DIV", 5, 3.0), ("US", 1, 0.0)]
+
+
+def test_parse_cash_alone_or_with_products():
+    out = sw.parse(lines("Livreur A > Livreur D\ncash 350\n\nLivreur B > Livreur C\n2 US\ncash: 50,5 €"), CAT,
+                   NAMES + ["Livreur D"], USERS)
+    assert out.errors == []
+    ad, bc = out.blocks
+    assert (ad.src, ad.dst, ad.items, ad.cash) == ("Livreur A", "Livreur D", [], 350.0)
+    assert (bc.items, bc.cash) == ([{"p": "US", "q": 2}], 50.5)
