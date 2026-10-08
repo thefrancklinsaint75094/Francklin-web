@@ -2287,10 +2287,31 @@ async def test_swipe_between_livreurs(h, monkeypatch):
     await asyncio.gather(*list(sheets._tasks))
     assert len((await db._t("restocks").select("id").execute()).data) == 2
 
+    # Swipe de cash : une ligne avec le cash en colonne C ; le bot le compte chez celui qui reçoit.
+    await h.text(DISPATCH, "/swipe Livreur 1 > Livreur 2\ncash 350")
+    preview = h.tg.last(DISPATCH)
+    assert "<b>Livreur 1</b> ➜ <b>Livreur 2</b>\n💶 cash 350" in preview.text.replace("\xa0", " ")
+    await h.press_data(DISPATCH, preview, "sw_ok")
+    await asyncio.gather(*list(sheets._tasks))
+    assert (sent[-1]["livreur"], sent[-1]["box"], sent[-1]["cash"], sent[-1]["produits"], sent[-1]["ravitailleur"]) == (
+        "Livreur 1", "Swipe", 350.0, {}, "Livreur 2")
+    assert "+350" in h.tg.last(L2).text and "de cash" in h.tg.last(L2).text
+    cash_row = (await db._t("restocks").select("*").order("id", desc=True).limit(1).execute()).data[0]
+    from bot.services import cash as cash_svc
+
+    monkeypatch.setattr(sheets, "push_restock", no_sheet)
+    await stock.push_restock_tracked(cash_row)
+    token = f"restock:{cash_row['id']}"
+    assert stock.inflight_deltas(l1["id"]) == {} and stock.inflight_deltas(l2["id"]) == {}   # pas de produits
+    assert cash_svc.inflight(l1["id"]) == -350.0 and cash_svc.inflight(l2["id"]) == 350.0
+    cash_svc.done(l1["id"], token)
+    cash_svc.done(l2["id"], token)
+    monkeypatch.setattr(sheets, "push_restock", real_push)
+
     # /close : les swipes à part, pas comptés comme rechargements.
     await h.text(DISPATCH, "/close")
     debrief = h.tg.last(DISPATCH).text
-    assert "📦 Rechargements : 0" in debrief and "🔁 Swipes entre livreurs : 2" in debrief
+    assert "📦 Rechargements : 0" in debrief and "🔁 Swipes entre livreurs : 3" in debrief
 
 
 async def test_sales_for_an_earlier_night(h, monkeypatch):

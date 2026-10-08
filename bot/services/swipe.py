@@ -5,17 +5,19 @@
     3 DIV                     ← quantité puis produit
     2 MSX
     tout                      ← ou : tout ce que le livreur a encore (d'après le tableau)
+    cash 350                  ← cash remis à l'autre livreur (facultatif ; seul, c'est un swipe de cash)
 
 Plusieurs transferts : un bloc après l'autre. Dans le tableau Rechargement, un swipe est une ligne :
-colonne A celui qui donne, box « Swipe », quantités positives, colonne T celui qui reçoit (SOLDES
-retire au premier, ajoute au second). Les box ne bougent pas (ORGA ③ ne compte que les vrais box). Fonctions pures ici ; l'enregistrement est
-dans handlers/swipe.py.
+colonne A celui qui donne, box « Swipe », quantités positives, cash en colonne C, colonne T celui qui
+reçoit (SOLDES retire au premier, ajoute au second, produits comme cash). Les box ne bougent pas (ORGA ③
+ne compte que les vrais box). Fonctions pures ici ; l'enregistrement est dans handlers/swipe.py.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 
+from bot.services.restock_text import CASH_RE
 from bot.services.sales import resolve_livreur
 
 HEADER_RE = re.compile(r"^(?P<src>.+?)\s*(?:->|→|=>|>|\svers\s)\s*(?P<dst>.+)$", re.I)
@@ -31,6 +33,7 @@ class Block:
     dst_user: dict | None = None
     items: list[dict] = field(default_factory=list)   # [{"p": "DIV", "q": 3}]
     all: bool = False                                  # « tout » : rempli d'après le stock du tableau
+    cash: float = 0.0                                  # cash remis à celui qui reçoit
 
 
 @dataclass
@@ -63,6 +66,13 @@ def parse(lines: list[tuple[int, str]], catalog, livreur_names: list[str], livre
                 out.errors.append(f"ligne {n} : écris d'abord « Livreur A > Livreur B »")
             else:
                 current.all = True
+            continue
+        m = CASH_RE.match(line)
+        if m:
+            if current is None:
+                out.errors.append(f"ligne {n} : écris d'abord « Livreur A > Livreur B »")
+            else:
+                current.cash += float(m["amount"].replace(",", "."))
             continue
         m = ITEM_RE.match(line)
         if m:
@@ -99,8 +109,8 @@ def parse(lines: list[tuple[int, str]], catalog, livreur_names: list[str], livre
     for b in out.blocks:
         if b.all and b.items:
             out.errors.append(f"{b.src} > {b.dst} : « tout » ou des produits, pas les deux")
-        elif not b.all and not b.items:
-            out.errors.append(f"{b.src} > {b.dst} : indique les produits (ex. 3 DIV) ou « tout »")
+        elif not b.all and not b.items and b.cash <= 0:
+            out.errors.append(f"{b.src} > {b.dst} : indique les produits (ex. 3 DIV), « tout » ou le cash (ex. cash 350)")
     return out
 
 

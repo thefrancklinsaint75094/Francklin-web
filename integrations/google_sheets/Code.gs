@@ -49,6 +49,8 @@
  * Caisse (« action: cash_livreurs ») : cash que chaque livreur doit avoir sur lui, calculé EN
  * DIRECT comme SOLDES ④ du tableau Rechargement : ventes OK payées en Espèces (feuille Dispatch)
  * − dépenses (lignes 46 à 57) − cash récupéré (colonne C des onglets du tableau Rechargement).
+ * Ligne Swipe (box « Swipe ») : le cash de la colonne C passe du livreur de gauche (A) à celui de
+ * la colonne T, qui doit le remettre à son tour ; le ravitailleur, lui, n'a rien reçu.
  *
  * Clôture de la semaine (« action: cloture », commande /cloture du bot) :
  * 1. copie des 3 fichiers dans le dossier Drive « Archives bot » (si la copie échoue, rien n'est effacé) ;
@@ -111,6 +113,7 @@ const C_STOCK_ROWS = 3;
 const C_MOVES = 'MOUVEMENTS!A3:P22';
 const C_RAVI = 'RAVI!A5:E15';
 const REPORT_LABEL = 'Report clôture';
+const SWIPE_BOX = 'Swipe';       // transfert entre livreurs : A donne, T (colonne Ravitailleur) reçoit
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -316,8 +319,12 @@ function cashLivreurs_() {
     JOURS.forEach(function (day) {
       const sheet = rss.getSheetByName(day);
       if (!sheet) return;
-      sheet.getRange(R_FIRST_ROW, 1, R_LAST_ROW - R_FIRST_ROW + 1, 3).getValues().forEach(function (row) {
-        if (key_(row[0]) && num_(row[2])) who(row[0]).recupere += num_(row[2]);
+      sheet.getRange(R_FIRST_ROW, 1, R_LAST_ROW - R_FIRST_ROW + 1, R_COLS).getValues().forEach(function (row) {
+        const cash = num_(row[2]);
+        if (!key_(row[0]) || !cash) return;
+        who(row[0]).recupere += cash;
+        // Swipe : celui de la colonne T doit ce cash à son tour (le total récupéré reste le même).
+        if (key_(row[1]) === key_(SWIPE_BOX) && key_(row[R_COLS - 1])) who(row[R_COLS - 1]).recupere -= cash;
       });
     });
   }
