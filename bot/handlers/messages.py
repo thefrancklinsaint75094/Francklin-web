@@ -40,7 +40,7 @@ async def on_message(update: Update, context) -> None:
         await swipe.on_message(update, context, user)
         return
     if state in (sales.STATE_INPUT, sales.STATE_CONFIRM) and common.is_admin(user) and update.message.text:
-        await sales.on_message(update, context, user)
+        await sales.on_message(update, context, user, payload)
         return
     if state == cash.STATE and update.message.text:
         await cash.on_message(update, context, user, payload)

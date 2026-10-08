@@ -144,6 +144,7 @@ def register_handlers(app: Application) -> None:
     cmd("reset", cloture.cloture)
     cmd("close", close_day.close)
     cmd("ventes", sales.ventes)
+    cmd("vente", sales.ventes)        # même commande, au singulier
     cmd("ravi", restock_text.ravi)
     cmd("swipe", swipe.swipe)
     cmd("cloture", cloture.cloture)   # ancien nom, gardé

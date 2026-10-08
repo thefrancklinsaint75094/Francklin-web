@@ -16,6 +16,7 @@ import html
 import logging
 import os
 import re
+from datetime import date
 
 import httpx
 
@@ -171,7 +172,8 @@ def sale_row(sale: dict) -> dict:
     price = round(float(sale["price"]), 2)
     return {
         "numero": f"V{sale['id']}",
-        "onglet": day_tab(sale["created_at"]),
+        "onglet": JOURS[date.fromisoformat(str(sale["night"])[:10]).weekday()] if sale.get("night")
+                  else day_tab(sale["created_at"]),
         "vendeur": "",
         "livreur": sale["livreur_name"],
         "livreur_nom": "",

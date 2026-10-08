@@ -229,7 +229,14 @@ ligne au statut OK par vente dans l'onglet de la nuit (adresse « Récap ventes 
 stock et la caisse du livreur comme des courses, et `/synchro` les renvoie. Une erreur (livreur ou produit
 inconnu, prix hors pas de 10 €, ligne mal écrite) est expliquée ligne par ligne et rien n'est ajouté.
 
-Base créée avant cette version : exécuter une fois `sql/migrations/009_sales.sql`.
+**Récap en retard** : `/ventes lundi` (ou `/vente lundi`, `/ventes dim`, `/ventes hier`), seul ou suivi du
+récap, envoie les ventes dans l'onglet de ce jour-là au lieu de la nuit en cours : la dernière nuit de ce
+jour, celle en cours comprise (le mercredi, « lundi » = la nuit du lundi au mardi qui vient de passer).
+L'aperçu affiche l'onglet et la date de la nuit. La nuit choisie est gardée avec chaque vente : `/synchro`
+la renvoie au même onglet.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/009_sales.sql`, puis
+`sql/migrations/013_sales_night.sql`.
 
 ### Où sont les livreurs (`/livreurs`)
 

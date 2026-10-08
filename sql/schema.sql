@@ -140,6 +140,7 @@ create table sales (                                 -- ventes saisies par un ad
   product       text not null,
   qty           integer not null check (qty > 0),
   price         numeric(8,2) not null check (price >= 0),   -- 0 : produit offert
+  night         date,                                  -- nuit choisie (/ventes lundi) ; vide : celle de created_at
   created_at    timestamptz not null default now()
 );
 

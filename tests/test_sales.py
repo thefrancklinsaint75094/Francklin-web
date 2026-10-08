@@ -41,3 +41,17 @@ def test_parse_accepts_free_products():
     assert out.errors == []
     assert [(line["p"], line["x"], line["pay"]) for line in out.blocks[0].lines] == [
         ("US", 0.0, "especes"), ("DIV", 0.0, "especes"), ("MSX", 0.0, "virement")]
+
+
+def test_target_night_for_a_late_recap():
+    from datetime import date
+
+    wed = date(2026, 10, 7)                                   # nuit du mercredi 7 au jeudi 8
+    assert sales.target_night("lundi", wed) == date(2026, 10, 5)
+    assert sales.target_night("Mardi", wed) == date(2026, 10, 6)
+    assert sales.target_night("mercredi", wed) == wed         # le jour même : la nuit en cours
+    assert sales.target_night("jeudi", wed) == date(2026, 10, 1)   # le jeudi d'avant
+    assert sales.target_night("dim", wed) == date(2026, 10, 4)
+    assert sales.target_night("hier", wed) == date(2026, 10, 6)
+    assert sales.target_night("aujourd’hui", wed) == wed
+    assert sales.target_night("demain", wed) is None and sales.target_night("lu", wed) is None
