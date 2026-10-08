@@ -9,7 +9,7 @@ Fonctions pures ici ; les boutons et l'enregistrement sont dans handlers/restock
 """
 from __future__ import annotations
 
-KINDS = ("load", "unload", "cash")
+KINDS = ("load", "unload", "cash")   # + « swipe » (transfert entre livreurs, /swipe)
 QTY_STEPS = (-1, 1, 5)
 CASH_STEPS = (-100, -50, -10, 10, 50, 100)
 MAX_ITEMS = 15
@@ -50,7 +50,8 @@ def items_text(items: list[dict], kind: str) -> str:
 
 
 def signed_quantities(items: list[dict], kind: str) -> dict[str, int]:
-    """Pour la feuille : positif = chargé au livreur, négatif = repris."""
+    """Pour la feuille : positif = chargé au livreur, négatif = repris. Swipe : positif (le livreur de
+    gauche donne au livreur de la colonne T)."""
     sign = -1 if kind == "unload" else 1
     out: dict[str, int] = {}
     for i in items:

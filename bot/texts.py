@@ -515,7 +515,7 @@ def d_order_modified(course: dict, livreur: dict, old_products: str, old_price) 
 
 # ================================================================ rechargement (ravitailleur / dispatch)
 
-RESTOCK_KIND_LABEL = {"load": "📦 Chargement", "unload": "↩️ Reprise", "cash": "💶 Cash seulement"}
+RESTOCK_KIND_LABEL = {"load": "📦 Chargement", "unload": "↩️ Reprise", "cash": "💶 Cash seulement", "swipe": "🔁 Swipe"}
 RESTOCK_CHOOSE_LIVREUR = "📦 <b>Rechargement</b> — quel livreur ?"
 RESTOCK_NO_LIVREUR = "Aucun livreur actif pour l'instant."
 RESTOCK_EXPIRED = "Rechargement expiré : relance /recharge."
@@ -1548,7 +1548,7 @@ def swipe_preview(blocks: list[dict], warnings: list[str]) -> str:
 def swipe_done(blocks: list[dict], short: bool = False) -> str:
     lines = ["✅ <b>Swipe enregistré</b>"] + _swipe_blocks(blocks)
     if not short:
-        lines += ["", "Ajouté au tableau Rechargement (box « Swipe ») ; les livreurs sont prévenus."]
+        lines += ["", "Ajouté au tableau Rechargement (une ligne par transfert, box « Swipe ») ; les livreurs sont prévenus."]
     return "\n".join(lines)
 
 

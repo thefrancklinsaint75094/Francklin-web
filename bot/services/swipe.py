@@ -6,9 +6,9 @@
     2 MSX
     tout                      ← ou : tout ce que le livreur a encore (d'après le tableau)
 
-Plusieurs transferts : un bloc après l'autre. Dans le tableau Rechargement, un swipe est une paire
-de lignes au box « Swipe » : − chez celui qui donne, + chez celui qui reçoit. Les box ne bougent
-pas (ORGA ③ ne compte que les lignes d'un vrai box). Fonctions pures ici ; l'enregistrement est
+Plusieurs transferts : un bloc après l'autre. Dans le tableau Rechargement, un swipe est une ligne :
+colonne A celui qui donne, box « Swipe », quantités positives, colonne T celui qui reçoit (SOLDES
+retire au premier, ajoute au second). Les box ne bougent pas (ORGA ③ ne compte que les vrais box). Fonctions pures ici ; l'enregistrement est
 dans handlers/swipe.py.
 """
 from __future__ import annotations

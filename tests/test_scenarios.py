@@ -2207,7 +2207,7 @@ async def test_ravi_text_restock(h, monkeypatch):
 
 async def test_swipe_between_livreurs(h, monkeypatch):
     """/swipe : transfert d'un livreur à un autre (produits ou « tout ») → aperçu (alerte si le stock ne
-    suffit pas), ✅, deux rechargements au box « Swipe », livreurs et dispatch prévenus, tableau rempli."""
+    suffit pas), ✅, un rechargement « swipe » écrit en une ligne, livreurs et dispatch prévenus."""
     import asyncio
 
     from bot.services import sheets, stock
@@ -2255,15 +2255,29 @@ async def test_swipe_between_livreurs(h, monkeypatch):
     assert "✅ <b>Swipe enregistré</b>" in h.tg.messages[(R1, preview.message_id)].text
     await asyncio.gather(*list(sheets._tasks))
     rows = (await db._t("restocks").select("*").order("id").execute()).data
-    assert [(r["kind"], r["box"], r["items"], r["livreur_id"], r["livreur_name"]) for r in rows] == [
-        ("unload", "Swipe", [{"p": "DIV", "q": 5}, {"p": "US", "q": 2}], l1["id"], "Livreur 1"),
-        ("load", "Swipe", [{"p": "DIV", "q": 5}, {"p": "US", "q": 2}], l2["id"], "Livreur 2")]
-    assert sorted((s["livreur"], s["box"], s["produits"]["DIV"], s["produits"]["US"]) for s in sent) == [
-        ("Livreur 1", "Swipe", -5, -2), ("Livreur 2", "Swipe", 5, 2)]
+    assert [(r["kind"], r["box"], r["items"], r["livreur_id"], r["livreur_name"], r["to_livreur_id"], r["to_livreur_name"])
+            for r in rows] == [
+        ("swipe", "Swipe", [{"p": "DIV", "q": 5}, {"p": "US", "q": 2}], l1["id"], "Livreur 1", l2["id"], "Livreur 2")]
+    # Une seule ligne dans le tableau : A celui qui donne, quantités positives, T celui qui reçoit.
+    assert [(s["livreur"], s["box"], s["produits"], s["ravitailleur"], s["cash"]) for s in sent] == [
+        ("Livreur 1", "Swipe", {"DIV": 5, "US": 2}, "Livreur 2", 0.0)]
     assert h.tg.last(L1).text == "🔁 Swipe : tu donnes à Livreur 2\n−5 DIV, −2 US"
     assert h.tg.last(L2).text == "🔁 Swipe : tu reçois de Livreur 1\n+5 DIV, +2 US"
     assert "✅ <b>Swipe enregistré</b>" in h.tg.last(DISPATCH).text and "(par Ravitailleur 1)" in h.tg.last(DISPATCH).text
     assert stock.inflight_deltas(stock.box_key("Swipe")) == {}
+    # Feuille injoignable : le bot compte le transfert chez les deux livreurs en attendant.
+    async def no_sheet(restock):
+        return False
+
+    real_push = sheets.push_restock
+    monkeypatch.setattr(sheets, "push_restock", no_sheet)
+    await stock.push_restock_tracked(rows[0])
+    assert stock.inflight_deltas(l1["id"]) == {"DIV": -5, "US": -2}
+    assert stock.inflight_deltas(l2["id"]) == {"DIV": 5, "US": 2}
+    assert stock.inflight_deltas(stock.box_key("Swipe")) == {}
+    stock.remove_inflight(l1["id"], f"restock:{rows[0]['id']}")
+    stock.remove_inflight(l2["id"], f"restock:{rows[0]['id']}")
+    monkeypatch.setattr(sheets, "push_restock", real_push)
 
     # Le dispatch : /swipe seul → exemple, puis le texte.
     await h.text(DISPATCH, "/swipe")
@@ -2271,7 +2285,7 @@ async def test_swipe_between_livreurs(h, monkeypatch):
     await h.text(DISPATCH, "Livreur 2 vers Livreur 1\n1 US")
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), "sw_ok")
     await asyncio.gather(*list(sheets._tasks))
-    assert len((await db._t("restocks").select("id").execute()).data) == 4
+    assert len((await db._t("restocks").select("id").execute()).data) == 2
 
     # /close : les swipes à part, pas comptés comme rechargements.
     await h.text(DISPATCH, "/close")

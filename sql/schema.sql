@@ -112,10 +112,12 @@ create table restocks (
   livreur_name text,                                  -- nom dans la feuille (rechargement saisi par /ravi)
   by_user_id  uuid not null references users(id),     -- ravitailleur ou dispatch qui a saisi
   ravitailleur_name text,                             -- ravitailleur nommé dans /ravi (sinon by_user_id)
-  kind        text not null check (kind in ('load','unload','cash')),  -- chargement, reprise, cash seul
+  kind        text not null check (kind in ('load','unload','cash','swipe')),  -- chargement, reprise, cash seul, transfert
   box         text,                                   -- « Box 1 »… (null pour le cash seul)
   items       jsonb not null default '[]',            -- [{"p": "DIV", "q": 12}] quantités positives
   cash        numeric(8,2) not null default 0,        -- cash récupéré auprès du livreur
+  to_livreur_id uuid references users(id),            -- swipe : livreur qui reçoit (livreur_id donne)
+  to_livreur_name text,                               -- swipe : son nom dans la feuille (colonne T)
   created_at  timestamptz not null default now()
 );
 
