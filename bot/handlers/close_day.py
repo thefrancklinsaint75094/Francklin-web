@@ -18,6 +18,7 @@ from telegram import Update
 from bot import config, db, messaging, texts
 from bot.handlers import common
 from bot.services import cash, sheets, stock
+from bot.services.restock import SWIPE_BOX
 from bot.timeutil import night_bounds, night_label, night_start_date, now_utc, to_paris
 
 
@@ -53,6 +54,8 @@ async def build_debrief(night: date) -> str:
     on_site = await db.list_closed_between("cancelled_on_site", start, end)
     expenses = await db.list_expenses_between(start, end)
     restocks = await db.list_restocks_between(start, end)
+    swipes = [r for r in restocks if r.get("box") == SWIPE_BOX and r["kind"] == "load"]   # une paire par swipe
+    restocks = [r for r in restocks if r.get("box") != SWIPE_BOX]
     still_open = len(await db.list_courses_by_status("pending")) + len(await db.list_courses_by_status("assigned"))
     users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered]
                                + [e["livreur_id"] for e in expenses])
@@ -94,7 +97,7 @@ async def build_debrief(night: date) -> str:
         charges=sum(float(e["amount"]) for e in expenses if e["kind"] == "charges"),
         payes=sum(float(e["amount"]) for e in expenses if e["kind"] == "paye"),
         restocks=len(restocks), recovered=sum(float(r.get("cash") or 0) for r in restocks),
-        cash_rows=cash_rows, alerts=alerts, sheets_on=sheets.enabled(), moves=moves,
+        cash_rows=cash_rows, alerts=alerts, sheets_on=sheets.enabled(), moves=moves, swipes=len(swipes),
     )
 
 

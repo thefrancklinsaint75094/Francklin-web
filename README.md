@@ -180,6 +180,26 @@ manquant) sont listées ligne par ligne et rien n'est enregistré.
 
 Base créée avant cette version : exécuter une fois `sql/migrations/011_restock_text.sql`.
 
+### Transfert entre livreurs (`/swipe`)
+
+Les produits d'un livreur passent à un autre, sans passer par un box (ravitailleurs et admins) :
+
+```
+/swipe
+Livreur A > Livreur B
+3 DIV
+2 MSX
+```
+
+Première ligne : celui qui donne `>` celui qui reçoit (aussi `→`, `->` ou « vers »). Puis une ligne par
+produit, ou **« tout »** : tout le stock du livreur d'après le tableau. Plusieurs transferts : un bloc après
+l'autre. L'aperçu prévient si le livreur n'a pas assez de stock d'après le tableau ; **✅ Enregistrer** :
+deux rechargements au box **« Swipe »** (reprise chez celui qui donne, chargement chez celui qui reçoit),
+les deux livreurs et le dispatch prévenus, deux lignes dans le tableau Rechargement. « Swipe » est aussi
+dans le menu Box du tableau (PARAMETRES F7) : une saisie à la main donne le même résultat. Les box ne bougent
+pas (ORGA ③ ne compte que les lignes d'un vrai box) ; une case orange signale des lignes Swipe qui ne
+s'équilibrent pas dans l'onglet. `/close` compte les swipes à part des rechargements.
+
 ### Récap de ventes (`/ventes`)
 
 Pour les admins : envoyer un récap de ventes qui remplit directement la feuille Dispatch, un bloc par livreur.

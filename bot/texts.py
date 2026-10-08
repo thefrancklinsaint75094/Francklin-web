@@ -90,6 +90,7 @@ WELCOME_DISPATCH = (
     "/produits — catalogue des produits (ajouter, supprimer)\n"
     "/recharge — charger ou reprendre un livreur, cash récupéré\n"
     "/ravi 1 — même chose en texte : livreur, box, quantités et produits\n"
+    "/swipe — transférer des produits d'un livreur à un autre (Livreur A &gt; Livreur B)\n"
     "/stock — ce qui reste dans chaque box et chez les livreurs\n"
     "/caisse — cash à récupérer chez chaque livreur\n"
     "/depense — noter une dépense d'un livreur\n"
@@ -125,6 +126,7 @@ WELCOME_RAVITAILLEUR = (
     "✅ Tu es validé.\n\n"
     "/recharge — charger un livreur, reprendre du stock ou noter le cash récupéré.\n"
     "/ravi — la même chose en un message (livreur, box, « 12 DIV », « -2 MSX », « cash 300 »).\n"
+    "/swipe — transférer des produits d'un livreur à un autre (Livreur A &gt; Livreur B).\n"
     "/stock — ce qui reste dans chaque box et chez les livreurs.\n"
     "/caisse — cash à récupérer chez chaque livreur (💶 Récupérer).\n\n"
     "Tout se fait par boutons : le livreur, chargement ou reprise, le box, les produits et les quantités, "
@@ -138,7 +140,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /ravi · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
+    "/recap · /journal · /users · /recharge · /ravi · /swipe · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
 )
 
 
@@ -1256,7 +1258,7 @@ def cloture_unavailable(error: str) -> str:
 def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelled: int, on_site: int,
                 still_open: int, livreurs: list, franchises: list, charges: float, payes: float, restocks: int,
                 recovered: float, cash_rows: list[dict] | None, alerts: list[dict] | None,
-                sheets_on: bool, moves: list | None = None) -> str:
+                sheets_on: bool, moves: list | None = None, swipes: int = 0) -> str:
     from bot.services.transport import DETECTED_ICON, ICON
 
     lines = [f"🔒 <b>Journée close — nuit du {esc(label)}</b>", ""]
@@ -1299,6 +1301,8 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
 
     lines += ["", f"🧾 Dépenses : {eur(charges + payes)} (charges {eur(charges)} · payes {eur(payes)})",
               f"📦 Rechargements : {restocks} — cash récupéré {eur(recovered)}"]
+    if swipes:
+        lines.append(f"🔁 Swipes entre livreurs : {swipes}")
 
     if sheets_on:
         lines += ["", "💶 <b>Cash à récupérer</b> (semaine)"]
@@ -1497,3 +1501,62 @@ def ravi_done(ravi: str, blocks: list[dict], count: int) -> str:
     return "\n".join([f"✅ <b>Rechargement enregistré — {esc(ravi)}</b>"] + _ravi_blocks(blocks)
                      + ["", f"{plural(count, 'ligne')} envoyée{'s' if count > 1 else ''} au tableau Rechargement ; "
                             "les livreurs sont prévenus."])
+
+
+# ================================================================ transfert entre livreurs (/swipe)
+
+SWIPE_HELP = (
+    "🔁 <b>Swipe — transfert entre livreurs</b> — envoie-le ici, un bloc par transfert :\n\n"
+    "<code>Livreur A &gt; Livreur B\n"
+    "3 DIV\n"
+    "2 MSX</code>\n\n"
+    "• 1re ligne : celui qui donne &gt; celui qui reçoit ;\n"
+    "• puis une ligne par produit : quantité puis produit ;\n"
+    "• ou « tout » : tout ce que le livreur a encore d'après le tableau.\n"
+    "Les box ne bougent pas. Je te montre le récap avant d'enregistrer."
+)
+SWIPE_EXPIRED = "Swipe expiré : renvoie /swipe."
+SWIPE_CANCELLED = "Swipe annulé : rien n'a été enregistré."
+
+
+def swipe_short(livreur: str, product: str, want: int, have: float) -> str:
+    return f"⚠️ {esc(livreur)} n'a que {have:g} {esc(product)} d'après le tableau (tu en transfères {want})"
+
+
+def swipe_errors(errors: list[str]) -> str:
+    lines = ["⚠️ Je n'ai pas tout compris, rien n'est enregistré :"]
+    lines += [f"• {esc(e)}" for e in errors[:10]]
+    lines += ["", "Corrige et renvoie le swipe entier."]
+    return "\n".join(lines)
+
+
+def _swipe_blocks(blocks: list[dict]) -> list[str]:
+    lines = []
+    for b in blocks:
+        lines += ["", f"<b>{esc(b['src'])}</b> ➜ <b>{esc(b['dst'])}</b>" + (" (tout)" if b.get("all") else ""),
+                  "🔁 " + " · ".join(f"{i['q']} {esc(i['p'])}" for i in b["items"])]
+    return lines
+
+
+def swipe_preview(blocks: list[dict], warnings: list[str]) -> str:
+    lines = ["🔁 <b>Swipe — transfert entre livreurs</b>"] + _swipe_blocks(blocks)
+    if warnings:
+        lines += [""] + warnings[:10]
+    return "\n".join(lines + ["", "Tout est bon ?"])
+
+
+def swipe_done(blocks: list[dict], short: bool = False) -> str:
+    lines = ["✅ <b>Swipe enregistré</b>"] + _swipe_blocks(blocks)
+    if not short:
+        lines += ["", "Ajouté au tableau Rechargement (box « Swipe ») ; les livreurs sont prévenus."]
+    return "\n".join(lines)
+
+
+def swipe_for_giver(block: dict) -> str:
+    items = ", ".join(f"−{i['q']} {i['p']}" for i in block["items"])
+    return f"🔁 Swipe : tu donnes à {esc(block['dst'])}\n{esc(items)}"
+
+
+def swipe_for_receiver(block: dict) -> str:
+    items = ", ".join(f"+{i['q']} {i['p']}" for i in block["items"])
+    return f"🔁 Swipe : tu reçois de {esc(block['src'])}\n{esc(items)}"

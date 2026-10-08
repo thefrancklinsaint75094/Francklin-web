@@ -7,7 +7,7 @@ from __future__ import annotations
 from telegram import Update
 
 from bot import config, messaging, texts
-from bot.handlers import cash, common, franchise, livreur, onboarding, restock, restock_text, sales
+from bot.handlers import cash, common, franchise, livreur, onboarding, restock, restock_text, sales, swipe
 
 
 async def on_message(update: Update, context) -> None:
@@ -35,6 +35,9 @@ async def on_message(update: Update, context) -> None:
         return
     if state in (restock_text.STATE_INPUT, restock_text.STATE_CONFIRM) and update.message.text:
         await restock_text.on_message(update, context, user, payload)
+        return
+    if state in (swipe.STATE_INPUT, swipe.STATE_CONFIRM) and update.message.text:
+        await swipe.on_message(update, context, user)
         return
     if state in (sales.STATE_INPUT, sales.STATE_CONFIRM) and common.is_admin(user) and update.message.text:
         await sales.on_message(update, context, user)
