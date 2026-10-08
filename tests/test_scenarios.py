@@ -2203,3 +2203,77 @@ async def test_ravi_text_restock(h, monkeypatch):
     last = (await db._t("restocks").select("*").order("id", desc=True).limit(1).execute()).data[0]
     assert (last["livreur_id"], last["box"], last["by_user_id"], last["ravitailleur_name"]) == (
         l2["id"], "Box 2", r1["id"], "Ravitailleur 1")
+
+
+async def test_swipe_between_livreurs(h, monkeypatch):
+    """/swipe : transfert d'un livreur à un autre (produits ou « tout ») → aperçu (alerte si le stock ne
+    suffit pas), ✅, deux rechargements au box « Swipe », livreurs et dispatch prévenus, tableau rempli."""
+    import asyncio
+
+    from bot.services import sheets, stock
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    async def fake_fetch(action, *args, **kw):
+        if action == "stock_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"DIV": 5, "US": 2, "MSX": 0}, "Livreur 2": {}}}
+        return {"ok": False, "error": "test"}
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setattr(sheets, "fetch_action", fake_fetch)
+    for name in ("DIV", "US", "MSX"):
+        await db.create_product(name, name.lower(), [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    await register(h, R1, "ravitailleur", "Sam")
+
+    await h.text(L1, "/swipe")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+
+    # Plus que ce que le livreur a : aperçu avec alerte ; annulé.
+    await h.text(R1, "/swipe Livreur 1 > Livreur 2\n7 DIV")
+    preview = h.tg.last(R1)
+    assert "<b>Livreur 1</b> ➜ <b>Livreur 2</b>\n🔁 7 DIV" in preview.text
+    assert "⚠️ Livreur 1 n'a que 5 DIV d'après le tableau (tu en transfères 7)" in preview.text
+    assert [d for _, d in preview.buttons] == ["sw_ok", "sw_x"]
+    await h.press_data(R1, preview, "sw_x")
+    assert h.tg.last(R1).text == texts.SWIPE_CANCELLED
+    assert (await db._t("restocks").select("*").execute()).data == []
+
+    # « tout » : le stock du tableau ; rien chez Livreur 2 → erreur.
+    await h.text(R1, "/swipe\nLivreur 2 > Livreur 1\ntout")
+    assert "Livreur 2 n'a plus rien en stock d'après le tableau" in h.tg.last(R1).text
+    await h.text(R1, "Livreur 1 > Livreur 2\ntout")
+    preview = h.tg.last(R1)
+    assert "<b>Livreur 1</b> ➜ <b>Livreur 2</b> (tout)\n🔁 5 DIV · 2 US" in preview.text
+    await h.press_data(R1, preview, "sw_ok")
+    assert "✅ <b>Swipe enregistré</b>" in h.tg.messages[(R1, preview.message_id)].text
+    await asyncio.gather(*list(sheets._tasks))
+    rows = (await db._t("restocks").select("*").order("id").execute()).data
+    assert [(r["kind"], r["box"], r["items"], r["livreur_id"], r["livreur_name"]) for r in rows] == [
+        ("unload", "Swipe", [{"p": "DIV", "q": 5}, {"p": "US", "q": 2}], l1["id"], "Livreur 1"),
+        ("load", "Swipe", [{"p": "DIV", "q": 5}, {"p": "US", "q": 2}], l2["id"], "Livreur 2")]
+    assert sorted((s["livreur"], s["box"], s["produits"]["DIV"], s["produits"]["US"]) for s in sent) == [
+        ("Livreur 1", "Swipe", -5, -2), ("Livreur 2", "Swipe", 5, 2)]
+    assert h.tg.last(L1).text == "🔁 Swipe : tu donnes à Livreur 2\n−5 DIV, −2 US"
+    assert h.tg.last(L2).text == "🔁 Swipe : tu reçois de Livreur 1\n+5 DIV, +2 US"
+    assert "✅ <b>Swipe enregistré</b>" in h.tg.last(DISPATCH).text and "(par Ravitailleur 1)" in h.tg.last(DISPATCH).text
+    assert stock.inflight_deltas(stock.box_key("Swipe")) == {}
+
+    # Le dispatch : /swipe seul → exemple, puis le texte.
+    await h.text(DISPATCH, "/swipe")
+    assert h.tg.last(DISPATCH).text == texts.SWIPE_HELP
+    await h.text(DISPATCH, "Livreur 2 vers Livreur 1\n1 US")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "sw_ok")
+    await asyncio.gather(*list(sheets._tasks))
+    assert len((await db._t("restocks").select("id").execute()).data) == 4
+
+    # /close : les swipes à part, pas comptés comme rechargements.
+    await h.text(DISPATCH, "/close")
+    debrief = h.tg.last(DISPATCH).text
+    assert "📦 Rechargements : 0" in debrief and "🔁 Swipes entre livreurs : 2" in debrief

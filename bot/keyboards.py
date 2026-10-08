@@ -385,3 +385,7 @@ def sales_confirm() -> M:
 
 def ravi_confirm() -> M:
     return M([[B("✅ Enregistrer", callback_data="rv_ok")], [B("❌ Annuler", callback_data="rv_x")]])
+
+
+def swipe_confirm() -> M:
+    return M([[B("✅ Enregistrer", callback_data="sw_ok")], [B("❌ Annuler", callback_data="sw_x")]])

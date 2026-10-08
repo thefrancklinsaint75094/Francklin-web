@@ -15,6 +15,7 @@ CASH_STEPS = (-100, -50, -10, 10, 50, 100)
 MAX_ITEMS = 15
 MAX_QTY = 999
 MAX_CASH = 99_999
+SWIPE_BOX = "Swipe"   # « box » des transferts entre livreurs (/swipe) : aucun vrai box ne bouge
 
 
 def change_qty(items: list[dict], idx: int, delta: int) -> list[dict]:

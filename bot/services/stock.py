@@ -205,14 +205,15 @@ async def push_restock_tracked(restock: dict) -> None:
     deltas = rs.signed_quantities(restock.get("items") or [], restock["kind"])
     add_inflight(restock["livreur_id"], token, deltas)
     cash.track(restock["livreur_id"], token, -float(restock.get("cash") or 0))
-    if restock.get("box"):
+    box = restock.get("box") if restock.get("box") != rs.SWIPE_BOX else None
+    if box:
         # Le box perd ce qui est chargé au livreur, regagne ce qui est repris.
-        add_inflight(box_key(restock["box"]), token, {p: -d for p, d in deltas.items()})
+        add_inflight(box_key(box), token, {p: -d for p, d in deltas.items()})
     if await sheets.push_restock(restock):
         remove_inflight(restock["livreur_id"], token)
         cash.done(restock["livreur_id"], token)
-        if restock.get("box"):
-            remove_inflight(box_key(restock["box"]), token)
+        if box:
+            remove_inflight(box_key(box), token)
 
 
 def box_key(box: str) -> str:
