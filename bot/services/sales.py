@@ -15,7 +15,9 @@ handlers/sales.py.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 from bot.services.order_edit import valid_price
 
@@ -27,6 +29,30 @@ DEFAULT_PAY = "especes"
 LINE_RE = re.compile(r"^(?P<qty>\d{1,3})\s*[x×]?\s+(?P<product>.+?)\s+(?P<price>\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|e|eur|euros?)?$",
                      re.I)
 MAX_LINES = 60
+
+
+DAYS = {"lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4, "samedi": 5, "dimanche": 6}
+
+
+def _plain(text: str) -> str:
+    text = unicodedata.normalize("NFKD", (text or "").lower().strip())
+    return "".join(c for c in text if not unicodedata.combining(c))
+
+
+def target_night(word: str, current: date) -> date | None:
+    """« lundi » (ou « lun ») → la dernière nuit de lundi, celle en cours comprise ; « hier » → la nuit
+    d'avant ; « aujourd'hui » → celle en cours. None si le mot n'est pas un jour."""
+    w = _plain(word).replace("’", "'")
+    if w in ("hier", "veille"):
+        return current - timedelta(days=1)
+    if w in ("aujourd'hui", "aujourdhui", "auj", "ce soir", "cette nuit"):
+        return current
+    day = DAYS.get(w)
+    if day is None and len(w) >= 3:
+        day = next((d for name, d in DAYS.items() if name.startswith(w)), None)
+    if day is None:
+        return None
+    return current - timedelta(days=(current.weekday() - day) % 7)
 
 
 def payment_of(word: str) -> str | None:
@@ -83,7 +109,7 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
     current: Block | None = None
     for n, raw in enumerate((text or "").splitlines(), 1):
         line = raw.strip()
-        if not line or line.lower().startswith("/ventes"):
+        if not line or line.lower().startswith("/vente"):
             continue
         pay, rest = split_payment(line)
         m = LINE_RE.match(rest)

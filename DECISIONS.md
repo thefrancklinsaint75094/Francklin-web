@@ -456,3 +456,11 @@ simple qui respecte le mur de confidentialité (§12).
      (migration 012) ; le bot compte le transfert chez les deux livreurs tant que la feuille ne l'a pas.
      « tout » prend le stock du livreur lu dans le tableau au moment de l'aperçu ; un stock insuffisant est
      signalé dans l'aperçu sans bloquer (le tableau peut avoir du retard).
+125. **`/ventes lundi`** (alias `/vente`) : pour un récap saisi après 6 h, le lendemain ou plus tard (demande de
+     l'exploitant). Le jour désigne la dernière nuit de ce jour de la semaine, celle en cours comprise
+     (« hier » et les abréviations « lun », « dim »… acceptés) ; jamais une nuit future. La nuit est gardée
+     dans `sales.night` (migration 013), pas recalculée depuis `created_at` : `/synchro` (qui reprend les
+     ventes saisies pendant la nuit en cours) les renvoie à l'onglet choisi, où la note « Bot #V… » évite
+     les doublons. Après un `/reset`, un jour de la semaine passée tombe dans l'onglet vidé de la nouvelle
+     semaine : le stock et la caisse du livreur restent justes (le report de clôture ne comptait pas ces
+     ventes), seul le chiffre de la semaine se décale ; l'aperçu montre la date de la nuit.

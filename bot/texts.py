@@ -1405,11 +1405,22 @@ SALES_HELP = (
     "3 MSX 90</code>\n\n"
     "Chaque ligne : quantité, produit, prix total de la ligne (de 10 en 10 €, ou 0 si c'est offert). "
     "<b>Espèces par défaut</b> ; sinon écris « CB » ou « virement » au début de la ligne. "
-    "Je te montre le récap avant de remplir le tableau."
+    "Je te montre le récap avant de remplir le tableau.\n\n"
+    "En retard d'un jour ? <b>/ventes lundi</b> (ou /ventes hier) : les ventes vont dans l'onglet de ce jour-là."
 )
 SALES_EMPTY = "Je n'ai trouvé aucune vente dans ton message.\n\n" + SALES_HELP
 SALES_EXPIRED = "Récap expiré : renvoie /ventes."
 SALES_CANCELLED = "Récap annulé : rien n'a été ajouté."
+
+
+def sales_help(tab: str) -> str:
+    """/ventes lundi : l'exemple, avec l'onglet choisi."""
+    return SALES_HELP.replace("🧾 <b>Récap des ventes</b>", f"🧾 <b>Récap des ventes — onglet {esc(tab)}</b>", 1)
+
+
+def sales_bad_day(arg: str) -> str:
+    return (f"Je ne connais pas le jour « {esc(arg)} ». Écris par exemple /ventes lundi, /ventes dimanche "
+            "ou /ventes hier (puis le récap).")
 
 
 def sales_errors(errors: list[str]) -> str:

@@ -2291,3 +2291,48 @@ async def test_swipe_between_livreurs(h, monkeypatch):
     await h.text(DISPATCH, "/close")
     debrief = h.tg.last(DISPATCH).text
     assert "📦 Rechargements : 0" in debrief and "🔁 Swipes entre livreurs : 2" in debrief
+
+
+async def test_sales_for_an_earlier_night(h, monkeypatch):
+    """/vente (singulier) et /ventes lundi : récap saisi en retard → onglet du jour choisi, gardé en base
+    (night) pour que /synchro le renvoie au même onglet."""
+    from bot.services import sales as sales_svc
+    from bot.services import sheets
+    from bot.timeutil import night_label, night_start_date, now_utc
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    await db.create_product("US", "us", [])
+    await setup_network(h)
+    current = night_start_date(now_utc(), 6)
+
+    await h.text(DISPATCH, "/ventes demain")
+    assert h.tg.last(DISPATCH).text == texts.sales_bad_day("demain")
+
+    # Le jour dans la même commande que le récap.
+    monday = sales_svc.target_night("lundi", current)
+    label = "Lundi" if monday == current else f"Lundi — nuit du {night_label(monday)}"
+    await h.text(DISPATCH, "/vente lundi\nLivreur 1\n2 US 60")
+    preview = h.tg.last(DISPATCH)
+    assert f"🧾 <b>Ventes à ajouter — onglet {label}</b>" in preview.text
+    await h.press_data(DISPATCH, preview, "sl_ok")
+    row = (await db._t("sales").select("*").execute()).data[0]
+    assert row["night"] == monday.isoformat()
+    assert [(s["onglet"], s["livreur"]) for s in sent] == [("Lundi", "Livreur 1")]
+    assert sheets.sale_row(row)["onglet"] == "Lundi"           # /synchro : même onglet
+
+    # « hier » seul : l'exemple avec l'onglet, puis le récap (la nuit est gardée).
+    yesterday = current - timedelta(days=1)
+    tab = sheets.JOURS[yesterday.weekday()]
+    await h.text(DISPATCH, "/ventes hier")
+    assert f"Récap des ventes — onglet {tab} — nuit du {night_label(yesterday)}</b>" in h.tg.last(DISPATCH).text
+    await h.text(DISPATCH, "Livreur 2\n1 US 30")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "sl_ok")
+    assert sent[-1]["onglet"] == tab
