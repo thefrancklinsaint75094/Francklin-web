@@ -1,9 +1,10 @@
 """/swipe (ravitailleurs et admins) : transférer des produits d'un livreur à un autre.
 
 « /swipe » + les blocs dans le même message → aperçu ; « /swipe » seul → exemple, puis le bot attend
-le texte (15 min). « tout » prend tout le stock du livreur d'après le tableau. ✅ : deux rechargements
-au box « Swipe » par transfert (reprise chez celui qui donne, chargement chez celui qui reçoit),
-les deux livreurs et le dispatch prévenus, tableau Rechargement rempli, stock compté en attendant."""
+le texte (15 min). « tout » prend tout le stock du livreur d'après le tableau. ✅ : un rechargement
+« swipe » par transfert, écrit en une ligne dans le tableau Rechargement (colonne A celui qui donne,
+box « Swipe », quantités positives, colonne T celui qui reçoit) ; les deux livreurs et le dispatch
+prévenus, stock compté en attendant la feuille."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -100,14 +101,11 @@ async def action(update: Update, context):
         await messaging.edit(context.bot, chat_id, msg_id, texts.SWIPE_CANCELLED)
         return None
     for b in payload["blocks"]:
-        rows = []
-        for kind, name, uid in (("unload", b["src"], b["src_id"]), ("load", b["dst"], b["dst_id"])):
-            row = await db.create_restock({"livreur_id": uid, "livreur_name": name, "by_user_id": user["id"],
-                                           "kind": kind, "box": SWIPE_BOX, "items": b["items"], "cash": 0})
-            rows.append(row)
-            stock.push_restock_later(row)
-        await db.log_event("swipe", user_id=user["id"],
-                           payload={"restocks": [r["id"] for r in rows], "from": b["src"], "to": b["dst"]})
+        row = await db.create_restock({"livreur_id": b["src_id"], "livreur_name": b["src"], "by_user_id": user["id"],
+                                       "to_livreur_id": b["dst_id"], "to_livreur_name": b["dst"],
+                                       "kind": "swipe", "box": SWIPE_BOX, "items": b["items"], "cash": 0})
+        stock.push_restock_later(row)
+        await db.log_event("swipe", user_id=user["id"], payload={"restock_id": row["id"], "from": b["src"], "to": b["dst"]})
         for uid, text in ((b["src_id"], texts.swipe_for_giver(b)), (b["dst_id"], texts.swipe_for_receiver(b))):
             livreur = await db.get_user(uid) if uid else None
             if livreur:

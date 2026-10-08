@@ -194,11 +194,17 @@ Livreur A > Livreur B
 Première ligne : celui qui donne `>` celui qui reçoit (aussi `→`, `->` ou « vers »). Puis une ligne par
 produit, ou **« tout »** : tout le stock du livreur d'après le tableau. Plusieurs transferts : un bloc après
 l'autre. L'aperçu prévient si le livreur n'a pas assez de stock d'après le tableau ; **✅ Enregistrer** :
-deux rechargements au box **« Swipe »** (reprise chez celui qui donne, chargement chez celui qui reçoit),
-les deux livreurs et le dispatch prévenus, deux lignes dans le tableau Rechargement. « Swipe » est aussi
-dans le menu Box du tableau (PARAMETRES F7) : une saisie à la main donne le même résultat. Les box ne bougent
-pas (ORGA ③ ne compte que les lignes d'un vrai box) ; une case orange signale des lignes Swipe qui ne
-s'équilibrent pas dans l'onglet. `/close` compte les swipes à part des rechargements.
+les deux livreurs et le dispatch sont prévenus, et le transfert part en **une ligne** dans le tableau
+Rechargement.
+
+Dans le tableau (saisie à la main possible, même résultat) : colonne A le livreur qui **donne**, Box
+**« Swipe »** (4e choix du menu, PARAMETRES F7), les quantités **en positif**, et en colonne T (Ravitailleur)
+le livreur qui **reçoit** : le menu de T propose les ravitailleurs puis les livreurs (PARAMETRES M,
+`Lst_RaviLivreurs`). SOLDES ① et ② retirent au livreur de gauche et ajoutent à celui de droite ; les box ne
+bougent pas (ORGA ③ ne compte que les vrais box). La case T passe en orange si elle est vide, n'est pas un
+livreur ou répète celui de gauche. `/close` compte les swipes à part des rechargements.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/012_swipe.sql`.
 
 ### Récap de ventes (`/ventes`)
 

@@ -446,9 +446,13 @@ simple qui respecte le mur de confidentialité (§12).
      saisit (`restocks.ravitailleur_name`), et la ligne lui est attribuée s'il a un compte. Un bloc avec des
      quantités positives et négatives donne deux rechargements (chargement, reprise) ; le cash va sur le premier.
      Livreur de la feuille sans compte bot accepté (`restocks.livreur_id` facultatif, `livreur_name`).
-124. **`/swipe`** : transfert de produits d'un livreur à un autre (demande de l'exploitant, « swipe »). Pas de
-     nouvelle table : une paire de rechargements (`unload` chez celui qui donne, `load` chez celui qui reçoit)
-     au box « Swipe », qui n'est pas un vrai box : le tableau Rechargement la compte pour les livreurs (SOLDES)
-     et l'ignore pour les box (ORGA ③ filtre par nom de box) ; le bot ne la compte pas non plus dans le stock
-     en vol des box. « tout » prend le stock du livreur lu dans le tableau au moment de l'aperçu ; un stock
-     insuffisant n'empêche pas le transfert (le tableau peut avoir du retard), il est signalé dans l'aperçu.
+124. **`/swipe`** : transfert de produits d'un livreur à un autre (demande de l'exploitant, « swipe »). Un swipe
+     = **une ligne** du tableau Rechargement, comme l'exploitant la saisirait à la main : colonne A celui qui
+     donne, box « Swipe » (pas un vrai box : ORGA ③ filtre par nom de box), quantités positives, colonne T
+     (Ravitailleur, dont le menu propose aussi les livreurs) celui qui reçoit. SOLDES ② :
+     `SUMIFS(A=livreur, B<>"Swipe") − SUMIFS(A=livreur, B="Swipe") + SUMIFS(T=livreur, B="Swipe")` par onglet ;
+     SOLDES ① = ② − vendu. Une première version écrivait deux lignes (−/+) : refusée par l'exploitant, aucun
+     gain de temps à la main. En base : `restocks.kind = 'swipe'`, `to_livreur_id` / `to_livreur_name`
+     (migration 012) ; le bot compte le transfert chez les deux livreurs tant que la feuille ne l'a pas.
+     « tout » prend le stock du livreur lu dans le tableau au moment de l'aperçu ; un stock insuffisant est
+     signalé dans l'aperçu sans bloquer (le tableau peut avoir du retard).

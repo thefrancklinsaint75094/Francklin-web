@@ -113,12 +113,19 @@ def row(course: dict, users: dict[str, dict], catalog=None) -> dict:
 
 def restock_row(restock: dict, users: dict[str, dict]) -> dict:
     """Rechargement pour le tableau Rechargement : quantités signées
-    (+ chargé au livreur, − repris), cash récupéré, box, ravitailleur."""
+    (+ chargé au livreur, − repris), cash récupéré, box, ravitailleur (swipe : le livreur qui reçoit)."""
     from bot.services import restock as rs
 
     at = to_paris(parse_ts(restock["created_at"]))
     livreur = users.get(restock["livreur_id"], {})
     by = users.get(restock["by_user_id"], {})
+    if restock["kind"] == "swipe":
+        # Une ligne : le livreur de gauche donne, celui de la colonne T (à la place du ravitailleur) reçoit.
+        ravi, ravi_nom = restock.get("to_livreur_name") or "", ""
+    elif restock.get("ravitailleur_name"):
+        ravi, ravi_nom = restock["ravitailleur_name"], ""
+    else:
+        ravi, ravi_nom = by.get("display_name", ""), by.get("real_name") or ""
     return {
         "type": "recharge",
         "numero": restock["id"],
@@ -129,8 +136,8 @@ def restock_row(restock: dict, users: dict[str, dict]) -> dict:
         "box": restock.get("box") or "",
         "cash": round(float(restock.get("cash") or 0), 2),
         "produits": rs.signed_quantities(restock.get("items") or [], restock["kind"]),
-        "ravitailleur": restock.get("ravitailleur_name") or by.get("display_name", ""),
-        "ravitailleur_nom": "" if restock.get("ravitailleur_name") else by.get("real_name") or "",
+        "ravitailleur": ravi,
+        "ravitailleur_nom": ravi_nom,
     }
 
 
