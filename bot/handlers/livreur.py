@@ -163,6 +163,10 @@ async def on_menu(update: Update, context, user: dict, action: str) -> None:
         await variants.gouts(update, context)
     elif action == "depense":
         await cash.depense(update, context)
+    elif action == "close":
+        from bot.handlers import close_day
+
+        await close_day.close(update, context)
     elif action == "modif":
         await validate_text(update, context, user, "modif")
     elif action == "livree":

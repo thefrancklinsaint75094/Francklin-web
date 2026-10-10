@@ -72,7 +72,8 @@ WELCOME_LIVREUR = (
     "🚴 <b>Ma course</b> — revoir l'adresse et le digicode\n"
     "💶 <b>Ma caisse</b> — le cash que tu dois remettre\n"
     "🍬 <b>Mes goûts</b> — cocher les goûts qu'il te reste\n"
-    "🧾 <b>Dépense</b> — essence, repas, avance sur ta paye\n\n"
+    "🧾 <b>Dépense</b> — essence, repas, avance sur ta paye\n"
+    "🏁 <b>Fin de service</b> — tu as fini : ton récap (courses, stock, cash)\n\n"
     "Une course à la fois : valide celle en cours (✅ Livrée) avant la suivante.\n\n" + LIVE_GUIDE
 )
 
@@ -1822,4 +1823,51 @@ def d_relay(course: dict, sender: dict, other: dict, content: str) -> str:
     """Copie au dispatch d'un message « 💬 Contacter » entre un franchisé et un livreur."""
     return (f"💬 #{course['id']} — {esc(sender.get('display_name') or '?')} → "
             f"{esc(other.get('display_name') or '?')} :\n« {esc(content)} »")
+
+
+# ================================================================ fin de service d'un livreur (/close Livreur A)
+
+CLOSE_FOR_LIVREUR = "🏁 Ton service est terminé. Pour reprendre : touche 🟢 Je commence."
+
+
+def close_livreur_unknown(arg: str) -> str:
+    return (f"Je ne connais pas le livreur « {esc(arg)} ». Écris par exemple /close Livreur A, ou son prénom. "
+            "/close seul : le débrief de la journée.")
+
+
+def livreur_close(name: str, label: str, rows: list, still: list[dict], expenses: float,
+                  stock_left: dict | None, cash_row: dict | None, sheets_on: bool) -> str:
+    lines = [f"🏁 <b>Fin de service — {esc(name)}</b>", f"Nuit du {esc(label)}", ""]
+    if rows:
+        total = sum(float(c["price"]) for _, c, _ in rows)
+        pay = {k: sum(float(c["price"]) for _, c, _ in rows if c.get("payment") == k) for k in ("especes", "virement")}
+        split = [f"{i} {eur(pay[k])}" for k, i in (("especes", "💵"), ("virement", "💳")) if pay[k]]
+        lines.append(f"📦 <b>{plural(len(rows), 'course')} livrée{'s' if len(rows) > 1 else ''} — {eur(total)}</b>"
+                     + (f" ({' · '.join(split)})" if split else ""))
+        for at, c, franchise in rows:
+            icon = {"especes": " 💵", "virement": " 💳"}.get(c.get("payment") or "", "")
+            lines.append(f"• {at} · #{c['id']} · {esc(franchise)} · {esc(c.get('district') or '')} · "
+                         f"{esc(c.get('products') or '')} · {eur(c['price'])}{icon}")
+    else:
+        lines.append("📦 Aucune course livrée cette nuit.")
+    if still:
+        lines.append("⚠️ Encore en cours : " + ", ".join(f"#{c['id']}" for c in still)
+                     + " — à valider ou à réattribuer (/encours)")
+    if expenses:
+        lines.append(f"🧾 Dépenses de la nuit : {eur(expenses)}")
+    lines += ["", "🎒 <b>Stock encore sur lui</b>"]
+    if stock_left is None:
+        lines.append("   illisible pour l'instant (/stock)" if sheets_on else "   (Google Sheets non relié)")
+    else:
+        have = [f"{esc(p)} <b>{_n(q)}</b>" for p, q in stock_left.items() if float(q or 0) > 0]
+        lines.append(" · ".join(have) if have else "Plus rien sur lui.")
+    lines += ["", "💶 <b>Cash</b>"]
+    if cash_row is None:
+        lines.append("   illisible pour l'instant (/caisse)" if sheets_on else "   (Google Sheets non relié)")
+    else:
+        lines.append(f"<b>À récupérer : {eur(cash_row['cash'])}</b>")
+        detail = _cash_detail(cash_row)
+        if detail:
+            lines.append(f"   {detail}")
+    return "\n".join(lines)
 

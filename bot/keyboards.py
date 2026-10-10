@@ -411,6 +411,7 @@ LIVREUR_MENU = {
     "✅ Livrée": "livree", "✏️ Modif": "modif",
     "🚴 Ma course": "macourse", "💶 Ma caisse": "macaisse",
     "🍬 Mes goûts": "gouts", "🧾 Dépense": "depense",
+    "🏁 Fin de service": "close",
 }
 
 
