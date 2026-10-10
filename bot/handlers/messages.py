@@ -29,6 +29,10 @@ async def on_message(update: Update, context) -> None:
             await messaging.reply(update, texts.PENDING)
         return
     state, payload = common.active_state(user)
+    # Livreur : les gros boutons du menu en bas de l'écran passent avant tout le reste.
+    if user["role"] == "livreur" and livreur.menu_action(update.message.text):
+        await livreur.on_menu(update, context, user, livreur.menu_action(update.message.text))
+        return
     # États communs à plusieurs rôles (admins : dispatch et franchisés).
     if state == livreur.EDIT_STATE and payload.get("sel") is not None:
         await livreur.edit_typed_price(update, context, user)
