@@ -329,7 +329,7 @@ async def go_on_duty(h, tg_id, pos):
 async def test_dispo_broadcast_take_and_deliver(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await h.text(L1, "/dispo")
-    assert h.tg.last(L1).text == texts.DISPO_PROMPT
+    assert h.tg.texts(L1)[-2:] == [texts.DISPO_PROMPT, texts.TRANSPORT_QUESTION]   # position, puis transport
     await h.location(L1, *BASTILLE, message_id=L1)
     assert h.tg.last(L1).text == texts.ON_DUTY
     await go_on_duty(h, L2, REPUBLIQUE)
@@ -1894,12 +1894,14 @@ async def test_transport_mode_declared_and_metro_detected(h):
         f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
         await h.text(L1, "/dispo")
         prompt = h.tg.last(L1)
-        assert prompt.text == texts.DISPO_PROMPT
-        assert [d for _, d in prompt.buttons] == ["tmode:t", "tmode:d", "tmode:v"]
+        assert prompt.text == texts.TRANSPORT_QUESTION
+        assert prompt.buttons == [("🚶 À pied ou en transports (métro, bus)", "tmode:t"),
+                                  ("🛵 Deux-roues (scooter, moto, vélo)", "tmode:d"), ("🚗 Voiture", "tmode:v")]
         await h.press_data(L1, prompt, "tmode:d")
         assert h.tg.answers()[-1]["text"] == "🛵 Deux-roues noté."
         assert (await db.get_user(l1["id"]))["transport_mode"] == "deux_roues"
-        assert h.tg.messages[(L1, prompt.message_id)].buttons[1][0].startswith("✅ 🛵")
+        chosen = h.tg.messages[(L1, prompt.message_id)]
+        assert chosen.text.startswith("✅ <b>C'est noté :</b> 🛵 Deux-roues") and chosen.buttons[1][0].startswith("✅ 🛵")
 
         await h.location(L1, 48.8532, 2.3691, message_id=L1)        # à Bastille
         course = await order(h, F1, "rivoli")
@@ -2081,7 +2083,7 @@ async def test_dispo_without_position_reminder_and_pause_details(h):
     assert "Jusqu'à ce que je l'arrête" in welcome
 
     await h.text(L1, "/dispo")
-    assert "Jusqu'à ce que je l'arrête" in h.tg.last(L1).text
+    assert "Jusqu'à ce que je l'arrête" in h.tg.texts(L1)[-2]
     jobs_ = h.app.job_queue.get_jobs_by_name(f"dispo:{l1['id']}")
     assert len(jobs_) == 1
 
@@ -2722,3 +2724,32 @@ async def test_catalog_edit_product(h):
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"prod_edit:{msx['id']}")
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), "prod_cancel")
     assert (await db.get_user_by_tg(DISPATCH))["conversation_state"] is None
+
+
+async def test_livreur_menu_buttons(h):
+    """Le livreur a un menu de gros boutons en bas de l'écran (dès la validation) : 🟢 Je commence,
+    ✅ Livrée (puis le paiement), ⏸ Pause… sans rien taper."""
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    welcome = h.tg.find(L1, "Tu es validé")
+    assert [[b["text"] for b in row] for row in welcome.markup["keyboard"]] == [
+        ["🟢 Je commence", "⏸ Pause"], ["✅ Livrée", "✏️ Modif"], ["🚴 Ma course", "💶 Ma caisse"],
+        ["🍬 Mes goûts", "🧾 Dépense"]]
+
+    await h.text(L1, "✅ Livrée")                                 # rien en cours
+    assert h.tg.last(L1).text == texts.NO_ASSIGNED
+    await h.text(L1, "🟢 Je commence")                             # = /dispo
+    assert h.tg.texts(L1)[-2:] == [texts.DISPO_PROMPT, texts.TRANSPORT_QUESTION]
+    await h.location(L1, *BASTILLE, message_id=L1)
+    c = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c['id']}"), "course_take:")
+
+    await h.text(L1, "✅ Livrée")
+    ask = h.tg.last(L1)
+    assert ask.text.startswith(f"✅ Course #{c['id']} — 12 Rue de Rivoli") and "Le client a payé comment ?" in ask.text
+    await h.press_data(L1, ask, f"pay:{c['id']}:v")
+    done = await db.get_course(c["id"])
+    assert done["status"] == "delivered" and done["payment"] == "virement"
+
+    await h.text(L1, "⏸ Pause")
+    assert h.tg.last(L1).text == texts.PAUSED
+    assert (await db.get_user(l1["id"]))["on_duty"] is False

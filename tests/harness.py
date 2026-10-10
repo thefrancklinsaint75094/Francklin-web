@@ -104,7 +104,7 @@ class FakeTelegram(BaseRequest):
     def _message_json(self, m: Msg):
         data = {"message_id": m.message_id, "date": int(time.time()),
                 "chat": {"id": m.chat_id, "type": "private"}, "from": BOT_USER, "text": m.text}
-        if m.markup:
+        if m.markup and "inline_keyboard" in m.markup:   # comme Telegram : jamais le menu du bas (clavier)
             data["reply_markup"] = m.markup
         return data
 

@@ -57,27 +57,23 @@ LIVE_GUIDE = (
     "1. Touche 📎 en bas de cette conversation\n"
     "2. Choisis <b>Position</b>, puis <b>Partager ma position en direct</b>\n"
     "3. Choisis <b>« Jusqu'à ce que je l'arrête »</b>\n"
-    "C'est tout : ensuite, un simple /dispo te met en service chaque jour.\n"
+    "C'est tout : ensuite, un simple 🟢 Je commence te met en service chaque jour.\n"
     "Si rien ne se passe : autorise la localisation pour Telegram dans les réglages du téléphone. "
     "« Envoyer ma position actuelle » ne suffit pas (elle ne bouge plus)."
 )
 
 WELCOME_LIVREUR = (
-    "✅ Tu es validé.\n\n"
-    "/dispo — te mettre en service (tu partageras ta position en direct et diras comment tu te déplaces : "
-    "🚶 transport, 🛵 deux-roues ou 🚗 voiture)\n"
-    "/pause — te retirer temporairement\n"
-    "/macourse — revoir ta course en cours\n"
-    "/depense — noter une dépense (essence, repas…) ou une avance sur ta paye\n"
-    "/macaisse — le cash que tu dois remettre\n"
-    "/gouts — coche les goûts qu'il te reste (MSX banane, fraise…)\n\n"
-    "Tu ne reçois que les courses proches de toi. Une seule à la fois — appuie sur « Bientôt libre » "
-    "quand tu termines pour enchaîner.\n\n"
-    "Course livrée : écris <b>OK</b> (« OK CB » si payé par carte ou virement). Il faut valider ta course "
-    "avant de passer à la suivante.\n"
-    "Le client a pris autre chose ? Écris <b>Modif</b> : ➖ / ➕ pour les quantités, ➕ Ajouter un produit, "
-    "les boutons de prix (de 10 en 10 €) ; le franchisé valide ta modification."
-    "\n\n" + LIVE_GUIDE
+    "✅ <b>Tu es validé.</b>\n\n"
+    "Tout se fait avec les <b>boutons en bas de l'écran</b> 👇 (rien à taper) :\n"
+    "🟢 <b>Je commence</b> — tu te mets en service\n"
+    "⏸ <b>Pause</b> — tu t'arrêtes\n"
+    "✅ <b>Livrée</b> — la course est livrée (je te demande ensuite comment le client a payé)\n"
+    "✏️ <b>Modif</b> — le client a pris autre chose : tu corriges, le franchisé valide\n"
+    "🚴 <b>Ma course</b> — revoir l'adresse et le digicode\n"
+    "💶 <b>Ma caisse</b> — le cash que tu dois remettre\n"
+    "🍬 <b>Mes goûts</b> — cocher les goûts qu'il te reste\n"
+    "🧾 <b>Dépense</b> — essence, repas, avance sur ta paye\n\n"
+    "Une course à la fois : valide celle en cours (✅ Livrée) avant la suivante.\n\n" + LIVE_GUIDE
 )
 
 WELCOME_DISPATCH = (
@@ -361,18 +357,22 @@ def mes_courses(courses: list[dict], livreurs: dict[str, dict]) -> str:
 
 DISPO_PROMPT = (
     LIVE_GUIDE + "\n\n"
-    "Tant que je reçois ta position, tu es visible pour les courses.\n\n"
-    "Et tu te déplaces comment aujourd'hui ? 🚶 Transport (à pied, métro, bus) · 🛵 Deux-roues · 🚗 Voiture"
+    "Dès que je reçois ta position, tu es en service et visible pour les courses."
+)
+TRANSPORT_QUESTION = (
+    "🚦 <b>Comment tu te déplaces ce soir ?</b>\n"
+    "Touche ton moyen de transport 👇 (à pied, je t'envoie des courses moins loin)."
 )
 DISPO_REMINDER = "⏳ Je n'ai toujours pas reçu ta position, tu n'es pas encore en service.\n\n" + LIVE_GUIDE
-ON_DUTY = "✅ Tu es en service. Je t'envoie les courses proches de toi."
-PAUSED = "⏸ Tu es en pause. Relance /dispo pour reprendre."
+ON_DUTY = ("✅ <b>Tu es en service.</b> Je t'envoie les courses proches de toi.\n"
+           "Pour t'arrêter : touche ⏸ Pause en bas de l'écran.")
+PAUSED = "⏸ <b>Tu es en pause.</b> Pour reprendre : touche 🟢 Je commence en bas de l'écran."
 STATIC_POSITION_WARNING = (
     "⚠️ Position reçue, mais elle ne se mettra pas à jour. Pour rester visible plus de 30 min, "
     "partage ta position <b>en direct</b> : 📎 → Position → Partager ma position en direct → "
     "« Jusqu'à ce que je l'arrête »."
 )
-POSITION_LOST = "📍 Je ne reçois plus ta position, tu n'es plus visible. Relance /dispo quand tu reprends."
+POSITION_LOST = "📍 Je ne reçois plus ta position, tu n'es plus visible. Touche 🟢 Je commence quand tu reprends."
 POSITION_SILENT = ("📍 Je ne reçois plus ta position depuis quelques minutes. Vérifie que le partage en direct est "
                    "toujours actif (📎 → Position → Partager ma position en direct → « Jusqu'à ce que je "
                    "l'arrête »), sinon tu vas sortir du service.")
@@ -870,11 +870,11 @@ def livreurs_list(rows: list[tuple]) -> str:
 
 def duty_on_by_admin(admin: dict) -> str:
     return (f"🟢 {esc(admin.get('display_name') or 'Le dispatch')} t'a mis en service : tu reçois les courses. "
-            "Partage ta position en direct pour recevoir d'abord les plus proches. /pause pour arrêter.")
+            "Partage ta position en direct pour recevoir d'abord les plus proches. Touche ⏸ Pause pour arrêter.")
 
 
 def duty_off_by_admin(admin: dict) -> str:
-    return f"⏸ {esc(admin.get('display_name') or 'Le dispatch')} t'a mis en pause. /dispo pour reprendre."
+    return f"⏸ {esc(admin.get('display_name') or 'Le dispatch')} t'a mis en pause. Touche 🟢 Je commence pour reprendre."
 
 
 def assign_prompt(course: dict) -> str:
@@ -1135,7 +1135,7 @@ def sheets_failed(error: str) -> str:
 
 EXPENSE_KIND_LABEL = {"charges": "🧾 Charges (à ses frais)", "paye": "💸 Avance sur paye"}
 EXPENSE_CHOOSE_LIVREUR = "🧾 <b>Dépense</b> — pour quel livreur ?"
-EXPENSE_EXPIRED = "Dépense expirée : relance /depense."
+EXPENSE_EXPIRED = "Dépense expirée : touche à nouveau 🧾 Dépense."
 EXPENSE_CANCELLED = "Dépense annulée."
 EXPENSE_ZERO = "Indique d'abord un montant."
 EXPENSE_AMOUNT_HINT = "Tape seulement le montant, par exemple 35 ou 12,50."
@@ -1384,6 +1384,17 @@ def transport_set(mode: str) -> str:
     from bot.services.transport import ICON, LABEL
 
     return f"{ICON[mode]} {LABEL[mode]} noté."
+
+
+def transport_chosen(mode: str) -> str:
+    from bot.keyboards import TRANSPORT_BUTTON
+
+    return (f"✅ <b>C'est noté :</b> {esc(TRANSPORT_BUTTON[mode])}\n"
+            "Tu as changé de moyen de transport ? Touche simplement un autre bouton.")
+
+
+def deliver_ask(course: dict) -> str:
+    return f"✅ Course #{course['id']} — {esc(course['address'])}\n\n<b>Le client a payé comment ?</b> 👇"
 
 
 def transport_mismatch(course: dict, livreur: dict, mode: str, detail: dict) -> str:

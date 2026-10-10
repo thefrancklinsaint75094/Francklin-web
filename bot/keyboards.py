@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton as B
 from telegram import InlineKeyboardMarkup as M
+from telegram import ReplyKeyboardMarkup
 
 from bot.texts import ROLE_LABEL
 
@@ -390,14 +391,33 @@ def cloture_confirm() -> M:
     return M([[B("✅ Reset de la semaine", callback_data="cl_go")], [B("❌ Annuler", callback_data="cl_x")]])
 
 
-def transport_mode(current: str | None) -> M:
-    from bot.services.transport import ICON, LABEL
+TRANSPORT_BUTTON = {"transport": "🚶 À pied ou en transports (métro, bus)",
+                    "deux_roues": "🛵 Deux-roues (scooter, moto, vélo)",
+                    "voiture": "🚗 Voiture"}
 
-    buttons = []
+
+def transport_mode(current: str | None) -> M:
+    """Un bouton par ligne, le texte en entier (rien de coupé) ; ✅ devant le choix actuel."""
+    rows = []
     for code, mode in (("t", "transport"), ("d", "deux_roues"), ("v", "voiture")):
         mark = "✅ " if current == mode else ""
-        buttons.append(B(f"{mark}{ICON[mode]} {LABEL[mode].split(' /')[0]}", callback_data=f"tmode:{code}"))
-    return M([buttons])
+        rows.append([B(f"{mark}{TRANSPORT_BUTTON[mode]}", callback_data=f"tmode:{code}")])
+    return M(rows)
+
+
+# Menu du livreur : gros boutons en bas de l'écran, à la place des commandes à taper.
+LIVREUR_MENU = {
+    "🟢 Je commence": "dispo", "⏸ Pause": "pause",
+    "✅ Livrée": "livree", "✏️ Modif": "modif",
+    "🚴 Ma course": "macourse", "💶 Ma caisse": "macaisse",
+    "🍬 Mes goûts": "gouts", "🧾 Dépense": "depense",
+}
+
+
+def livreur_menu() -> ReplyKeyboardMarkup:
+    labels = list(LIVREUR_MENU)
+    return ReplyKeyboardMarkup([labels[i:i + 2] for i in range(0, len(labels), 2)],
+                               resize_keyboard=True, is_persistent=True)
 
 
 def sales_confirm() -> M:

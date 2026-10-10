@@ -523,4 +523,9 @@ simple qui respecte le mur de confidentialité (§12).
      `<code>` pour la copier), « + surnoms » ajoute. Un nom déjà pris est refusé ; un surnom partagé est
      signalé comme à l'ajout. Renommer met à jour les goûts cochés chez les livreurs ; le message rappelle que
      le nom doit rester celui des colonnes des feuilles.
+135. **Livreurs : tout par boutons** (demande de l'exploitant : « pas tout le monde est à l'aise avec
+     l'informatique »). Menu de gros boutons en bas de l'écran (ReplyKeyboard persistant, envoyé à la validation,
+     à /start, /aide, /dispo, /pause), qui passe avant tout état en cours ; les messages parlent des boutons
+     plutôt que des commandes. Transport : question séparée, un bouton par ligne en toutes lettres (les trois
+     boutons côte à côte étaient coupés et sans explication), confirmation en clair.
 

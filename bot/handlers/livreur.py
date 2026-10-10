@@ -44,10 +44,12 @@ async def dispo(update: Update, context) -> None:
         # Position en direct toujours reçue : pas besoin de la repartager.
         await db.update_user(user["id"], {"on_duty": True})
         await db.log_event("livreur_on_duty", user_id=user["id"])
-        await messaging.reply(update, texts.ON_DUTY, keyboards.transport_mode(user.get("transport_mode")))
+        await messaging.reply(update, texts.ON_DUTY, keyboards.livreur_menu())
+        await messaging.reply(update, texts.TRANSPORT_QUESTION, keyboards.transport_mode(user.get("transport_mode")))
         await broadcast.kick_pending(context)
     else:
-        await messaging.reply(update, texts.DISPO_PROMPT, keyboards.transport_mode(user.get("transport_mode")))
+        await messaging.reply(update, texts.DISPO_PROMPT, keyboards.livreur_menu())
+        await messaging.reply(update, texts.TRANSPORT_QUESTION, keyboards.transport_mode(user.get("transport_mode")))
         # Pas de position dans DISPO_REMINDER_SECONDS : on relance le livreur et on prévient le dispatch.
         await db.log_event("dispo_asked", user_id=user["id"])
         if context.job_queue is not None:
@@ -89,8 +91,8 @@ async def transport_mode(update: Update, context):
     if user.get("transport_mode") != mode:
         await db.update_user(user["id"], {"transport_mode": mode})
         await db.log_event("transport_mode", user_id=user["id"], payload={"mode": mode})
-    await messaging.edit_markup(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
-                                keyboards.transport_mode(mode))
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         texts.transport_chosen(mode), keyboards.transport_mode(mode))
     return texts.transport_set(mode)
 
 
@@ -100,7 +102,7 @@ async def pause(update: Update, context) -> None:
         return
     await db.update_user(user["id"], {"on_duty": False, "soon_free": False, "duty_forced": False})
     await db.log_event("livreur_pause", user_id=user["id"])
-    await messaging.reply(update, texts.PAUSED)
+    await messaging.reply(update, texts.PAUSED, keyboards.livreur_menu())
 
 
 async def ma_course(update: Update, context) -> None:
@@ -136,6 +138,39 @@ async def on_message(update: Update, context, user: dict, state: str | None, pay
         await validate_text(update, context, user, msg.text)
         return
     await messaging.reply(update, texts.LIVREUR_TEXT_HINT)
+
+
+def menu_action(text: str | None) -> str | None:
+    """Bouton du menu en bas de l'écran (« 🟢 Je commence »…) → action, sinon None."""
+    return keyboards.LIVREUR_MENU.get((text or "").strip())
+
+
+async def on_menu(update: Update, context, user: dict, action: str) -> None:
+    """Les gros boutons du menu livreur font la même chose que les commandes, sans rien taper."""
+    from bot.handlers import cash, variants
+
+    if user.get("conversation_state"):
+        await db.clear_state(user["id"])            # un bouton du menu interrompt la saisie en cours
+    if action == "dispo":
+        await dispo(update, context)
+    elif action == "pause":
+        await pause(update, context)
+    elif action == "macourse":
+        await ma_course(update, context)
+    elif action == "macaisse":
+        await cash.macaisse(update, context)
+    elif action == "gouts":
+        await variants.gouts(update, context)
+    elif action == "depense":
+        await cash.depense(update, context)
+    elif action == "modif":
+        await validate_text(update, context, user, "modif")
+    elif action == "livree":
+        course = await current_course(user)
+        if course is None:
+            await messaging.reply(update, texts.NO_ASSIGNED, keyboards.livreur_menu())
+            return
+        await messaging.reply(update, texts.deliver_ask(course), keyboards.payment_choice(course["id"]))
 
 
 def _ok_payment(text: str) -> str | None:

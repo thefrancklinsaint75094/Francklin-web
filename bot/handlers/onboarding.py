@@ -42,14 +42,19 @@ async def start(update: Update, context) -> None:
             await messaging.reply(update, texts.PENDING)
         return
     await common.set_commands(context.bot, user)
-    await messaging.reply(update, texts.welcome(user["role"]))
+    await messaging.reply(update, texts.welcome(user["role"]), _menu(user))
+
+
+def _menu(user: dict):
+    """Livreur : le menu de gros boutons en bas de l'écran."""
+    return keyboards.livreur_menu() if user.get("role") == "livreur" else None
 
 
 async def aide(update: Update, context) -> None:
     user = await common.actor(update)
     if not await common.require(update, user):
         return
-    await messaging.reply(update, texts.welcome(user["role"]))
+    await messaging.reply(update, texts.welcome(user["role"]), _menu(user))
 
 
 @common.callback
@@ -118,7 +123,7 @@ async def approve(update: Update, context):
         fields["display_name"] = sheet_name or f"{texts.ROLE_LABEL[user['role']]} {n}"
     user = await db.update_user(user["id"], fields)
     await common.set_commands(context.bot, user)
-    await messaging.send(context.bot, user, texts.welcome(user["role"]))
+    await messaging.send(context.bot, user, texts.welcome(user["role"]), _menu(user))
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.registration_approved(user))
     await db.log_event("user_approved", user_id=user["id"], payload={"display_name": user["display_name"]})

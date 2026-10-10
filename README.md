@@ -414,6 +414,15 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
 
 Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
+### Le menu du livreur (gros boutons, rien à taper)
+
+Dès sa validation, le livreur a un menu de gros boutons en bas de l'écran (clavier Telegram) :
+🟢 Je commence · ⏸ Pause · ✅ Livrée · ✏️ Modif · 🚴 Ma course · 💶 Ma caisse · 🍬 Mes goûts · 🧾 Dépense.
+Chaque bouton fait la même chose que la commande (`/dispo`, `/pause`…) ; « ✅ Livrée » demande ensuite le
+paiement (💵 / 💳) de la course en cours. « 🟢 Je commence » envoie deux messages : la position à partager
+(ou « tu es en service »), puis la question « Comment tu te déplaces ce soir ? » avec un bouton par ligne,
+en toutes lettres (🚶 À pied ou en transports · 🛵 Deux-roues · 🚗 Voiture) ; le choix est confirmé en clair.
+
 ### Validation par le livreur : « OK » ou « Modif »
 
 Le livreur valide sa course en cours en écrivant **OK** (espèces) ou **OK CB** / **OK virement**. Il doit
