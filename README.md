@@ -391,6 +391,13 @@ Alertes :
 Prévenus : le franchisé de la course, le livreur, les ravitailleurs et le dispatch. Sans réponse du script (ou
 livreur absent de SOLDES), pas d'alerte : la course n'est jamais bloquée.
 
+### Le dispatch, grand admin
+
+Le dispatch a tous les droits des admins et passe aussi des commandes comme un franchisé : il envoie une
+adresse et les produits dans sa conversation avec le bot (texte, vocal ou photo), confirme la fiche, choisit
+le livreur, échange avec lui par 💬 et suit la course (`/mescourses`, `/modele`). Il reçoit aussi une copie de
+chaque message 💬 échangé entre un franchisé et un livreur (« 💬 #12 — Livreur A (Ketur) → Franchisé 1 : … »).
+
 ### Pouvoirs des admins (dispatch et franchisés)
 
 Le dispatch **et les franchisés** ont les pleins pouvoirs :

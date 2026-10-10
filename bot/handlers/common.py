@@ -16,6 +16,13 @@ log = logging.getLogger(__name__)
 ADMIN_ROLES = ("dispatch", "franchise")   # le franchisé a les pleins pouvoirs, comme le dispatch
 
 
+ORDER_ROLES = ("franchise", "dispatch")   # le dispatch (grand admin) passe aussi des commandes
+
+
+def can_order(user: dict | None) -> bool:
+    return bool(user) and user.get("status") == "active" and user.get("role") in ORDER_ROLES
+
+
 def is_admin(user: dict | None) -> bool:
     return bool(user) and user.get("status") == "active" and user.get("role") in ADMIN_ROLES
 
@@ -34,7 +41,8 @@ COMMANDS = {
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
                 ("macourse", "Revoir ma course en cours"), ("depense", "Noter une dépense"),
                 ("macaisse", "Mon cash à remettre"), ("gouts", "Mes goûts (ce qu'il me reste)")],
-    "dispatch": _ADMIN_COMMANDS + [("produits", "Catalogue des produits")],
+    "dispatch": _ADMIN_COMMANDS + [("produits", "Catalogue des produits"), ("mescourses", "Mes commandes de la nuit"),
+                                   ("modele", "Modèle de commande")],
     "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash"), ("ravi", "Rechargement en texte"), ("swipe", "Transfert entre livreurs"), ("stock", "Stock des box et des livreurs"),
                      ("caisse", "Cash à récupérer chez les livreurs"), ("gouts", "Goûts chez les livreurs")],
 }
@@ -78,7 +86,7 @@ async def require(update: Update, user: dict | None, role: str | None = None, si
         if not silent:
             await messaging.reply(update, texts.PENDING)
         return False
-    if role and user["role"] != role:
+    if role and user["role"] != role and not (role == "franchise" and user["role"] == "dispatch"):
         if not silent:
             await messaging.reply(update, texts.NOT_FOR_YOU)
         return False

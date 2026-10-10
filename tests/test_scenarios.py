@@ -143,7 +143,7 @@ async def order(h: Harness, tg_id: int, key: str):
 
 async def test_onboarding_and_welcome(h):
     await h.text(DISPATCH, "/start")
-    assert h.tg.last(DISPATCH).text.startswith("Dispatch actif.")
+    assert h.tg.last(DISPATCH).text.startswith("Dispatch actif — tous les droits.")
     await h.text(F1, "/start", username="barducoin")
     assert h.tg.last(F1).text == texts.ASK_ROLE
     await h.press(F1, h.tg.last(F1), "role:franchise", username="barducoin")
@@ -569,6 +569,8 @@ async def test_relay_both_ways(h):
     relayed = h.tg.last(F1)
     assert relayed.text == f"💬 Course #{course['id']} — 12 Rue de Rivoli 75004 Paris\nLivreur 1 : « Le digicode ne passe pas »"
     assert "lv3001" not in relayed.text
+    # Le dispatch (grand admin) voit toutes les conversations.
+    assert f"💬 #{course['id']} — Livreur 1 → Franchisé 1 :\n« Le digicode ne passe pas »" in h.tg.texts(DISPATCH)
 
     # Réponse native « Répondre » du franchisé.
     await h.text(F1, "Essaie 45B", reply_to=relayed.message_id)
@@ -2657,3 +2659,29 @@ async def test_flavors_end_to_end(h, monkeypatch, test_config):
     # La liste de MSX change : un goût retiré disparaît aussi chez les livreurs.
     await h.text(DISPATCH, "/gouts MSX noisette, banane")
     assert [r["variant"] for r in await db.list_livreur_variants("Livreur 1")] == []
+
+
+
+async def test_dispatch_orders_like_a_franchise(h):
+    """Le dispatch (grand admin) passe une commande comme un franchisé : fiche, confirmation, livreur ;
+    il échange avec le livreur par 💬 (sans copie à lui-même) et peut retirer sa course."""
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    await h.text(DISPATCH, "rivoli")
+    card = h.tg.last(DISPATCH)
+    assert "draft_confirm:" in card.buttons[0][1]
+    await h.press(DISPATCH, card, "draft_confirm:")
+    course = (await db.list_courses_by_status("pending"))[-1]
+    assert course["franchise_id"] == (await db.get_user_by_tg(DISPATCH))["id"]
+    assert not [t for t in h.tg.texts(DISPATCH) if t.startswith(f"🆕 #{course['id']}")]   # pas d'avis à lui-même
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{course['id']}"), "course_take:")
+    fiche = h.tg.find(L1, "c'est pour toi")
+    assert "Dispatch" in fiche.text
+
+    await h.press(L1, fiche, "relay_start:")
+    await h.text(L1, "J'arrive")
+    assert h.tg.last(DISPATCH).text.endswith("Livreur 1 : « J'arrive »")
+    assert not [t for t in h.tg.texts(DISPATCH) if t.startswith(f"💬 #{course['id']} —")]
+
+    await h.text(DISPATCH, "/mescourses")
+    assert f"#{course['id']}" in h.tg.last(DISPATCH).text
