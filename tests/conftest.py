@@ -26,6 +26,7 @@ TEST_CONFIG = config.Config(
     stock_alerts=False,    # activé seulement dans les tests qui simulent la lecture du stock
     livreur_names=(),      # « Livreur 1 », « Livreur 2 »… (les noms de feuille sont testés à part)
     ravitailleur_names=(),
+    franchise_picks=False, # les scénarios historiques : diffusion automatique (le choix est testé à part)
 )
 
 

@@ -69,7 +69,15 @@ async def stale_positions(context) -> None:
 
 async def stuck_courses(context) -> None:
     cfg = config.get()
-    for course in await db.list_courses_by_status("assigned"):
+    assigned = await db.list_courses_by_status("assigned")
+    first: dict[str, tuple] = {}            # livreur → sa course la plus ancienne (celle en cours)
+    for c in assigned:
+        k = (c.get("assigned_at") or "", c["id"])
+        if c.get("livreur_id") and (c["livreur_id"] not in first or k < first[c["livreur_id"]]):
+            first[c["livreur_id"]] = k
+    for course in assigned:
+        if first.get(course.get("livreur_id")) != (course.get("assigned_at") or "", course["id"]):
+            continue                        # en file derrière sa livraison en cours : rappelée à la fin
         assigned_at = parse_ts(course.get("assigned_at"))
         minutes = minutes_since(assigned_at)
         if assigned_at is None or minutes < cfg.stuck_course_minutes:

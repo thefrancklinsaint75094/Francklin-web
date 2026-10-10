@@ -149,6 +149,19 @@ est refusée avec un message qui dit quoi corriger ; le franchisé la renvoie av
 
 Base créée avant l'ajout du catalogue : exécuter une fois `sql/migrations/002_products.sql`.
 
+### Le franchisé choisit son livreur
+
+Quand le franchisé confirme sa course, elle n'est pas diffusée : sa fiche affiche les livreurs **en service**,
+🟢 libres d'abord (du plus proche au plus loin, avec la distance), puis 🛵 ceux déjà en livraison, et
+**📣 Au plus proche** (la diffusion habituelle). Il appuie sur un livreur : celui-ci reçoit tout de suite la
+fiche complète (adresse, digicode, boutons). Si ce livreur est **déjà en livraison**, il la reçoit quand même
+(« elle passe après ta livraison en cours »), le franchisé est prévenu, et dès qu'il valide sa course en cours
+le bot lui renvoie la suivante, « à faire maintenant » (l'alerte « course bloquée » attend ce moment).
+Sans choix au bout de `PICK_TIMEOUT_MINUTES` (5 par défaut), la course part au plus proche et le franchisé
+est prévenu ; personne en service : diffusion directe (elle attend un livreur, comme avant).
+`FRANCHISE_PICKS_LIVREUR=0` revient à la diffusion automatique. Après un redémarrage du bot, une course
+encore en attente de choix part en diffusion normale.
+
 ### Alerte « le livreur arrive »
 
 Grâce à la position en direct du livreur, le franchisé de la course et le dispatch reçoivent **une fois par

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from bot import db, keyboards, messaging, texts
-from bot.services import broadcast, sheets, stock
+from bot import config, db, keyboards, messaging, texts
+from bot.services import broadcast, pick, sheets, stock
 from bot.services.distance import format_distance, haversine_m
 from bot.timeutil import iso, now_utc, parse_ts
 
@@ -27,6 +27,8 @@ def _forget(course_id: int) -> None:
 
 
 def franchise_view(course: dict, livreur: dict | None = None) -> tuple[str, object]:
+    if course["status"] == "pending" and pick.is_awaiting(course["id"]):
+        return texts.franchise_pick(course, config.get().pick_timeout_minutes), pick.markup(course["id"])
     state = _no_livreur.get(course["id"])
     text = texts.franchise_course_status(
         course, livreur,
@@ -76,6 +78,7 @@ async def clear_no_livreur(context, course: dict) -> None:
 async def after_assignment(context, course: dict, livreur: dict, message) -> None:
     """§9.4, dans l'ordre : autres livreurs, fiche complète, franchisé, dispatch, journal."""
     broadcast.cancel_wave(context.job_queue, course["id"])
+    pick.forget(context.job_queue, course["id"])
     _forget(course["id"])
     await broadcast.close_proposals(context, course["id"], texts.proposal_taken(course["id"]), except_livreur=livreur["id"])
 
@@ -148,8 +151,27 @@ async def deliver(context, course: dict, by_dispatch: bool = False, payment: str
         {"by_dispatch": by_dispatch, "distance_m": fields.get("delivered_distance_m")},
     )
     stock.after_delivery_later(context, updated, livreur)
+    if livreur:
+        await remind_next(context, livreur, course["id"])
     await broadcast.kick_pending(context)
     return updated
+
+
+async def remind_next(context, livreur: dict, done_id: int) -> None:
+    """Le livreur vient de finir une course et en a une autre (reçue pendant sa livraison) : on la lui
+    renvoie, fiche et boutons, comme course à faire maintenant (son délai repart de là)."""
+    others = [c for c in await db.list_assigned_for_livreurs([livreur["id"]]) if c["id"] != done_id]
+    if not others:
+        return
+    nxt = min(others, key=lambda c: (c.get("assigned_at") or "", c["id"]))
+    franchise = await db.get_user(nxt["franchise_id"]) or {}
+    sent = await messaging.send(context.bot, livreur, texts.next_course_for_livreur(nxt, franchise),
+                                keyboards.livreur_course(nxt["id"]))
+    fields = {"assigned_at": iso(now_utc())}
+    if sent is not None:
+        fields["livreur_message_id"] = sent.message_id
+    await db.update_course(nxt["id"], fields)
+    await db.log_event("next_course_reminded", nxt["id"], livreur["id"], {"after": done_id})
 
 
 # ---------------------------------------------------------------- remise en diffusion
@@ -231,6 +253,7 @@ async def cancel(context, course: dict, by: str) -> dict | None:
         return None
 
     broadcast.cancel_wave(context.job_queue, course["id"])
+    pick.forget(context.job_queue, course["id"])
     _forget(course["id"])
     franchise = await db.get_user(course["franchise_id"])
     livreur = None
@@ -258,5 +281,6 @@ async def cancel(context, course: dict, by: str) -> dict | None:
         course["id"], franchise["id"] if franchise else None, {"by": by},
     )
     if livreur:
+        await remind_next(context, livreur, course["id"])
         await broadcast.kick_pending(context)
     return updated

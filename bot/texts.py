@@ -1609,3 +1609,31 @@ def prenom_done(name: str, prenom: str | None) -> str:
         return f"✅ C'est noté : <b>{esc(name)}</b>"
     return f"✅ {esc(name)} n'a plus de prénom affiché."
 
+
+# ================================================================ le franchisé choisit le livreur
+
+def franchise_pick(course: dict, timeout_minutes: int) -> str:
+    lines = [f"✅ Course #{course['id']} enregistrée — <b>à quel livreur l'envoyer ?</b>", course_summary(course), "",
+             "🟢 libre · 🛵 déjà en livraison (il la reçoit tout de suite et la fera juste après)"]
+    if timeout_minutes > 0:
+        lines.append(f"Sans choix dans {timeout_minutes} min, je l'envoie au plus proche.")
+    return "\n".join(lines)
+
+
+def livreur_busy_for_franchise(course: dict, livreur: dict, current: dict) -> str:
+    return (f"⚠️ {esc(livreur.get('display_name') or '?')} est déjà en livraison (course #{current['id']}) : "
+            f"ta course #{course['id']} lui est quand même envoyée, il la fera juste après.")
+
+
+def queued_for_livreur(course: dict, current: dict) -> str:
+    return (f"⏳ La course #{course['id']} passe après ta livraison en cours (#{current['id']}) : "
+            "je te la rappelle dès que tu la valides.")
+
+
+def next_course_for_livreur(course: dict, franchise: dict) -> str:
+    return "🔔 <b>Course suivante, à faire maintenant</b>\n\n" + full_fiche(course, franchise)
+
+
+def pick_timeout(course_id: int) -> str:
+    return f"⏱ Pas de livreur choisi pour la course #{course_id} : je l'envoie au plus proche."
+

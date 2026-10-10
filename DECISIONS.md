@@ -478,3 +478,12 @@ simple qui respecte le mur de confidentialité (§12).
      `prenoms`, migration 014) — seul moyen pour un livreur des feuilles sans compte. Gardé en mémoire
      (démarrage, toutes les 2 min, après `/prenom`). Les lectures de texte acceptent le prénom seul ou le nom
      affiché avec sa parenthèse.
+128. **Le franchisé choisit son livreur** (demande de l'exploitant) : à la confirmation, la fiche propose les
+     livreurs en service (libres triés par temps de trajet, puis ceux en livraison) et « Au plus proche ».
+     Le choix passe par le même verrou que « Je prends » (`take_course`) puis `after_assignment` : le livreur
+     reçoit la fiche complète même s'il a déjà une course. Une course reçue pendant une livraison lui est
+     renvoyée quand il valide (ou qu'on annule) la course en cours, avec un nouveau `assigned_at` ; l'alerte
+     « bloquée » ne regarde que la course la plus ancienne de chaque livreur. Garde-fous : sans choix en
+     `PICK_TIMEOUT_MINUTES` la course part en diffusion (une commande oubliée serait pire qu'un mauvais
+     livreur) ; l'attente est en mémoire (après un redémarrage, diffusion) ; `kick_pending` ne diffuse pas une
+     course en attente de choix. Réglable : `FRANCHISE_PICKS_LIVREUR=0` revient à la diffusion seule.

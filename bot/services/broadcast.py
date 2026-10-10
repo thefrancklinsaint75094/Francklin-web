@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from bot import config, db, keyboards, messaging, texts
-from bot.services import lifecycle, stock, transport
+from bot.services import lifecycle, pick, stock, transport
 from bot.services.distance import format_distance, haversine_m
 from bot.timeutil import now_utc, parse_ts
 
@@ -127,6 +127,7 @@ async def run_wave(context, course_id: int, advance: bool = False) -> bool:
         if not course or course["status"] != "pending":
             cancel_wave(context.job_queue, course_id)
             return False
+        pick.forget(context.job_queue, course_id)     # diffusion lancée : le choix du franchisé est clos
         broadcasts = await db.list_broadcasts(course_id)
         round_ = course["broadcast_round"]
         if advance and any(b["round"] == round_ for b in broadcasts):
@@ -167,6 +168,8 @@ async def kick_pending(context) -> None:
     """Un livreur vient de devenir éligible : les courses qui n'avaient trouvé
     personne lui sont proposées tout de suite, sans attendre la relance."""
     for course in await db.list_courses_by_status("pending"):
+        if pick.is_awaiting(course["id"]):
+            continue                              # le franchisé choisit son livreur
         try:
             waiting = lifecycle.is_waiting_for_livreur(course["id"])
             if not waiting:
@@ -196,6 +199,22 @@ async def resume_all(context) -> None:
                 schedule_wave(context.job_queue, course["id"], cfg.broadcast_wave_seconds - elapsed)
         except Exception:  # noqa: BLE001
             log.exception("Reprise de la course %s impossible", course["id"])
+
+
+async def pick_timeout(context) -> None:
+    """Le franchisé n'a pas choisi de livreur à temps : la course part au plus proche."""
+    course_id = context.job.data
+    if not pick.is_awaiting(course_id):
+        return
+    pick.forget(context.job_queue, course_id)
+    course = await db.get_course(course_id)
+    if not course or course["status"] != "pending":
+        return
+    franchise = await db.get_user(course["franchise_id"])
+    if franchise:
+        await messaging.send(context.bot, franchise, texts.pick_timeout(course_id))
+    await lifecycle.refresh_franchise_message(context, course, franchise=franchise)
+    await run_wave(context, course_id, advance=False)
 
 
 async def close_proposals(context, course_id: int, text: str, except_livreur: str | None = None) -> None:
