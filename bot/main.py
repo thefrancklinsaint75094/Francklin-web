@@ -94,7 +94,6 @@ async def post_init(app: Application) -> None:
     await names.refresh()
     await app.bot.set_my_commands([BotCommand(c, d) for c, d in common.COMMON_COMMANDS])
     jobs.register(app.job_queue)
-    app.create_task(common.refresh_all_commands(app.bot))     # menus à jour, sans retarder le démarrage
     log.info("Bot prêt (dispatch : %s)", cfg.dispatch_telegram_id)
 
 
