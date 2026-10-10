@@ -48,6 +48,11 @@ async def on_message(update: Update, context) -> None:
     if user["role"] == "ravitailleur" or (state == restock.STATE and common.is_admin(user)):
         await restock.on_message(update, context, user, state, payload)
         return
+    if state == "editing_product" and common.is_admin(user) and update.message.text:
+        from bot.handlers import dispatch
+
+        await dispatch.save_product_edit(update, user, update.message.text, payload)
+        return
     if state == "adding_products" and common.is_admin(user) and update.message.text:
         from bot.handlers import dispatch
 

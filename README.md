@@ -132,7 +132,9 @@ Digicode 45A32, 3e étage
 multiple de 10 €) ; une ligne vide,
 puis le commentaire (vu par le livreur seulement). Le bot fait le total. `/modele` le rappelle.
 
-Le dispatch gère le catalogue avec `/produits` (bouton ➕ pour ajouter, 🗑 pour supprimer) ou
+Le dispatch gère le catalogue avec `/produits` (bouton ➕ pour ajouter, ✏️ pour modifier le nom ou les
+surnoms — renvoyer « Nom : surnom, surnom » pour tout remplacer, ou « + surnom » pour en ajouter —, 🗑 pour
+supprimer) ou
 `/ajouter`, un produit par ligne, avec après « : » les autres façons de l'écrire :
 
 ```
