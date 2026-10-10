@@ -242,6 +242,16 @@ la renvoie au même onglet.
 Base créée avant cette version : exécuter une fois `sql/migrations/009_sales.sql`, puis
 `sql/migrations/013_sales_night.sql`.
 
+### Prénoms des livreurs (`/prenom`)
+
+Partout dans le bot (messages, boutons, journal), chaque livreur est écrit avec son prénom :
+**Livreur A (Ketur)**. Par défaut, c'est le prénom donné à l'inscription ; `/prenom C Layla` le donne (ou
+le corrige), y compris pour un livreur des feuilles sans compte bot, `/prenom C -` revient à celui de
+l'inscription, `/prenom` seul affiche la liste. Les feuilles gardent « Livreur A » ; dans `/ventes`, `/ravi`
+et `/swipe`, on peut écrire le prénom (« Ketur ») ou le nom tel que le bot l'affiche.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/014_prenoms.sql`.
+
 ### Où sont les livreurs (`/livreurs`)
 
 Chaque livreur a une ligne avec l'état de sa position :

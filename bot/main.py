@@ -16,8 +16,9 @@ from telegram.ext import (
 from bot import config, db, jobs, messaging, texts
 from bot.config import PARIS
 from bot.handlers import (
-    cash, close_day, cloture, common, restock_text, sales, swipe, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
+    cash, close_day, cloture, common, prenoms, restock_text, sales, swipe, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
 )
+from bot.services import names
 
 log = logging.getLogger("bot")
 
@@ -90,6 +91,7 @@ async def error_handler(update: object, context) -> None:
 async def post_init(app: Application) -> None:
     cfg = config.get()
     await db.connect(cfg.supabase_url, cfg.supabase_service_key)
+    await names.refresh()
     await app.bot.set_my_commands([BotCommand(c, d) for c, d in common.COMMON_COMMANDS])
     jobs.register(app.job_queue)
     log.info("Bot prêt (dispatch : %s)", cfg.dispatch_telegram_id)
@@ -147,6 +149,7 @@ def register_handlers(app: Application) -> None:
     cmd("vente", sales.ventes)        # même commande, au singulier
     cmd("ravi", restock_text.ravi)
     cmd("swipe", swipe.swipe)
+    cmd("prenom", prenoms.prenom)
     cmd("cloture", cloture.cloture)   # ancien nom, gardé
 
     callbacks = [

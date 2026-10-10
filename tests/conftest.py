@@ -13,7 +13,7 @@ import pytest
 
 from bot import config, db
 
-TABLES = ["sales", "bot_messages", "expenses", "restocks", "events", "messages", "broadcasts", "livreur_positions", "courses", "drafts", "users", "products"]
+TABLES = ["prenoms", "sales", "bot_messages", "expenses", "restocks", "events", "messages", "broadcasts", "livreur_positions", "courses", "drafts", "users", "products"]
 
 TEST_CONFIG = config.Config(
     telegram_bot_token="123:test",
@@ -48,7 +48,7 @@ async def _client():
 
 
 # Colonne toujours renseignée, pour filtrer un DELETE « toutes les lignes ».
-_ALL_ROWS = {"broadcasts": "sent_at", "livreur_positions": "updated_at"}
+_ALL_ROWS = {"broadcasts": "sent_at", "livreur_positions": "updated_at", "prenoms": "updated_at"}
 
 
 async def wipe() -> None:

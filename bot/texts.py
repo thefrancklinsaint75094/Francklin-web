@@ -87,6 +87,7 @@ WELCOME_DISPATCH = (
     "/bannir — bannir quelqu'un : plus aucun accès au bot (réactivable avec /reactiver)\n"
     "/reactiver — rendre un accès\n"
     "/supprimer — supprimer un compte (définitif, la personne peut se réinscrire de zéro)\n"
+    "/prenom — le prénom affiché à côté de chaque livreur : « Livreur A (Ketur) »\n"
     "/produits — catalogue des produits (ajouter, supprimer)\n"
     "/recharge — charger ou reprendre un livreur, cash récupéré\n"
     "/ravi 1 — même chose en texte : livreur, box, quantités et produits\n"
@@ -140,7 +141,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /ravi · /swipe · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer"
+    "/recap · /journal · /users · /recharge · /ravi · /swipe · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer · /prenom"
 )
 
 
@@ -1582,3 +1583,29 @@ def swipe_for_giver(block: dict) -> str:
 
 def swipe_for_receiver(block: dict) -> str:
     return f"🔁 Swipe : tu reçois de {esc(block['src'])}\n{_swipe_what(block, '+')}"
+
+
+# ================================================================ prénoms des livreurs (/prenom)
+
+PRENOM_HELP = (
+    "🏷 <b>Prénoms des livreurs</b> — le bot écrit partout « Livreur A (Ketur) ».\n\n"
+    "<code>/prenom C Layla</code> — donne (ou corrige) le prénom de Livreur C\n"
+    "<code>/prenom C -</code> — revient au prénom donné à l'inscription\n"
+    "/prenom — la liste\n\n"
+    "Par défaut, c'est le prénom donné à l'inscription. Tu peux aussi écrire le prénom à la place du nom "
+    "dans /ventes, /ravi et /swipe."
+)
+
+
+def prenoms_list(rows: list[tuple[str, str | None]]) -> str:
+    lines = ["🏷 <b>Prénoms des livreurs</b>", ""]
+    lines += [f"• {esc(name)}" + ("" if p else " — <i>pas de prénom</i>") for name, p in rows]
+    lines += ["", "<code>/prenom C Layla</code> pour en donner ou en corriger un."]
+    return "\n".join(lines)
+
+
+def prenom_done(name: str, prenom: str | None) -> str:
+    if prenom:
+        return f"✅ C'est noté : <b>{esc(name)}</b>"
+    return f"✅ {esc(name)} n'a plus de prénom affiché."
+

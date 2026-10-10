@@ -94,8 +94,14 @@ def _key(text: str) -> str:
 
 
 def resolve_livreur(text: str, names: list[str], users: list[dict]) -> tuple[str | None, dict | None]:
-    """« Livreur A », « livreur a », « A » → nom de la feuille (+ compte du bot s'il existe)."""
-    wanted = _key(text)
+    """« Livreur A », « livreur a », « A », « Livreur A (Ketur) » ou le prénom « Ketur » → nom de la
+    feuille (+ compte du bot s'il existe)."""
+    from bot.services import names as prenoms
+
+    wanted = _key(prenoms.strip_prenom(text))
+    by_prenom = prenoms.by_prenom(wanted)
+    if by_prenom and not any(_key(n) == wanted for n in names):
+        wanted = _key(by_prenom)
     by_name = {_key(u.get("display_name") or ""): u for u in users if u.get("display_name")}
     for name in list(names) + [u["display_name"] for u in users if u.get("display_name")]:
         k = _key(name)
