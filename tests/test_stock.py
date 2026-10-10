@@ -91,7 +91,7 @@ def test_last_one_text():
 
 def test_box_texts():
     text = texts.box_stock("Box 1", {"DIV": 28, "KT": 0, "US": 115.0})
-    assert text.splitlines() == ["📦 <b>Box 1</b> — stock actuel", "", "DIV <b>28</b> · US <b>115</b>", "", "À 0 : KT"]
+    assert text.splitlines() == ["📦 <b>Box 1</b> — stock actuel", "", "DIV <b>28</b> · US <b>115</b>"]   # pas de « 0 KT »
     assert texts.box_stock("Box 2", {}).endswith("Vide.")
     overview = texts.boxes_overview({"Box 1": {"DIV": 28}, "Box 2": {}}, [
         {"produit": "DIV", "total": 32, "seuil": 20, "statut": "OK"},
@@ -99,10 +99,11 @@ def test_box_texts():
         {"produit": "KT", "total": 0, "seuil": 20, "statut": "RUPTURE"},
         {"produit": "", "total": 0, "seuil": 20, "statut": "RUPTURE"}])
     assert "<b>Box 1</b> : DIV <b>28</b>" in overview and "<b>Box 2</b> : vide" in overview
-    assert "🟠 SPAIN : 20 (seuil 20)" in overview and "🔴 KT : 0 (seuil 20)" in overview
+    assert "🟠 SPAIN : 20 (seuil 20)" in overview and "KT" not in overview          # produit à 0 : pas cité
     assert "DIV : 32" not in overview
     assert texts.livreurs_stock({"Livreur A": {"US": 2}, "Livreur B": {"US": 0}}).splitlines()[2:] == [
-        "<b>Livreur A</b> : US <b>2</b>", "<b>Livreur B</b> : rien"]
+        "<b>Livreur A</b> : US <b>2</b>"]                                          # Livreur B : rien, pas cité
+    assert texts.livreurs_stock({"Livreur B": {"US": 0}}).endswith("Aucun stock chez les livreurs.")
 
 
 def test_box_from_command_text():

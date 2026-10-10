@@ -1545,7 +1545,7 @@ async def test_stock_command_boxes_and_livreurs(h, monkeypatch):
     await h.text(R1, "/stock box 1")
     box = h.tg.last(R1).text
     assert "📦 <b>Box 1</b> — stock actuel" in box and "DIV <b>23</b>" in box and "US <b>115</b>" in box
-    assert "À 0 : KT" in box
+    assert "KT" not in box                                   # les produits à 0 ne sont pas cités
 
     # Menu : tous les box, puis livreurs (le livreur a reçu les 5 DIV en plus de la feuille).
     await h.text(F1, "/stock")
@@ -1553,10 +1553,10 @@ async def test_stock_command_boxes_and_livreurs(h, monkeypatch):
     assert menu.text == texts.STOCK_MENU
     await h.press_data(F1, menu, "sv:all")
     overview = h.tg.messages[(F1, menu.message_id)].text
-    assert "<b>Box 1</b> : DIV <b>23</b> · US <b>115</b>" in overview and "🔴 KT : 0 (seuil 20)" in overview
+    assert "<b>Box 1</b> : DIV <b>23</b> · US <b>115</b>" in overview and "KT" not in overview
     await h.press_data(F1, menu, "sv:liv")
     livs = h.tg.messages[(F1, menu.message_id)].text
-    assert "<b>Livreur 1</b> : US <b>2</b> · DIV <b>5</b>" in livs and "<b>Livreur B</b> : rien" in livs
+    assert "<b>Livreur 1</b> : US <b>2</b> · DIV <b>5</b>" in livs and "Livreur B" not in livs
     await h.press_data(F1, menu, "sv:box:1")
     assert h.tg.messages[(F1, menu.message_id)].text.endswith("Vide.")
     del r1
@@ -1840,12 +1840,12 @@ async def test_close_day_debrief(h, monkeypatch):
     assert text.startswith("🔒 <b>Journée close — nuit du")
     assert "📦 <b>2 courses livrées — 110 €</b>" in text and "💵 espèces 60 € · 💳 virement 50 €" in text
     assert "⚠️ 1 course encore ouverte (/encours)" in text
-    assert "• Livreur 1 — 1 course — 60 € (💵 60 € · 💳 0 €) — 🧾 10 €" in text
-    assert "• Livreur 2 — 1 course — 50 € (💵 0 € · 💳 50 €)" in text
+    assert "• Livreur 1 — 1 course — 60 € (💵 60 €) — 🧾 10 €" in text           # pas de « 💳 0 € »
+    assert "• Livreur 2 — 1 course — 50 € (💳 50 €)" in text
     assert "• Franchisé 1 — 1 course — 60 €" in text and "• Franchisé 2 — 1 course — 50 €" in text
-    assert "🧾 Dépenses : 10 € (charges 10 € · payes 0 €)" in text
+    assert "🧾 Dépenses : 10 € (charges 10 €)" in text and "📦 Rechargements" not in text
     assert "💶 <b>Cash à récupérer</b> (semaine)\n• Livreur 1 : 60 €" in text and "Livreur 2 : 0" not in text
-    assert "🔴 KT : 0 (seuil 20)" in text and "DIV" not in text.split("Stock sous le seuil")[1]
+    assert "Stock sous le seuil" not in text                     # KT à 0 : pas cité ; DIV au-dessus du seuil
     assert "✅ Journée terminée" in text
     assert "(par Franchisé 1)" in h.tg.last(DISPATCH).text
     # Rien n'a changé : la course en attente l'est toujours.
@@ -2314,7 +2314,7 @@ async def test_swipe_between_livreurs(h, monkeypatch):
     # /close : les swipes à part, pas comptés comme rechargements.
     await h.text(DISPATCH, "/close")
     debrief = h.tg.last(DISPATCH).text
-    assert "📦 Rechargements : 0" in debrief and "🔁 Swipes entre livreurs : 3" in debrief
+    assert "📦 Rechargements" not in debrief and "🔁 Swipes entre livreurs : 3" in debrief
 
 
 async def test_sales_for_an_earlier_night(h, monkeypatch):

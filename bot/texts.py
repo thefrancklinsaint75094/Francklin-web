@@ -693,12 +693,21 @@ def _qty_list(values: dict) -> tuple[list[str], list[str]]:
 
 
 def box_stock(name: str, values: dict) -> str:
-    have, empty = _qty_list(values)
+    have, _ = _qty_list(values)                  # les produits à 0 ne sont pas cités
     lines = [f"📦 <b>{esc(name)}</b> — stock actuel", ""]
     lines.append(" · ".join(have) if have else "Vide.")
-    if empty and have:
-        lines += ["", f"À 0 : {', '.join(empty)}"]
     return "\n".join(lines)
+
+
+def _low_stock(totals: list[dict]) -> list[str]:
+    """Produits sous le seuil qui restent en stock (un produit à 0 n'est pas cité)."""
+    out = []
+    for t in totals:
+        total = float(t.get("total") or 0)
+        if str(t.get("statut") or "").upper() in ("ALERTE", "RUPTURE") and str(t.get("produit") or "").strip() \
+                and total > 0:
+            out.append(f"🟠 {esc(t['produit'])} : {_n(total)} (seuil {_n(t.get('seuil') or 0)})")
+    return out
 
 
 def boxes_overview(boxes: dict, totals: list[dict]) -> str:
@@ -706,13 +715,9 @@ def boxes_overview(boxes: dict, totals: list[dict]) -> str:
     for name, values in boxes.items():
         have, _ = _qty_list(values)
         lines.append(f"<b>{esc(name)}</b> : {' · '.join(have) if have else 'vide'}")
-    alerts = [t for t in totals if str(t.get("statut") or "").upper() in ("ALERTE", "RUPTURE")
-              and str(t.get("produit") or "").strip()]
-    if alerts:
-        lines += ["", "⚠️ <b>Sous le seuil</b> (box + livreurs)"]
-        for t in alerts:
-            icon = "🔴" if str(t["statut"]).upper() == "RUPTURE" else "🟠"
-            lines.append(f"{icon} {esc(t['produit'])} : {_n(t.get('total') or 0)} (seuil {_n(t.get('seuil') or 0)})")
+    low = _low_stock(totals)
+    if low:
+        lines += ["", "⚠️ <b>Sous le seuil</b> (box + livreurs)"] + low
     return "\n".join(lines)
 
 
@@ -720,7 +725,10 @@ def livreurs_stock(livreurs: dict) -> str:
     lines = ["🚴 <b>Stock chez les livreurs</b>", ""]
     for name, values in livreurs.items():
         have, _ = _qty_list(values)
-        lines.append(f"<b>{esc(name)}</b> : {' · '.join(have) if have else 'rien'}")
+        if have:                                 # un livreur sans rien n'est pas cité
+            lines.append(f"<b>{esc(name)}</b> : {' · '.join(have)}")
+    if len(lines) == 2:
+        lines.append("Aucun stock chez les livreurs.")
     return "\n".join(lines)
 
 
@@ -1145,7 +1153,7 @@ def d_expense(expense: dict, by: dict, livreur: dict) -> str:
 
 
 def _cash_detail(row: dict) -> str:
-    parts = [f"espèces {eur(row['especes'])}"]
+    parts = [f"espèces {eur(row['especes'])}"] if row.get("especes") else []
     if row.get("depenses"):
         parts.append(f"− dépenses {eur(row['depenses'])}")
     if row.get("recupere"):
@@ -1159,23 +1167,30 @@ def _cash_detail(row: dict) -> str:
 def cash_overview(rows: list[dict]) -> str:
     lines = ["💶 <b>Caisse des livreurs</b> — cash à récupérer", ""]
     total = 0.0
-    for row in rows:
+    shown = [r for r in rows if any(abs(float(r.get(k) or 0)) >= 0.01
+                                    for k in ("cash", "especes", "depenses", "recupere", "en_vol", "virement"))]
+    for row in shown:                            # un livreur sans aucun mouvement n'est pas cité
         total += max(0.0, row["cash"])
         lines.append(f"<b>{esc(row['nom'])}</b> : {eur(row['cash'])}")
-        lines.append(f"   {_cash_detail(row)}")
+        detail = _cash_detail(row)
+        if detail:
+            lines.append(f"   {detail}")
         if row.get("virement"):
             lines.append(f"   💳 virements : {eur(row['virement'])}")
-    if not rows:
-        lines.append("Aucun livreur.")
+    if not shown:
+        lines.append("Rien à récupérer : aucun mouvement de cash cette semaine.")
     lines += ["", f"Total à récupérer : <b>{eur(total)}</b>"]
     return "\n".join(lines)
 
 
 def my_cash(row: dict) -> str:
-    lines = [f"💶 <b>Ta caisse — {esc(row['nom'])}</b>", "",
-             f"Espèces encaissées : {eur(row['especes'])}",
-             f"Dépenses et avances : − {eur(row['depenses'])}",
-             f"Déjà remis : − {eur(row['recupere'])}"]
+    lines = [f"💶 <b>Ta caisse — {esc(row['nom'])}</b>", ""]
+    if row.get("especes"):
+        lines.append(f"Espèces encaissées : {eur(row['especes'])}")
+    if row.get("depenses"):
+        lines.append(f"Dépenses et avances : − {eur(row['depenses'])}")
+    if row.get("recupere"):
+        lines.append(f"Déjà remis : − {eur(row['recupere'])}")
     if row.get("en_vol"):
         sign = "+" if row["en_vol"] > 0 else "−"
         lines.append(f"Pas encore dans la feuille : {sign} {eur(abs(row['en_vol']))}")
@@ -1265,10 +1280,10 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
     lines = [f"🔒 <b>Journée close — nuit du {esc(label)}</b>", ""]
     if delivered:
         lines.append(f"📦 <b>{plural(delivered, 'course')} livrée{'s' if delivered > 1 else ''} — {eur(total)}</b>")
-        modes = [f"💵 espèces {eur(pay.get('especes', 0))}", f"💳 virement {eur(pay.get('virement', 0))}"]
-        if pay.get(""):
-            modes.append(f"❔ sans mode {eur(pay[''])}")
-        lines.append("   " + " · ".join(modes))
+        modes = [f"{icon} {label} {eur(pay[k])}" for k, icon, label in
+                 (("especes", "💵", "espèces"), ("virement", "💳", "virement"), ("", "❔", "sans mode")) if pay.get(k)]
+        if modes:
+            lines.append("   " + " · ".join(modes))
     else:
         lines.append("📦 Aucune course livrée.")
     if cancelled or on_site:
@@ -1281,9 +1296,10 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
         lines += ["", "🚴 <b>Par livreur</b>"]
         for name, s in livreurs:
             icon = f" {ICON[s['mode']]}" if s.get("mode") in ICON else ""
-            text = f"• {esc(name)}{icon} — {plural(s['n'], 'course')} — {eur(s['total'])}"
+            text = f"• {esc(name)}{icon}"
             if s["n"]:
-                text += f" (💵 {eur(s['especes'])} · 💳 {eur(s['virement'])})"
+                split = [f"{i} {eur(s[k])}" for k, i in (("especes", "💵"), ("virement", "💳")) if s[k]]
+                text += f" — {plural(s['n'], 'course')} — {eur(s['total'])}" + (f" ({' · '.join(split)})" if split else "")
             if s["depenses"]:
                 text += f" — 🧾 {eur(s['depenses'])}"
             lines.append(text)
@@ -1300,8 +1316,14 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
             lines.append(f"{'⚠️' if wrong else '•'} #{course_id} {esc(name)} : {DETECTED_ICON[detected]}"
                          f" {({'metro': 'métro', 'vehicule': 'véhicule', 'pied': 'à pied'})[detected]}{said}")
 
-    lines += ["", f"🧾 Dépenses : {eur(charges + payes)} (charges {eur(charges)} · payes {eur(payes)})",
-              f"📦 Rechargements : {restocks} — cash récupéré {eur(recovered)}"]
+    extra = []
+    if charges or payes:
+        split = [f"{label} {eur(v)}" for label, v in (("charges", charges), ("payes", payes)) if v]
+        extra.append(f"🧾 Dépenses : {eur(charges + payes)} ({' · '.join(split)})")
+    if restocks or recovered:
+        extra.append(f"📦 Rechargements : {restocks}" + (f" — cash récupéré {eur(recovered)}" if recovered else ""))
+    if extra:
+        lines += [""] + extra
     if swipes:
         lines.append(f"🔁 Swipes entre livreurs : {swipes}")
 
@@ -1313,11 +1335,9 @@ def day_debrief(label: str, *, delivered: int, total: float, pay: dict, cancelle
             lines += [f"• {esc(r['nom'])} : {eur(r['cash'])}" for r in cash_rows]
         else:
             lines.append("   rien, tout est récupéré ✅")
-        if alerts:
-            lines += ["", "⚠️ <b>Stock sous le seuil</b>"]
-            for t in alerts:
-                icon = "🔴" if str(t["statut"]).upper() == "RUPTURE" else "🟠"
-                lines.append(f"{icon} {esc(t['produit'])} : {_n(t.get('total') or 0)} (seuil {_n(t.get('seuil') or 0)})")
+        low = _low_stock(alerts or [])
+        if low:
+            lines += ["", "⚠️ <b>Stock sous le seuil</b>"] + low
     lines += ["", "✅ Journée terminée. Bon repos !"]
     return "\n".join(lines)
 
@@ -1444,8 +1464,9 @@ def sales_preview(blocks: list[dict], tab: str, done: bool = False) -> str:
             lines.append(f"{icon} {line['q']} {esc(line['p'])} — {price}")
             totals[line["pay"]] += float(line["x"])
             n += 1
-    lines += ["", f"Total : 💵 espèces {eur(totals['especes'])} · 💳 virement {eur(totals['virement'])} "
-                  f"— {plural(n, 'ligne')}"]
+    parts = [f"{icon} {label} {eur(totals[k])}" for k, icon, label in
+             (("especes", "💵", "espèces"), ("virement", "💳", "virement")) if totals[k]]
+    lines += ["", f"Total : {' · '.join(parts) or '🎁 tout offert'} — {plural(n, 'ligne')}"]
     if not done:
         lines += ["", "Tout est bon ?"]
     return "\n".join(lines)

@@ -55,3 +55,13 @@ def test_target_night_for_a_late_recap():
     assert sales.target_night("hier", wed) == date(2026, 10, 6)
     assert sales.target_night("aujourd’hui", wed) == wed
     assert sales.target_night("demain", wed) is None and sales.target_night("lu", wed) is None
+
+
+def test_preview_total_hides_zero_parts():
+    from bot import texts
+
+    only_cash = [{"livreur": "Livreur A", "lines": [{"pay": "especes", "q": 2, "p": "US", "x": 60.0}]}]
+    text = texts.sales_preview(only_cash, "Lundi").replace("\xa0", " ")
+    assert "Total : 💵 espèces 60 € — 1 ligne" in text and "virement" not in text
+    gift = [{"livreur": "Livreur A", "lines": [{"pay": "especes", "q": 1, "p": "US", "x": 0.0}]}]
+    assert "Total : 🎁 tout offert — 1 ligne" in texts.sales_preview(gift, "Lundi")
