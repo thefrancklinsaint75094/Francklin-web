@@ -528,4 +528,8 @@ simple qui respecte le mur de confidentialité (§12).
      à /start, /aide, /dispo, /pause), qui passe avant tout état en cours ; les messages parlent des boutons
      plutôt que des commandes. Transport : question séparée, un bouton par ligne en toutes lettres (les trois
      boutons côte à côte étaient coupés et sans explication), confirmation en clair.
+136. **/encours plus complet, menus toujours à jour** (demande de l'exploitant : savoir combien de courses ont été
+     livrées). « En ce moment » ajoute la nuit en cours, les livrées (nombre, montant, 💵/💳, par livreur) et les
+     annulées. Le bouton « Menu » de Telegram n'était mis à jour qu'au /start : au démarrage du bot, la liste des
+     commandes de chaque utilisateur actif est renvoyée (tâche de fond, sans retarder le démarrage).
 
