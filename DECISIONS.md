@@ -487,3 +487,10 @@ simple qui respecte le mur de confidentialité (§12).
      `PICK_TIMEOUT_MINUTES` la course part en diffusion (une commande oubliée serait pire qu'un mauvais
      livreur) ; l'attente est en mémoire (après un redémarrage, diffusion) ; `kick_pending` ne diffuse pas une
      course en attente de choix. Réglable : `FRANCHISE_PICKS_LIVREUR=0` revient à la diffusion seule.
+129. **Pas de zéros affichés** (demande de l'exploitant : « Livreur A 0 MSX ça sert à rien », pareil pour les
+     ventes). `/stock` ne cite plus les produits à 0 ni les livreurs sans rien ; « Sous le seuil » (`/stock`,
+     `/close`) ne cite que les produits encore en stock — un produit jamais stocké (KT, 3F…) restait sinon en
+     « rupture 0 » à chaque fois ; `/caisse`, `/macaisse`, `/close` et l'aperçu de `/ventes` taisent les montants
+     à 0 € (virement, payes, rechargements…) et les livreurs sans mouvement. Les alertes d'événement (« n'a
+     plus de DIV sur lui ») restent. Dans les feuilles, format qui masque 0 sur la valeur du stock (Compta) et
+     la caisse des livreurs (SOLDES ④).
