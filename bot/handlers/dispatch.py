@@ -538,7 +538,8 @@ async def synchro(update: Update, context) -> None:
     cfg = config.get()
     night = _current_night()
     start, end = night_bounds(night, cfg.night_end_hour)
-    delivered = await db.list_delivered_between(start, end)
+    # Une course dont la modification attend le franchisé n'est écrite qu'après sa décision.
+    delivered = [c for c in await db.list_delivered_between(start, end) if not c.get("pending_edit")]
     restocks = await db.list_restocks_between(start, end)
     expenses = await db.list_expenses_between(start, end)
     sold = await db.list_sales_between(start, end)

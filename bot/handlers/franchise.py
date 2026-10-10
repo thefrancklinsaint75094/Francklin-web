@@ -502,3 +502,50 @@ async def mes_courses(update: Update, context) -> None:
     ordered = [courses[k] for k in sorted(courses)]
     livreurs = await db.get_users(c["livreur_id"] for c in ordered if c.get("livreur_id"))
     await messaging.reply(update, texts.mes_courses(ordered, livreurs))
+
+
+# ================================================================ modification du livreur : le franchisé décide
+
+@common.callback
+async def edit_decision(update: Update, context):
+    """me:<course>:ok|no — le franchisé (ou un admin) valide ou refuse la « Modif » du livreur."""
+    from bot.services import stock
+
+    user = await common.actor(update)
+    _, course_id, verdict = (update.callback_query.data or "::").split(":", 2)
+    course = await db.get_course(int(course_id or 0))
+    if course is None or user is None or user["status"] != "active" or \
+            (course["franchise_id"] != user["id"] and not common.is_admin(user)):
+        return None
+    chat_id, msg_id = update.effective_chat.id, update.callback_query.message.message_id
+    pending = course.get("pending_edit")
+    if not pending:
+        await messaging.edit_markup(context.bot, chat_id, msg_id, None)
+        return texts.EDIT_ALREADY_DECIDED, True
+    accepted = verdict == "ok"
+    fields = {"pending_edit": None}
+    if accepted:
+        fields.update(products=pending["products"], price=pending["price"])
+    updated = await db.update_course_if_status(course["id"], ["assigned", "delivered"], fields)
+    if updated is None:                                 # course annulée entre-temps
+        await db.update_course(course["id"], {"pending_edit": None})
+        await messaging.edit_markup(context.bot, chat_id, msg_id, None)
+        return texts.COURSE_FINISHED, True
+    text = texts.edit_decided(course["id"], accepted, pending, user["display_name"])
+    await messaging.edit(context.bot, chat_id, msg_id, text)
+    livreur = await db.get_user(updated["livreur_id"]) if updated.get("livreur_id") else None
+    if livreur:
+        await messaging.send(context.bot, livreur, text)
+        if accepted and updated["status"] == "assigned":
+            franchise = await db.get_user(updated["franchise_id"]) or {}
+            await messaging.edit(context.bot, livreur["telegram_id"], updated.get("livreur_message_id"),
+                                 texts.full_fiche(updated, franchise), keyboards.livreur_course(updated["id"]),
+                                 user=livreur, resend_if_old=False)
+    await lifecycle.refresh_franchise_message(context, updated, livreur=livreur)
+    if user["role"] != "dispatch":
+        await messaging.notify_dispatch(context.bot, text)
+    await db.log_event("course_edit_decided", course["id"], user["id"], {"accepted": accepted, **pending})
+    if updated["status"] == "delivered":
+        stock.after_delivery_later(context, updated, livreur)   # la feuille reçoit la version décidée
+    return "Validée ✅" if accepted else "Refusée"
+

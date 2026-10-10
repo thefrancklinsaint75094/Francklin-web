@@ -1054,16 +1054,27 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     await h.press_data(L1, screen(), "oe_s:-1")
     assert "💶 <b>Total : 130 €</b>" in txt(screen())
 
+    # Le franchisé a le dernier mot : la commande ne change qu'à sa validation.
     await h.press_data(L1, screen(), "oe_ok")
     saved = await db.get_course(course["id"])
+    assert float(saved["price"]) == 60 and saved["pending_edit"]["price"] == 130
+    assert "💶 60 € à encaisser" in txt(screen())                 # fiche inchangée en attendant
+    assert h.tg.last(L1).text == texts.edit_sent(course["id"], "Franchisé 1")
+    request = h.tg.find(F1, "a modifié la course")
+    assert "Avant : 2 vodka + coca — 60 €" in txt(request)
+    assert "Après : <b>3 vodka (90 €) + 1 coca (20 €) + 1 DIV (20 €) — 130 €</b>" in txt(request)
+    assert [d for _, d in request.buttons] == [f"me:{course['id']}:ok", f"me:{course['id']}:no"]
+    assert "En attente de la validation du franchisé." in txt(h.tg.find(DISPATCH, "a modifié la course"))
+    await h.press_data(F1, request, f"me:{course['id']}:ok")
+    saved = await db.get_course(course["id"])
     assert saved["products"] == "3 vodka (90 €) + 1 coca (20 €) + 1 DIV (20 €)"
-    assert float(saved["price"]) == 130
+    assert float(saved["price"]) == 130 and saved["pending_edit"] is None
+    assert "validée par Franchisé 1" in txt(h.tg.messages[(F1, request.message_id)])
     assert "💶 130 € à encaisser" in txt(screen()) and "   • 1 DIV (20 €)" in txt(screen())
     assert "order_edit:" in [d.split(":")[0] + ":" for _, d in screen().buttons]
-    assert f"✏️ Course #{course['id']} modifiée par Livreur 1 sur place" in txt(h.tg.find(F1, "modifiée par"))
-    assert "(avant : 60 €)" in txt(h.tg.find(F1, "modifiée par"))
     assert "130 €" in txt(h.tg.find(F1, f"Course #{course['id']} — prise par"))
-    assert f"✏️ #{course['id']} — modifiée par Livreur 1 — 60 € → 130 €" in txt(h.tg.find(DISPATCH, "modifiée par"))
+    await h.press_data(F1, request, f"me:{course['id']}:ok")         # déjà traitée
+    assert h.tg.answers()[-1]["text"] == texts.EDIT_ALREADY_DECIDED
     user = await db.get_user(l1["id"])
     assert user["conversation_state"] is None
 
@@ -2311,9 +2322,11 @@ async def test_swipe_between_livreurs(h, monkeypatch):
     cash_svc.done(l2["id"], token)
     monkeypatch.setattr(sheets, "push_restock", real_push)
 
-    # /close : les swipes à part, pas comptés comme rechargements.
-    await h.text(DISPATCH, "/close")
-    debrief = h.tg.last(DISPATCH).text
+    # /close : les swipes à part, pas comptés comme rechargements (nuit en cours, quelle que soit l'heure).
+    from bot.handlers import close_day
+    from bot.timeutil import night_start_date, now_utc
+
+    debrief = await close_day.build_debrief(night_start_date(now_utc(), 6))
     assert "📦 Rechargements" not in debrief and "🔁 Swipes entre livreurs : 3" in debrief
 
 
@@ -2452,3 +2465,72 @@ async def test_franchise_picks_livreur(h, test_config):
                                                  job=SimpleNamespace(data=c4["id"])))
     assert texts.pick_timeout(c4["id"]) in h.tg.texts(F2)
     assert await db.list_broadcasts(c4["id"]) != []
+
+
+async def test_livreur_validates_with_ok_or_modif(h, monkeypatch):
+    """« OK » valide la course en cours (espèces ; « OK CB » : virement) ; il faut la valider avant la
+    suivante. « Modif » : l'éditeur, la modification part au franchisé, le paiement valide la livraison ;
+    la feuille n'est écrite qu'après la décision du franchisé, qui a le dernier mot."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    c1 = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c1['id']}"), "course_take:")
+    # Une deuxième course pour lui pendant sa livraison (choisie par le franchisé).
+    c2 = await order(h, F2, "oberkampf")
+    won = await db.take_course(c2["id"], l1["id"])
+    await lifecycle.after_assignment(h.context, won, await db.get_user(l1["id"]), None)
+    fiche2 = h.tg.find(L1, f"🚴 Course #{c2['id']} — c'est pour toi")
+
+    await h.text(L1, "ok merci")                                 # pas une validation
+    assert h.tg.last(L1).text == texts.LIVREUR_TEXT_HINT
+    await h.press_data(L1, fiche2, f"course_deliver:{c2['id']}")
+    assert h.tg.answers()[-1]["text"] == texts.finish_first(c1["id"])
+
+    await h.text(L1, "OK")
+    done = await db.get_course(c1["id"])
+    assert done["status"] == "delivered" and done["payment"] == "especes"
+    assert texts.course_validated(done) in h.tg.texts(L1)
+    assert h.tg.last(L1).text.startswith("🔔 <b>Course suivante, à faire maintenant</b>")
+    await asyncio.gather(*list(sheets._tasks))
+    assert [s["prix"] for s in sent] == [60.0]
+
+    # « Modif » sur la course en cours : une vodka de plus, 80 € au lieu de 50.
+    await h.text(L1, "modif")
+    editor = h.tg.last(L1)
+    assert "modifier la commande" in editor.text
+    await h.press_data(L1, editor, "oe_q:0:1")
+    await h.press_data(L1, h.tg.messages[(L1, editor.message_id)], "oe_s:0")
+    await h.press_data(L1, h.tg.messages[(L1, editor.message_id)], "oe_p:0:30")
+    await h.press_data(L1, h.tg.messages[(L1, editor.message_id)], "oe_ok")
+    ask = h.tg.messages[(L1, editor.message_id)]
+    assert ask.text.startswith(f"✏️ Modification de la course #{c2['id']} envoyée à Franchisé 2")
+    assert [d for _, d in ask.buttons][:2] == [f"pay:{c2['id']}:e", f"pay:{c2['id']}:v"]
+    await h.press_data(L1, ask, f"pay:{c2['id']}:v")
+    delivered = await db.get_course(c2["id"])
+    assert delivered["status"] == "delivered" and delivered["payment"] == "virement"
+    assert float(delivered["price"]) == 50 and delivered["pending_edit"]["price"] == 80
+    await asyncio.gather(*list(sheets._tasks))
+    assert len(sent) == 1                                        # la feuille attend la décision
+
+    # Le franchisé refuse : la commande reste comme avant, et part dans la feuille.
+    request = h.tg.find(F2, "a modifié la course")
+    await h.press_data(F2, request, f"me:{c2['id']}:no")
+    final = await db.get_course(c2["id"])
+    assert float(final["price"]) == 50 and final["pending_edit"] is None
+    assert h.tg.last(L1).text == texts.edit_decided(c2["id"], False, {}, "Franchisé 2")
+    await asyncio.gather(*list(sheets._tasks))
+    assert [s["prix"] for s in sent] == [60.0, 50.0]
+
+    await h.text(L1, "OK CB")
+    assert h.tg.last(L1).text == texts.NO_ASSIGNED

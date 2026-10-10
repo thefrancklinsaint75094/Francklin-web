@@ -159,6 +159,7 @@ def register_handlers(app: Application) -> None:
         (r"^draft_confirm:", franchise.confirm),
         (r"^fp:", franchise.pick_livreur),
         (r"^fp_auto:", franchise.pick_auto),
+        (r"^me:", franchise.edit_decision),
         (r"^draft_edit:", franchise.edit_draft),
         (r"^draft_edit_cancel:", franchise.cancel_edit),
         (r"^draft_cancel:", franchise.cancel_draft),

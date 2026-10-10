@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections import defaultdict
 from datetime import timedelta
 
@@ -10,10 +11,14 @@ from telegram import Update
 
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, relay
-from bot.services import broadcast, catalog, lifecycle, order_edit
+from bot.services import broadcast, catalog, lifecycle, order_edit, sales
 from bot.timeutil import iso, now_utc, parse_ts
 
 log = logging.getLogger(__name__)
+
+# Validation en texte de la course en cours : « OK » (espèces ; « OK CB » / « OK virement »), ou « Modif ».
+OK_RE = re.compile(r"^\s*(?:ok+|okay|oké|okey|valid[ée]e?|livr[ée]e?)(?![\w])(?P<rest>.*)$", re.I | re.S)
+MODIF_RE = re.compile(r"^\s*modif(?:ier|ication|i[ée]e?|s)?(?![\w])", re.I)
 
 # Un livreur qui appuie sur deux propositions à la fois ne doit pas dépasser 1 + 1.
 _livreur_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -127,7 +132,51 @@ async def on_message(update: Update, context, user: dict, state: str | None, pay
         if course_id:
             await relay.relay_text(update, context, user, course_id, msg.text)
             return
+    if msg.text and (_ok_payment(msg.text) or MODIF_RE.match(msg.text)):
+        await validate_text(update, context, user, msg.text)
+        return
     await messaging.reply(update, texts.LIVREUR_TEXT_HINT)
+
+
+def _ok_payment(text: str) -> str | None:
+    """« OK » seul → espèces ; « OK CB », « ok virement » → virement. Autre chose (« ok merci ») → None :
+    seul un « OK » net valide une course."""
+    m = OK_RE.match(text or "")
+    if not m:
+        return None
+    rest = m["rest"].strip(" .!")
+    if not rest:
+        return "especes"
+    payment, left = sales.split_payment(rest)
+    return payment if payment and not left.strip(" .!") else None
+
+
+async def current_course(user: dict) -> dict | None:
+    """La course en cours du livreur : la plus ancienne qu'il a (les suivantes attendent qu'il la valide)."""
+    assigned = await db.list_assigned_for_livreur(user["id"])
+    return min(assigned, key=lambda c: (c.get("assigned_at") or "", c["id"])) if assigned else None
+
+
+async def validate_text(update: Update, context, user: dict, text: str) -> None:
+    """« OK » : la course en cours est livrée (espèces, ou virement avec « OK CB »).
+    « Modif » : l'éditeur s'ouvre ; la modification part au franchisé, puis le paiement valide la livraison."""
+    async with _livreur_locks[user["id"]]:
+        course = await current_course(user)
+        if course is None:
+            await messaging.reply(update, texts.NO_ASSIGNED)
+            return
+        payment = _ok_payment(text)
+        if payment:
+            updated = await lifecycle.deliver(context, course, payment=payment, ack=True)
+            if updated is None:
+                await messaging.reply(update, texts.COURSE_FINISHED)
+            return
+        cat = await catalog.load()
+        lines = order_edit.lines_from_course(course, cat)
+        sent = await messaging.reply(update, texts.order_editor(course["id"], lines, None),
+                                     keyboards.order_editor(lines, None))
+        await _save_edit(user, {"course_id": course["id"], "lines": lines, "orig": lines, "sel": None,
+                                "msg": sent.message_id if sent else None, "deliver": True})
 
 
 # ================================================================ prise de course
@@ -175,6 +224,9 @@ async def deliver(update: Update, context):
         return "Déjà livrée."
     if course["status"] != "assigned":
         return texts.COURSE_FINISHED, True
+    current = await current_course(user)
+    if current and current["id"] != course["id"]:
+        return texts.finish_first(current["id"]), True
     # Le client a payé comment ? Le choix valide la livraison.
     await messaging.edit_markup(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                                 keyboards.payment_choice(course["id"]))
@@ -196,6 +248,9 @@ async def pay(update: Update, context):
     if course["status"] != "assigned":
         return texts.COURSE_FINISHED, True
     message_id = update.callback_query.message.message_id
+    current = await current_course(user)
+    if parts[0] != "pay_back" and current and current["id"] != course["id"]:
+        return texts.finish_first(current["id"]), True
     if parts[0] == "pay_back":
         await messaging.edit_markup(context.bot, update.effective_chat.id, message_id,
                                     keyboards.livreur_course(course["id"]))
@@ -444,6 +499,10 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
         return texts.ORDER_EDIT_EMPTY, True
     if order_edit.same(lines, payload.get("orig") or []):
         await db.clear_state(user["id"])
+        if payload.get("deliver"):              # « Modif » sans rien changer : il reste à valider le paiement
+            await messaging.edit(context.bot, chat_id, payload["msg"], texts.PAYMENT_PROMPT,
+                                 keyboards.payment_choice(course["id"]))
+            return texts.ORDER_EDIT_UNCHANGED
         await _back_to_card(context, chat_id, payload["msg"], course, user)
         return texts.ORDER_EDIT_UNCHANGED
     missing = order_edit.missing_prices(lines)
@@ -454,9 +513,8 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
         return texts.order_edit_off_step(off), True
     fields = {"products": order_edit.products_text(lines), "price": order_edit.total(lines)}
     if _edit_mode(user, course) == "livreur":
-        updated = await db.update_course_if_status(course["id"], ["assigned"], fields, livreur_id=user["id"])
-    else:
-        updated = await db.update_course_if_status(course["id"], ["pending", "assigned"], fields)
+        return await _edit_request(context, chat_id, user, payload, course, fields)
+    updated = await db.update_course_if_status(course["id"], ["pending", "assigned"], fields)
     await db.clear_state(user["id"])
     if updated is None:
         await messaging.edit_markup(context.bot, chat_id, payload["msg"], None)
@@ -468,6 +526,37 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
     })
     await _notify_modified(context, user, course, updated)
     return "Commande modifiée ✅"
+
+
+async def _edit_request(context, chat_id: int, user: dict, payload: dict, course: dict, fields: dict):
+    """La modification du livreur part au franchisé, qui a le dernier mot (✅ / ❌). La commande ne change
+    qu'à sa validation ; une course livrée entre-temps n'est écrite dans la feuille qu'après sa décision."""
+    pending = {**fields, "by": user["id"], "at": iso(now_utc())}
+    updated = await db.update_course_if_status(course["id"], ["assigned"], {"pending_edit": pending},
+                                               livreur_id=user["id"])
+    await db.clear_state(user["id"])
+    if updated is None:
+        await messaging.edit_markup(context.bot, chat_id, payload["msg"], None)
+        return texts.COURSE_FINISHED, True
+    franchise = await db.get_user(course["franchise_id"]) or {}
+    if franchise:
+        await messaging.send(context.bot, franchise, texts.edit_request(course, user, pending),
+                             keyboards.edit_decision(course["id"]))
+    await messaging.notify_dispatch(context.bot, texts.edit_request(course, user, pending)
+                                    .replace("Tu valides ? (c'est toi qui as le dernier mot)",
+                                             "En attente de la validation du franchisé."))
+    await db.log_event("course_edit_requested", course["id"], user["id"], {
+        "before": {"products": course["products"], "price": float(course["price"])},
+        "after": {"products": pending["products"], "price": float(pending["price"])},
+    })
+    name = franchise.get("display_name") or "le franchisé"
+    if payload.get("deliver"):
+        await messaging.edit(context.bot, chat_id, payload["msg"], texts.edit_sent_ask_payment(course, name),
+                             keyboards.payment_choice(course["id"]))
+    else:
+        await _back_to_card(context, chat_id, payload["msg"], course, user)
+        await messaging.send(context.bot, user, texts.edit_sent(course["id"], name))
+    return "Envoyée au franchisé ✅"
 
 
 async def _notify_modified(context, editor: dict, before: dict, updated: dict) -> None:

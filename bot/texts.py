@@ -72,8 +72,10 @@ WELCOME_LIVREUR = (
     "/macaisse — le cash que tu dois remettre\n\n"
     "Tu ne reçois que les courses proches de toi. Une seule à la fois — appuie sur « Bientôt libre » "
     "quand tu termines pour enchaîner.\n\n"
-    "Le client prend autre chose ? « ✏️ Modifier la commande » sur ta course : ➖ / ➕ pour les quantités, "
-    "➕ Ajouter un produit pour choisir dans la liste, et les boutons de prix (de 10 en 10 €). Rien à taper."
+    "Course livrée : écris <b>OK</b> (« OK CB » si payé par carte ou virement). Il faut valider ta course "
+    "avant de passer à la suivante.\n"
+    "Le client a pris autre chose ? Écris <b>Modif</b> : ➖ / ➕ pour les quantités, ➕ Ajouter un produit, "
+    "les boutons de prix (de 10 en 10 €) ; le franchisé valide ta modification."
     "\n\n" + LIVE_GUIDE
 )
 
@@ -178,7 +180,9 @@ ALREADY_HANDLED = "Déjà traité."
 
 GENERIC_ERROR = "Petit souci technique de mon côté, ton message est bien noté. Réessaie dans une minute."
 ONLY_TEXT_OR_VOICE = "Je ne traite que les commandes en texte ou en vocal."
-LIVREUR_TEXT_HINT = "Pour parler à un franchisé, utilise le bouton 💬 Contacter sur ta course."
+LIVREUR_TEXT_HINT = ("Course livrée ? Écris <b>OK</b> (ou « OK CB » si payé par carte / virement), "
+                     "ou <b>Modif</b> si le client a pris autre chose.\n"
+                     "Pour parler à un franchisé, utilise le bouton 💬 Contacter sur ta course.")
 NOT_FOR_YOU = "Cette commande n'est pas disponible pour toi."
 CANCELLED_OP = "OK, rien n'a changé."
 
@@ -407,7 +411,7 @@ def full_fiche(course: dict, franchise: dict) -> str:
     who = esc(franchise.get("display_name") or "Franchisé")
     if franchise.get("telegram_username"):
         who += f" — @{esc(franchise['telegram_username'])}"
-    lines += ["", who]
+    lines += ["", who, "", "✅ Livrée : écris <b>OK</b> · ✏️ autre chose vendu : écris <b>Modif</b>"]
     return "\n".join(lines)
 
 
@@ -1657,4 +1661,42 @@ def next_course_for_livreur(course: dict, franchise: dict) -> str:
 
 def pick_timeout(course_id: int) -> str:
     return f"⏱ Pas de livreur choisi pour la course #{course_id} : je l'envoie au plus proche."
+
+
+# ================================================================ validation « OK » / « Modif » du livreur
+
+def finish_first(course_id: int) -> str:
+    return f"Valide d'abord ta course en cours (#{course_id}) : écris OK (ou Modif) quand elle est livrée."
+
+
+def course_validated(course: dict) -> str:
+    return f"✅ Course #{course['id']} validée — {eur(course['price'])}{_pay(course)}."
+
+
+def edit_sent_ask_payment(course: dict, franchise_name: str) -> str:
+    return (f"✏️ Modification de la course #{course['id']} envoyée à {esc(franchise_name)} : c'est lui qui valide.\n\n"
+            f"{PAYMENT_PROMPT} (le choix valide la livraison)")
+
+
+def edit_sent(course_id: int, franchise_name: str) -> str:
+    return f"✏️ Modification de la course #{course_id} envoyée à {esc(franchise_name)} : il doit la valider."
+
+
+def edit_request(course: dict, livreur: dict, pending: dict) -> str:
+    return "\n".join([
+        f"✏️ <b>{esc(livreur.get('display_name') or 'Le livreur')} a modifié la course #{course['id']}</b>",
+        f"📍 {esc(course['address'])}", "",
+        f"Avant : {esc(course.get('products') or '?')} — {eur(course['price'])}",
+        f"Après : <b>{esc(pending['products'])} — {eur(pending['price'])}</b>", "",
+        "Tu valides ? (c'est toi qui as le dernier mot)",
+    ])
+
+
+def edit_decided(course_id: int, accepted: bool, pending: dict, by: str) -> str:
+    if accepted:
+        return f"✅ Modification de la course #{course_id} validée par {esc(by)} : {esc(pending['products'])} — {eur(pending['price'])}."
+    return f"❌ Modification de la course #{course_id} refusée par {esc(by)} : la commande reste comme avant."
+
+
+EDIT_ALREADY_DECIDED = "Cette modification a déjà été traitée."
 
