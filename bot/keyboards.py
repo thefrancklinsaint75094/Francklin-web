@@ -222,7 +222,8 @@ def delete_confirm(user_id: str) -> M:
 def catalog(products: list[dict]) -> M:
     rows = [[B("➕ Ajouter des produits", callback_data="prod_add")]]
     for p in products:
-        rows.append([B(f"🗑 {p['name'][:50]}", callback_data=f"prod_del:{p['id']}")])
+        rows.append([B(f"✏️ {p['name'][:40]}", callback_data=f"prod_edit:{p['id']}"),
+                     B("🗑", callback_data=f"prod_del:{p['id']}")])
     return M(rows)
 
 

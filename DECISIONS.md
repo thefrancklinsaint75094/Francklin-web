@@ -518,3 +518,9 @@ simple qui respecte le mur de confidentialité (§12).
      contrôles « franchisé » acceptent le dispatch (`common.can_order`, `require(role="franchise")`). La course a
      le dispatch pour franchisé ; pas d'avis « 🆕 » à lui-même. Il reçoit une copie de chaque message relayé
      franchisé ↔ livreur (pas des siens).
+134. **✏️ Modifier un produit** (demande de l'exploitant : on pouvait supprimer, pas modifier). Une ligne à
+     renvoyer, au même format que l'ajout : « Nom : surnoms » remplace tout (la ligne actuelle est donnée en
+     `<code>` pour la copier), « + surnoms » ajoute. Un nom déjà pris est refusé ; un surnom partagé est
+     signalé comme à l'ajout. Renommer met à jour les goûts cochés chez les livreurs ; le message rappelle que
+     le nom doit rester celui des colonnes des feuilles.
+

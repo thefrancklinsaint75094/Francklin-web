@@ -1055,6 +1055,30 @@ CATALOG_NOTHING = "Je n'ai trouvé aucun produit dans ton message."
 CATALOG_DELETED = "Produit supprimé."
 
 
+def catalog_edit_prompt(product: dict) -> str:
+    current = product["name"] + (f" : {', '.join(product['aliases'])}" if product.get("aliases") else "")
+    return ("✏️ <b>Modifier " + esc(product["name"]) + "</b>\n\nActuellement :\n<code>" + esc(current) + "</code>\n\n"
+            "• Renvoie la ligne corrigée (touche-la pour la copier) : <code>Nom : surnom, surnom</code> — "
+            "le nom et tous les surnoms sont remplacés ;\n"
+            "• ou seulement <code>+ surnom, surnom</code> pour ajouter des surnoms.\n\n"
+            "⚠️ Le nom doit rester celui des colonnes des tableaux : si tu le changes ici, change-le aussi "
+            "dans les feuilles (Dispatch, Rechargement, Compta).")
+
+
+def catalog_edited(product: dict, conflicts: list) -> str:
+    lines = [f"✅ <b>{esc(product['name'])}</b>" + (f" — <i>{esc(', '.join(product['aliases']))}</i>"
+                                                     if product.get("aliases") else " — aucun surnom")]
+    for alias, others in conflicts:
+        lines.append(f"⚠️ « {esc(alias)} » désigne aussi : {esc(', '.join(others))} — le bot demandera de préciser.")
+    return "\n".join(lines)
+
+
+def catalog_edit_error(error: str, others: list) -> str:
+    if error == "name_taken":
+        return f"⚠️ Ce nom est déjà celui de : {esc(', '.join(others))}. Rien n'a changé — renvoie une autre ligne."
+    return "⚠️ Je n'ai pas compris. Envoie une seule ligne : <code>Nom : surnom, surnom</code> (ou <code>+ surnom</code>)."
+
+
 def catalog_list(products: list[dict], for_dispatch: bool = False) -> str:
     if not products:
         text = "📦 Catalogue vide pour l'instant."
@@ -1066,7 +1090,7 @@ def catalog_list(products: list[dict], for_dispatch: bool = False) -> str:
             line += f" — <i>{esc(', '.join(p['aliases']))}</i>"
         lines.append(line)
     if for_dispatch:
-        lines += ["", "🗑 sous un produit pour le supprimer."]
+        lines += ["", "✏️ pour modifier un produit (nom, surnoms) · 🗑 pour le supprimer."]
     return "\n".join(lines)
 
 

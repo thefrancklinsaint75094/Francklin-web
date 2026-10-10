@@ -502,11 +502,44 @@ async def catalog_cancel(update: Update, context):
     user = await _dispatch(update)
     if user is None:
         return None
-    if user.get("conversation_state") == "adding_products":
+    if user.get("conversation_state") in ("adding_products", "editing_product"):
         await db.clear_state(user["id"])
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.CANCELLED_OP)
     return None
+
+
+@common.callback
+async def catalog_edit(update: Update, context):
+    """prod_edit:<produit> : le bot attend la ligne corrigée (« Nom : surnoms » ou « + surnoms »)."""
+    user = await _dispatch(update)
+    if user is None:
+        return None
+    product = await db.get_product(common.arg(update, int))
+    if product is None:
+        return texts.ALREADY_HANDLED
+    await db.set_state(user["id"], "editing_product", {"id": product["id"]},
+                       now_utc() + timedelta(minutes=CATALOG_STATE_MINUTES))
+    await messaging.reply(update, texts.catalog_edit_prompt(product), keyboards.catalog_cancel())
+    return None
+
+
+async def save_product_edit(update: Update, user: dict, text: str, payload: dict) -> None:
+    product = await db.get_product(int(payload.get("id") or 0))
+    if product is None:
+        await db.clear_state(user["id"])
+        await messaging.reply(update, texts.ALREADY_HANDLED)
+        return
+    updated, error, extra = await catalog_service.edit_product(product, text)
+    if error:
+        await messaging.reply(update, texts.catalog_edit_error(error, extra))   # l'état reste : il renvoie
+        return
+    await db.clear_state(user["id"])
+    await db.log_event("catalog_edited", user_id=user["id"], payload={
+        "before": {"name": product["name"], "aliases": product.get("aliases") or []},
+        "after": {"name": updated["name"], "aliases": updated.get("aliases") or []}})
+    await messaging.reply(update, texts.catalog_edited(updated, extra))
+    await _send_catalog(update)
 
 
 @common.callback

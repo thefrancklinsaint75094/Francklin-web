@@ -471,6 +471,10 @@ async def remove_livreur_variant(livreur_name: str, product: str, variant: str |
     await q.execute()
 
 
+async def rename_variant_product(old: str, new: str) -> None:
+    await _t("livreur_variants").update({"product": new}).eq("product", old).execute()
+
+
 async def list_prenoms() -> list[dict]:
     return (await _t("prenoms").select("*").execute()).data
 

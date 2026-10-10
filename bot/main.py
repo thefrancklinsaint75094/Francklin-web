@@ -211,6 +211,7 @@ def register_handlers(app: Application) -> None:
         (r"^prod_add$", dispatch.catalog_add),
         (r"^prod_cancel$", dispatch.catalog_cancel),
         (r"^prod_del:", dispatch.catalog_delete),
+        (r"^prod_edit:", dispatch.catalog_edit),
     ]
     for pattern, fn in callbacks:
         app.add_handler(CallbackQueryHandler(fn, pattern=pattern))

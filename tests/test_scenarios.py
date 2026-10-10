@@ -2685,3 +2685,40 @@ async def test_dispatch_orders_like_a_franchise(h):
 
     await h.text(DISPATCH, "/mescourses")
     assert f"#{course['id']}" in h.tg.last(DISPATCH).text
+
+
+async def test_catalog_edit_product(h):
+    """/produits : ✏️ à côté de 🗑. On renvoie « Nom : surnoms » (tout est remplacé) ou « + surnom »
+    (ajout) ; un nom déjà pris est refusé, le bot attend une autre ligne ; Annuler sort."""
+    await h.text(DISPATCH, "/start")
+    msx = await db.create_product("MSX", "msx", ["mx"])
+    await db.create_product("DIV", "div", [])
+    await h.text(DISPATCH, "/produits")
+    menu = h.tg.last(DISPATCH)
+    assert ("✏️ MSX", f"prod_edit:{msx['id']}") in menu.buttons and ("🗑", f"prod_del:{msx['id']}") in menu.buttons
+
+    await h.press_data(DISPATCH, menu, f"prod_edit:{msx['id']}")
+    assert "<code>MSX : mx</code>" in h.tg.last(DISPATCH).text
+    await h.text(DISPATCH, "DIV : divin")                          # nom déjà pris : refusé
+    assert h.tg.last(DISPATCH).text.startswith("⚠️ Ce nom est déjà celui de : DIV")
+    await h.text(DISPATCH, "MSX : masterx, mx")                     # tout remplacé
+    p = await db.get_product(msx["id"])
+    assert (p["name"], p["aliases"]) == ("MSX", ["masterx", "mx"])
+    assert "✅ <b>MSX</b> — <i>masterx, mx</i>" in h.tg.texts(DISPATCH)
+
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"prod_edit:{msx['id']}")
+    await h.text(DISPATCH, "+ msix, div")                          # ajout ; « div » désigne déjà DIV
+    p = await db.get_product(msx["id"])
+    assert p["aliases"] == ["masterx", "mx", "msix", "div"]
+    assert any("« div » désigne aussi : DIV" in t for t in h.tg.texts(DISPATCH))
+
+    # Renommer : les goûts cochés chez les livreurs suivent.
+    await db.add_livreur_variants("Livreur A", "MSX", ["banane"])
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"prod_edit:{msx['id']}")
+    await h.text(DISPATCH, "MSX2 : mx")
+    assert (await db.get_product(msx["id"]))["name"] == "MSX2"
+    assert [r["product"] for r in await db.list_livreur_variants("Livreur A")] == ["MSX2"]
+
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"prod_edit:{msx['id']}")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "prod_cancel")
+    assert (await db.get_user_by_tg(DISPATCH))["conversation_state"] is None

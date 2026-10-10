@@ -139,3 +139,36 @@ async def add_products(entries: list[tuple[str, list[str]]]) -> dict:
         by_key[key] = existing
         catalog = Catalog(list(by_key.values()))
     return summary
+
+
+async def edit_product(product: dict, text: str) -> tuple[dict | None, str | None, list]:
+    """✏️ d'un produit. « Nom : surnom, surnom » remplace le nom et tous les surnoms ; « + surnom, surnom »
+    ajoute seulement des surnoms. Renvoie (produit à jour, erreur, conflits [(surnom, autres produits)])."""
+    text = " ".join((text or "").split())
+    catalog = await load()
+    if text.startswith("+"):
+        name = product["name"]
+        aliases = list(product.get("aliases") or []) + [a for a in (" ".join(x.split()) for x in SPLIT_ALIASES_RE.split(text[1:])) if a]
+    else:
+        entries = parse_input(text)
+        if len(entries) != 1:
+            return None, "format", []
+        name, aliases = entries[0]
+    key = normalize(name)
+    if catalog.conflicts(key, product["id"]):
+        return None, "name_taken", catalog.conflicts(key, product["id"])
+    clean, seen, conflicts = [], {key}, []
+    for alias in aliases:
+        akey = normalize(alias)
+        if not akey or akey in seen:
+            continue
+        seen.add(akey)
+        others = catalog.conflicts(akey, product["id"])
+        if others:
+            conflicts.append((alias, others))
+        clean.append(alias)
+    updated = await db.update_product(product["id"], {"name": name, "name_key": key, "aliases": clean})
+    if updated and name != product["name"]:
+        await db.rename_variant_product(product["name"], name)   # goûts cochés chez les livreurs
+    return updated, None, conflicts
+
