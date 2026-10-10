@@ -104,7 +104,16 @@ create table products (
   name        text not null,                    -- nom affiché : « Vodka Absolut »
   name_key    text not null unique,             -- nom normalisé, pour éviter les doublons
   aliases     text[] not null default '{}',     -- autres façons de l'écrire : {absolut, abso}
+  variants    text[] not null default '{}',     -- goûts, même coût : {noisette, banane} (/gouts)
   created_at  timestamptz not null default now()
+);
+
+create table livreur_variants (                  -- goûts qu'un livreur a encore (oui / non, sans quantité)
+  livreur_name  text not null,                   -- nom dans les feuilles (Livreur A…)
+  product       text not null,
+  variant       text not null,
+  updated_at    timestamptz not null default now(),
+  primary key (livreur_name, product, variant)
 );
 
 create table restocks (
@@ -184,6 +193,7 @@ alter table broadcasts enable row level security;
 alter table messages enable row level security;
 alter table events enable row level security;
 alter table prenoms enable row level security;
+alter table livreur_variants enable row level security;
 alter table products enable row level security;
 alter table restocks enable row level security;
 alter table expenses enable row level security;

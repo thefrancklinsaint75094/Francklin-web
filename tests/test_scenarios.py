@@ -2585,3 +2585,75 @@ async def test_franchise_reminded_of_pending_edit(h):
     assert len(reminders()) == 2                                    # le rappel utilisé affiche la décision
     await jobs.edit_reminders(h.context)
     assert len(reminders()) == 2 and len(await db.list_events(c["id"], "edit_reminder")) == 3
+
+
+async def test_flavors_end_to_end(h, monkeypatch, test_config):
+    """/gouts : le dispatch donne les goûts de MSX ; /ravi « 12 MSX banane fraise » les coche chez le livreur
+    (la feuille ne voit que 12 MSX) ; le livreur décoche ; la liste des livreurs proposée pour une commande
+    « 1 MSX banane » dit qui en a (et le met en premier)."""
+    import asyncio
+    import dataclasses
+
+    from bot import config
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setitem(EXTRACTIONS, "msx banane", [{**RIVOLI, "products": "1 MSX banane", "price": 30}])
+    await db.create_product("MSX", "msx", [])
+    await db.create_product("US", "us", [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    await register(h, R1, "ravitailleur", "Sam")
+
+    await h.text(DISPATCH, "/gouts MSX noisette, fraise, banane")
+    assert h.tg.last(DISPATCH).text == texts.variants_set("MSX", ["noisette", "fraise", "banane"])
+    await h.text(L1, "/gouts MSX kiwi")                         # un livreur ne change pas la liste
+    assert "Tes goûts" in h.tg.last(L1).text
+
+    await h.text(R1, "/ravi\nLivreur 1\nBox 1\n12 MSX banane fraise\n2 US")
+    preview = h.tg.last(R1)
+    assert "📦 +12 MSX (fraise, banane) · +2 US" in preview.text
+    await h.press_data(R1, preview, "rv_ok")
+    await asyncio.gather(*list(sheets._tasks))
+    assert sent[-1]["produits"] == {"MSX": 12, "US": 2}           # la compta ne voit que du MSX
+    rows = await db.list_livreur_variants("Livreur 1")
+    assert sorted(r["variant"] for r in rows) == ["banane", "fraise"]
+    assert "+12 MSX (fraise, banane)" in h.tg.find(L1, "Chargement reçu").text
+
+    # Le livreur n'a plus de banane : il décoche.
+    await h.text(L1, "/gouts")
+    menu = h.tg.last(L1)
+    assert [b for b, _ in menu.buttons] == ["▫️ MSX noisette", "✅ MSX fraise", "✅ MSX banane", "✔️ Terminé"]
+    await h.press_data(L1, menu, dict((b, d) for b, d in menu.buttons)["✅ MSX banane"])
+    assert [b for b, _ in h.tg.messages[(L1, menu.message_id)].buttons][2] == "▫️ MSX banane"
+    await db.add_livreur_variants("Livreur 2", "MSX", ["banane"])
+
+    await h.text(DISPATCH, "/gouts")
+    overview = h.tg.last(DISPATCH).text
+    assert "<b>MSX</b> : noisette, fraise, banane" in overview
+    assert "• Livreur 1 : fraise" in overview and "• Livreur 2 : banane" in overview
+
+    # Commande « 1 MSX banane » : Livreur 2 en a (en premier, même plus loin), Livreur 1 non.
+    config.set_config(dataclasses.replace(test_config, franchise_picks=True))
+    await go_on_duty(h, L1, BASTILLE)
+    await go_on_duty(h, L2, REPUBLIQUE)
+    c = await order(h, F1, "msx banane")
+    labels = [b for b, _ in h.tg.find(F1, f"Course #{c['id']} enregistrée").buttons]
+    assert labels[0].startswith("🟢 Livreur 2") and labels[0].endswith("· ✅banane")
+    assert labels[1].startswith("🟢 Livreur 1") and labels[1].endswith("· ❌banane")
+
+    # /stock : les goûts sous le produit, seulement s'il lui en reste.
+    text = texts.livreurs_stock({"Livreur 1": {"MSX": 12}, "Livreur 2": {"US": 1}},
+                                {"Livreur 1": {"MSX": {"fraise"}}, "Livreur 2": {"MSX": {"banane"}}})
+    assert "<b>Livreur 1</b> : MSX <b>12</b>\n   🍬 MSX : fraise" in text and "🍬 MSX : banane" not in text
+
+    # La liste de MSX change : un goût retiré disparaît aussi chez les livreurs.
+    await h.text(DISPATCH, "/gouts MSX noisette, banane")
+    assert [r["variant"] for r in await db.list_livreur_variants("Livreur 1")] == []

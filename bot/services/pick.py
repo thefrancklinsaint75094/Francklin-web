@@ -14,7 +14,8 @@ from collections import defaultdict
 from datetime import timedelta
 
 from bot import config, db, keyboards
-from bot.services import transport
+from bot.services import catalog as catalog_svc
+from bot.services import transport, variants
 from bot.services.distance import haversine_m
 from bot.timeutil import now_utc, parse_ts
 
@@ -69,11 +70,19 @@ async def options(course: dict) -> list[dict]:
         dist = None
         if pos and parse_ts(pos["updated_at"]) >= fresh and course.get("lat") is not None:
             dist = haversine_m(pos["lat"], pos["lon"], course["lat"], course["lon"])
-        out.append({"user": lv, "m": dist, "busy": busy.get(lv["id"], 0)})
+        out.append({"user": lv, "m": dist, "busy": busy.get(lv["id"], 0), "v": []})
+    # Goûts demandés (« 1 MSX banane ») : qui en a encore.
+    wanted = variants.requested(course.get("products") or "", await catalog_svc.load())
+    if wanted:
+        flavors = variants.by_livreur(await db.list_livreur_variants())
+        for o in out:
+            mine = flavors.get(o["user"].get("display_name") or "", {})
+            o["v"] = [(v, v in mine.get(p, set())) for p, v in wanted]
 
     def order(o):
         minutes = transport.travel_minutes(o["m"], o["user"].get("transport_mode")) if o["m"] is not None else 1e9
-        return (o["busy"] > 0, o["busy"], minutes, o["user"].get("display_name") or "")
+        missing = sum(1 for _, ok in o["v"] if not ok)
+        return (o["busy"] > 0, o["busy"], missing, minutes, o["user"].get("display_name") or "")
 
     return sorted(out, key=order)
 
