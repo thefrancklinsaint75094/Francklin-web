@@ -17,6 +17,7 @@ from bot.handlers import common
 from bot.services import catalog as catalog_service
 from bot.services import sheets
 from bot.services import lifecycle
+from bot.services import names
 from bot.timeutil import hhmm, minutes_since, night_bounds, night_label, night_start_date, now_utc, parse_ts, to_paris
 
 log = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ async def send_journal(bot, night: date, with_prev_button: bool = True, chat_id:
                 users.get(c["livreur_id"], {}).get("display_name", "?"),
             ))
         lines += ["", texts.journal_total(sum(float(c["price"]) for c in delivered))]
-    chunks = split_messages(lines)
+    chunks = split_messages([names.decorate(line) for line in lines])   # prénoms avant le découpage (longueur)
     markup = keyboards.journal_prev((night - timedelta(days=1)).isoformat()) if with_prev_button else None
     target = chat_id or cfg.dispatch_telegram_id
     for i, chunk in enumerate(chunks):

@@ -7,7 +7,7 @@ from datetime import time, timedelta
 from bot import config, db, messaging, texts
 from bot.config import PARIS
 from bot.handlers import cloture, dispatch
-from bot.services import broadcast
+from bot.services import broadcast, names
 from bot.timeutil import minutes_since, night_start_date, now_utc, parse_ts
 
 log = logging.getLogger(__name__)
@@ -131,6 +131,11 @@ async def startup(context) -> None:
     await stations.load()
 
 
+async def refresh_prenoms(context) -> None:
+    """Prénoms des livreurs (« Livreur A (Ketur) ») : nouvelles inscriptions et /prenom d'un autre admin."""
+    await names.refresh()
+
+
 def _safe(job):
     async def wrapper(context):
         try:
@@ -149,6 +154,7 @@ def register(job_queue) -> None:
     cfg = config.get()
     job_queue.run_once(_safe(startup), when=1, name="startup")
     job_queue.run_repeating(_safe(expire_drafts), interval=60, first=30, name="expire_drafts")
+    job_queue.run_repeating(_safe(refresh_prenoms), interval=120, first=120, name="refresh_prenoms")
     job_queue.run_repeating(_safe(stale_positions), interval=120, first=60, name="stale_positions")
     job_queue.run_repeating(_safe(stuck_courses), interval=300, first=90, name="stuck_courses")
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")

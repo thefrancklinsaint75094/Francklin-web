@@ -148,6 +148,12 @@ create index on sales (created_at);
 create index on sales (livreur_id);
 create index on sales (by_user_id);
 
+create table prenoms (                               -- prénom affiché « Livreur A (Ketur) » (/prenom)
+  name        text primary key,                        -- nom dans les feuilles (Livreur A…)
+  prenom      text not null,
+  updated_at  timestamptz not null default now()
+);
+
 create table bot_messages (                          -- messages envoyés (48 h), effacés si l'accès est retiré
   chat_id     bigint not null,
   message_id  bigint not null,
@@ -176,6 +182,7 @@ alter table livreur_positions enable row level security;
 alter table broadcasts enable row level security;
 alter table messages enable row level security;
 alter table events enable row level security;
+alter table prenoms enable row level security;
 alter table products enable row level security;
 alter table restocks enable row level security;
 alter table expenses enable row level security;

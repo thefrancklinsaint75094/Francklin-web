@@ -470,3 +470,11 @@ simple qui respecte le mur de confidentialité (§12).
      cash à son tour. Le script (`cashLivreurs_`) fait le même calcul ; la somme des « récupérés » reste
      celle du ravitailleur (+350 chez A, −350 chez D), donc RAVI du Compta n'est pas faussé. `/swipe` accepte
      « cash 350 » (avec ou sans produits) ; le bot compte ce cash chez les deux livreurs en attendant la feuille.
+127. **Prénoms entre parenthèses** (« Livreur A (Ketur) », demande de l'exploitant qui se perdait entre A, B, C…).
+     Les noms des feuilles ne changent pas (toutes les formules en dépendent) ; le prénom est ajouté au moment
+     de l'envoi (`messaging` : texte, boutons, titre des points sur la carte, journal), donc tous les messages,
+     présents et futurs, le portent sans retoucher chaque texte. Pas dans les exemples `<code>` (on recopierait
+     « Livreur A (Ketur) »), ni deux fois. Source : `users.real_name`, sauf prénom fixé par `/prenom` (table
+     `prenoms`, migration 014) — seul moyen pour un livreur des feuilles sans compte. Gardé en mémoire
+     (démarrage, toutes les 2 min, après `/prenom`). Les lectures de texte acceptent le prénom seul ou le nom
+     affiché avec sa parenthèse.

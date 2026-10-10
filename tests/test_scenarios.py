@@ -94,6 +94,9 @@ async def h(database, monkeypatch):
     from bot.handlers import cloture as cloture_h
 
     cloture_h._last_done = None
+    from bot.services import names as names_service
+
+    names_service.set_cache({})
     from bot.services import sheets
 
     async def no_script(action, client=None, **kw):   # jamais d'appel réseau : chaque test simule le script
@@ -2357,3 +2360,33 @@ async def test_sales_for_an_earlier_night(h, monkeypatch):
     await h.text(DISPATCH, "Livreur 2\n1 US 30")
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), "sl_ok")
     assert sent[-1]["onglet"] == tab
+
+
+async def test_prenoms_shown_everywhere(h):
+    """/prenom : liste, prénom fixé pour un livreur ; chaque message du bot écrit « Livreur 1 (Ketur) » ;
+    le prénom suffit dans /ventes."""
+    from bot.services import names as names_service
+
+    await db.create_product("US", "us", [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    await names_service.refresh()                      # au démarrage : prénoms de l'inscription
+    assert names_service.label("Livreur 1") == "Livreur 1 (Livreur-3001)"
+
+    await h.text(L1, "/prenom")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+    await h.text(DISPATCH, "/prenom 1 Ketur")
+    assert h.tg.last(DISPATCH).text == "✅ C'est noté : <b>Livreur 1</b> (Ketur)"
+    await h.text(DISPATCH, "/prenom")
+    listing = h.tg.last(DISPATCH).text
+    assert "• Livreur 1 (Ketur)" in listing and "• Livreur 2 (Livreur-3002)" in listing
+    await h.text(DISPATCH, "/prenom Z Paul")
+    assert h.tg.last(DISPATCH).text == texts.PRENOM_HELP
+
+    # Le prénom suffit pour désigner le livreur ; l'aperçu l'affiche entre parenthèses.
+    await h.text(DISPATCH, "/ventes\nketur\n2 US 60")
+    assert "<b>Livreur 1</b> (Ketur)\n💵 2 US" in h.tg.last(DISPATCH).text
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "sl_x")
+
+    # Retour au prénom de l'inscription.
+    await h.text(DISPATCH, "/prenom Livreur 1 -")
+    assert names_service.label("Livreur 1") == "Livreur 1 (Livreur-3001)"

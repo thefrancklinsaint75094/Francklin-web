@@ -445,6 +445,19 @@ async def list_sales_between(start: datetime, end: datetime) -> list[dict]:
     return res.data
 
 
+async def list_prenoms() -> list[dict]:
+    return (await _t("prenoms").select("*").execute()).data
+
+
+async def set_prenom(name: str, prenom: str) -> None:
+    await _t("prenoms").upsert({"name": name, "prenom": prenom, "updated_at": iso(now_utc())},
+                               on_conflict="name").execute()
+
+
+async def delete_prenom(name: str) -> None:
+    await _t("prenoms").delete().eq("name", name).execute()
+
+
 async def remember_message(chat_id: int, message_id: int) -> None:
     await _t("bot_messages").upsert({"chat_id": chat_id, "message_id": message_id},
                                     on_conflict="chat_id,message_id").execute()

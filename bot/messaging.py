@@ -7,6 +7,7 @@
 - Un compte exclu ou supprimé ne reçoit plus rien.
 - Chaque message envoyé à un utilisateur (hors dispatch) est noté 48 h : si son accès est
   retiré, le bot efface ce qu'il lui a envoyé (Telegram n'autorise pas plus ancien).
+- Chaque nom de livreur, dans le texte comme dans les boutons, prend son prénom : « Livreur A (Ketur) ».
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from telegram import InlineKeyboardMarkup, Message
 from telegram.error import BadRequest, Forbidden, TelegramError
 
 from bot import config, db, texts
+from bot.services import names
 from bot.timeutil import now_utc
 
 log = logging.getLogger(__name__)
@@ -80,7 +82,8 @@ async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None =
     if user.get("status") in REMOVED and not even_if_removed:
         return None                       # accès retiré : plus rien ne lui est envoyé
     try:
-        sent = await bot.send_message(user["telegram_id"], text, reply_markup=markup, **kwargs)
+        sent = await bot.send_message(user["telegram_id"], names.decorate(text),
+                                      reply_markup=names.decorate_markup(markup), **kwargs)
         await _remember(sent)
         return sent
     except Forbidden:
@@ -92,7 +95,8 @@ async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None =
 
 async def notify_dispatch(bot, text: str, markup: InlineKeyboardMarkup | None = None, **kwargs) -> Message | None:
     try:
-        return await bot.send_message(config.get().dispatch_telegram_id, text, reply_markup=markup, **kwargs)
+        return await bot.send_message(config.get().dispatch_telegram_id, names.decorate(text),
+                                      reply_markup=names.decorate_markup(markup), **kwargs)
     except TelegramError as exc:
         log.warning("Notification dispatch impossible : %s", exc)
     return None
@@ -117,12 +121,13 @@ async def edit(
         if user is not None:
             return await send(bot, user, text, markup)
         try:
-            return await bot.send_message(chat_id, text, reply_markup=markup)
+            return await bot.send_message(chat_id, names.decorate(text), reply_markup=names.decorate_markup(markup))
         except TelegramError as exc:
             log.warning("Envoi de remplacement impossible : %s", exc)
             return None
     try:
-        await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=markup)
+        await bot.edit_message_text(names.decorate(text), chat_id=chat_id, message_id=message_id,
+                                    reply_markup=names.decorate_markup(markup))
     except Forbidden:
         if user is not None:
             await _handle_blocked(bot, user)
@@ -137,7 +142,8 @@ async def edit(
 async def send_venue(bot, chat_id: int, lat: float, lon: float, title: str, address: str) -> Message | None:
     """Point sur une carte (titre + adresse), ouvrable dans Maps. Ne lève jamais."""
     try:
-        return await bot.send_venue(chat_id, latitude=lat, longitude=lon, title=title, address=address)
+        return await bot.send_venue(chat_id, latitude=lat, longitude=lon, title=names.decorate_plain(title),
+                                    address=address)
     except TelegramError as exc:
         log.warning("Envoi d'un point impossible : %s", exc)
     return None
@@ -147,7 +153,8 @@ async def edit_markup(bot, chat_id: int, message_id: int | None, markup: InlineK
     if message_id is None:
         return
     try:
-        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=markup)
+        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id,
+                                            reply_markup=names.decorate_markup(markup))
     except TelegramError as exc:
         log.info("Édition des boutons ignorée : %s", exc)
 
@@ -157,7 +164,7 @@ async def reply(update, text: str, markup: InlineKeyboardMarkup | None = None) -
     if chat is None:
         return None
     try:
-        sent = await chat.send_message(text, reply_markup=markup)
+        sent = await chat.send_message(names.decorate(text), reply_markup=names.decorate_markup(markup))
         await _remember(sent)
         return sent
     except TelegramError as exc:
