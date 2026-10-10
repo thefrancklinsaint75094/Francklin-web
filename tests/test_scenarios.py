@@ -665,6 +665,12 @@ async def test_encours_and_overrides(h):
     overrides = (await db._t("events").select("*").eq("type", "dispatch_override").execute()).data
     assert len(overrides) == 3
 
+    # Combien de courses livrées cette nuit : dans /encours, avec le montant et le détail par livreur.
+    await h.text(DISPATCH, "/encours")
+    enc = h.tg.last(DISPATCH).text.replace("\xa0", " ")
+    assert enc.startswith("🚦 <b>En ce moment</b> — nuit du")
+    assert "✅ <b>Livrées (1)</b> — 60 € (💵 60 €)\n• Livreur 2 : 1 — 60 €" in enc and "❌ Annulées : 1" in enc
+
 
 async def test_users_list(h):
     f1, f2, (l1, l2) = await setup_network(h)

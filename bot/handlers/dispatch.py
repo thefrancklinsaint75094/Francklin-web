@@ -179,8 +179,13 @@ async def encours(update: Update, context) -> None:
     pending = await db.list_courses_by_status("pending")
     assigned = await db.list_courses_by_status("assigned")
     livreurs = await db.list_users(role="livreur", status="active")
+    night = _current_night()
+    start, end = night_bounds(night, config.get().night_end_hour)
+    delivered = await db.list_delivered_between(start, end)
+    cancelled = (await db.list_closed_between("cancelled", start, end)
+                 + await db.list_closed_between("cancelled_on_site", start, end))
     users = await db.get_users([c["franchise_id"] for c in pending + assigned] +
-                               [c["livreur_id"] for c in assigned])
+                               [c["livreur_id"] for c in assigned + delivered])
     per_livreur: dict[str, int] = defaultdict(int)
     for c in assigned:
         per_livreur[c["livreur_id"]] += 1
@@ -194,7 +199,20 @@ async def encours(update: Update, context) -> None:
         for c in assigned
     ]
     on_duty = sum(1 for lv in livreurs if lv.get("on_duty"))
-    await messaging.reply(update, texts.encours(pending_lines, assigned_lines, on_duty, len(livreurs)),
+    # Livrées cette nuit : combien, combien d'argent, par livreur.
+    per: dict[str, list] = defaultdict(lambda: [0, 0.0])
+    pay = {"especes": 0.0, "virement": 0.0}
+    for c in delivered:
+        name = users.get(c.get("livreur_id"), unknown)["display_name"]
+        per[name][0] += 1
+        per[name][1] += float(c["price"])
+        if c.get("payment") in pay:
+            pay[c["payment"]] += float(c["price"])
+    done = {"n": len(delivered), "total": sum(float(c["price"]) for c in delivered), "pay": pay,
+            "per": sorted(((n, k, t) for n, (k, t) in per.items()), key=lambda r: (-r[1], -r[2], r[0])),
+            "cancelled": len(cancelled)}
+    await messaging.reply(update, texts.encours(pending_lines, assigned_lines, on_duty, len(livreurs),
+                                                done, night_label(night)),
                           keyboards.encours(pending, assigned))
 
 

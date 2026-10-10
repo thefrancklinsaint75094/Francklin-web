@@ -27,7 +27,7 @@ def is_admin(user: dict | None) -> bool:
     return bool(user) and user.get("status") == "active" and user.get("role") in ADMIN_ROLES
 
 
-_ADMIN_COMMANDS = [("encours", "Courses en attente et en cours"), ("livreurs", "Mettre un livreur en service / pause"),
+_ADMIN_COMMANDS = [("encours", "Ce soir : en attente, en cours, livrées"), ("livreurs", "Mettre un livreur en service / pause"),
                    ("recap", "Totaux par livreur"), ("journal", "Détail des courses livrées"),
                    ("users", "Tous les utilisateurs"), ("recharge", "Charger / reprendre un livreur"), ("ravi", "Rechargement en texte (/ravi 1)"), ("swipe", "Transfert entre livreurs"),
                    ("stock", "Stock des box et des livreurs"), ("caisse", "Cash à récupérer chez les livreurs"),
@@ -100,6 +100,18 @@ async def set_commands(bot, user: dict) -> None:
                                   scope=BotCommandScopeChat(chat_id=user["telegram_id"]))
     except TelegramError as exc:
         log.warning("set_my_commands impossible : %s", exc)
+
+
+async def refresh_all_commands(bot) -> None:
+    """Au démarrage : le bouton « Menu » de chacun liste toutes les commandes de son rôle, y compris les
+    nouvelles (sinon il garde la liste de son dernier /start)."""
+    try:
+        users = [u for u in await db.list_users(status="active") if u.get("telegram_id")]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Menus non actualisés : %s", exc)
+        return
+    for user in users:
+        await set_commands(bot, user)
 
 
 async def clear_commands(bot, user: dict) -> None:

@@ -938,11 +938,20 @@ def journal_total(total: float) -> str:
     return f"Total : {eur(total)}"
 
 
-def encours(pending_lines: list[str], assigned_lines: list[str], on_duty: int, total_livreurs: int) -> str:
-    lines = ["🚦 En ce moment", "", f"⏳ En attente ({len(pending_lines)})"]
+def encours(pending_lines: list[str], assigned_lines: list[str], on_duty: int, total_livreurs: int,
+            done: dict | None = None, label: str | None = None) -> str:
+    lines = ["🚦 <b>En ce moment</b>" + (f" — nuit du {esc(label)}" if label else ""), "",
+             f"⏳ En attente ({len(pending_lines)})"]
     lines += pending_lines or ["—"]
     lines += ["", f"🚴 En cours ({len(assigned_lines)})"]
     lines += assigned_lines or ["—"]
+    if done is not None:
+        split = [f"{i} {eur(done['pay'][k])}" for k, i in (("especes", "💵"), ("virement", "💳")) if done["pay"][k]]
+        lines += ["", f"✅ <b>Livrées ({done['n']})</b>" + (f" — {eur(done['total'])}" if done["n"] else "")
+                  + (f" ({' · '.join(split)})" if split else "")]
+        lines += [f"• {esc(name)} : {n} — {eur(total)}" for name, n, total in done["per"]] or ["—"]
+        if done["cancelled"]:
+            lines.append(f"❌ Annulées : {done['cancelled']}")
     lines += ["", f"📍 Livreurs en service : {on_duty} / {total_livreurs}"]
     return "\n".join(lines)
 
