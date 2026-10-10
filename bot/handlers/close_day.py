@@ -15,10 +15,10 @@ from datetime import date, timedelta
 
 from telegram import Update
 
-from bot import config, db, messaging, texts
+from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
 from bot.services import cash, sheets, stock
-from bot.timeutil import night_bounds, night_label, night_start_date, now_utc, to_paris
+from bot.timeutil import hhmm, night_bounds, night_label, night_start_date, now_utc, parse_ts, to_paris
 
 
 async def closing_night() -> date:
@@ -101,11 +101,27 @@ async def build_debrief(night: date) -> str:
 
 
 async def close(update: Update, context) -> None:
+    """/close : débrief de la journée (admins). /close Livreur A (ou son prénom) : fin de service de ce
+    livreur. Un livreur qui écrit /close termine son propre service."""
     user = await common.actor(update)
     if not await common.require(update, user):
         return
+    arg = " ".join((update.message.text or "").split()[1:])
+    if user["role"] == "livreur" and user["status"] == "active":
+        await close_livreur(update, context, user, user["display_name"], user)
+        return
     if not common.is_admin(user):
         await messaging.reply(update, texts.NOT_FOR_YOU)
+        return
+    if arg:
+        from bot.services.sales import resolve_livreur
+
+        livreurs = await db.list_users(role="livreur", status="active")
+        name, account = resolve_livreur(arg, list(config.get().livreur_names), livreurs)
+        if name is None:
+            await messaging.reply(update, texts.close_livreur_unknown(arg))
+            return
+        await close_livreur(update, context, user, name, account)
         return
     night = await closing_night()
     text = await build_debrief(night)
@@ -113,3 +129,38 @@ async def close(update: Update, context) -> None:
     await db.log_event("day_closed", user_id=user["id"], payload={"night": night.isoformat()})
     if user["role"] != "dispatch":
         await messaging.notify_dispatch(context.bot, f"{text}\n\n(par {texts.esc(user['display_name'])})")
+
+
+async def close_livreur(update: Update, context, actor: dict, name: str, livreur: dict | None) -> None:
+    """Fin de service d'un livreur : il passe hors service, et chacun reçoit le récap de sa nuit —
+    courses livrées, course encore en cours, dépenses, stock encore sur lui, cash à récupérer."""
+    night = await closing_night()
+    start, end = night_bounds(night, config.get().night_end_hour)
+    uid = livreur["id"] if livreur else None
+    delivered = sorted((c for c in await db.list_delivered_between(start, end) if uid and c.get("livreur_id") == uid),
+                       key=lambda c: c.get("delivered_at") or "")
+    still = [c for c in await db.list_assigned_for_livreur(uid)] if uid else []
+    expenses = [e for e in await db.list_expenses_between(start, end) if uid and e.get("livreur_id") == uid]
+    franchises = await db.get_users(c["franchise_id"] for c in delivered)
+    rows = [(hhmm(parse_ts(c["delivered_at"])), c, franchises.get(c["franchise_id"], {}).get("display_name") or "?")
+            for c in delivered]
+    stock_left = cash_row = None
+    if sheets.enabled():
+        stocks, money = await asyncio.gather(stock.livreurs_now(), cash.livreurs_now())
+        key = stock._key(name)
+        if stocks["ok"]:
+            stock_left = next((v for k, v in stocks["livreurs"].items() if stock._key(k) == key), {})
+        if money["ok"]:
+            cash_row = next((r for r in money["livreurs"].values() if stock._key(r["nom"]) == key), None)
+    text = texts.livreur_close(name, night_label(night), rows, still,
+                               sum(float(e["amount"]) for e in expenses), stock_left, cash_row, sheets.enabled())
+    if livreur:
+        await db.update_user(livreur["id"], {"on_duty": False, "soon_free": False, "duty_forced": False})
+        await db.log_event("livreur_closed", user_id=livreur["id"],
+                           payload={"by": actor["id"], "night": night.isoformat(), "delivered": len(delivered)})
+    await messaging.reply(update, text, keyboards.livreur_menu() if actor["role"] == "livreur" else None)
+    if livreur and livreur["id"] != actor["id"]:
+        await messaging.send(context.bot, livreur, text + "\n\n" + texts.CLOSE_FOR_LIVREUR, keyboards.livreur_menu())
+    if actor["role"] != "dispatch":
+        await messaging.notify_dispatch(context.bot, f"{text}\n\n(par {texts.esc(actor['display_name'])})")
+

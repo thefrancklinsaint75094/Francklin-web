@@ -532,4 +532,9 @@ simple qui respecte le mur de confidentialité (§12).
      livrées). « En ce moment » ajoute la nuit en cours, les livrées (nombre, montant, 💵/💳, par livreur) et les
      annulées. Le bouton « Menu » de Telegram n'était mis à jour qu'au /start : au démarrage du bot, la liste des
      commandes de chaque utilisateur actif est renvoyée (tâche de fond, sans retarder le démarrage).
+137. **Fin de service d'un livreur** (demande de l'exploitant : « /close suivi du livreur »). Même commande que
+     le débrief : `/close` seul = la journée, `/close <livreur>` = ce livreur (nom ou prénom, comme /ventes) ; un
+     livreur qui fait /close (ou 🏁 dans son menu) termine son propre service. Il passe hors service (comme
+     /pause) ; la nuit est celle du débrief (`closing_night`). Stock et cash viennent des mêmes lectures que
+     /stock et /caisse (avec ce que le bot compte en attendant la feuille) ; feuille illisible : dit tel quel.
 

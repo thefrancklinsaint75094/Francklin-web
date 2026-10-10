@@ -512,6 +512,14 @@ proche et les ravitailleurs et le dispatch reçoivent une alerte (une fois par c
 produits absents des colonnes de la feuille (coca…) sont ignorés. Le stock des livreurs est relu au plus une
 fois par minute.
 
+### Fin de service d'un livreur (`/close Livreur A`)
+
+`/close Livreur A` (admins ; le prénom marche aussi) ou, pour le livreur lui-même, le bouton
+**🏁 Fin de service** (ou `/close`) : le livreur passe hors service, et le récap de sa nuit part à l'admin, au
+livreur et au dispatch — chaque course livrée (heure, numéro, franchisé, quartier, produits, prix, paiement),
+le total (💵 / 💳), une course encore en cours s'il y en a, ses dépenses, le **stock encore sur lui** et le
+**cash à récupérer** (d'après les tableaux, comme `/stock` et `/caisse`).
+
 ### Débrief de la journée (`/close`)
 
 Pour les admins, en fin de nuit : un message « 🔒 Journée close » qui résume la nuit, sans rien changer —

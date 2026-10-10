@@ -1851,8 +1851,8 @@ async def test_close_day_debrief(h, monkeypatch):
         await h.press_data(L1, h.tg.messages[(L1, msg_id)], d)
     await asyncio.gather(*list(sheets._tasks))
 
-    await h.text(L1, "/close")
-    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+    await h.text(L1, "/close")                                    # un livreur : sa propre fin de service
+    assert h.tg.last(L1).text.startswith("🏁 <b>Fin de service — Livreur 1</b>")
 
     await h.text(F1, "/close")
     text = h.tg.last(F1).text.replace("\xa0", " ")
@@ -2739,7 +2739,7 @@ async def test_livreur_menu_buttons(h):
     welcome = h.tg.find(L1, "Tu es validé")
     assert [[b["text"] for b in row] for row in welcome.markup["keyboard"]] == [
         ["🟢 Je commence", "⏸ Pause"], ["✅ Livrée", "✏️ Modif"], ["🚴 Ma course", "💶 Ma caisse"],
-        ["🍬 Mes goûts", "🧾 Dépense"]]
+        ["🍬 Mes goûts", "🧾 Dépense"], ["🏁 Fin de service"]]
 
     await h.text(L1, "✅ Livrée")                                 # rien en cours
     assert h.tg.last(L1).text == texts.NO_ASSIGNED
@@ -2759,3 +2759,58 @@ async def test_livreur_menu_buttons(h):
     await h.text(L1, "⏸ Pause")
     assert h.tg.last(L1).text == texts.PAUSED
     assert (await db.get_user(l1["id"]))["on_duty"] is False
+
+
+
+async def test_close_livreur_end_of_service(h, monkeypatch):
+    """/close Livreur 1 (admin) ou 🏁 Fin de service (le livreur) : il passe hors service, et le récap donne
+    ses courses livrées, ce qui est encore en cours, le stock encore sur lui et le cash à récupérer."""
+    import asyncio
+
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_send(rows, client=None):
+        return len(rows)
+
+    async def fake_fetch(action, *args, **kw):
+        if action == "stock_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"DIV": 3, "US": 0}}}
+        if action == "cash_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"especes": 60, "depenses": 0, "recupere": 0, "cash": 60}}}
+        return {"ok": False, "error": "?"}
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setattr(sheets, "fetch_action", fake_fetch)
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    c = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c['id']}"), "course_take:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"), pay="e")
+    await asyncio.gather(*list(sheets._tasks))
+
+    await h.text(DISPATCH, "/close Zorro")
+    assert h.tg.last(DISPATCH).text == texts.close_livreur_unknown("Zorro")
+
+    await h.text(DISPATCH, "/close Livreur 1")
+    text = h.tg.last(DISPATCH).text.replace("\xa0", " ")
+    assert text.startswith("🏁 <b>Fin de service — Livreur 1</b>\nNuit du")
+    assert "📦 <b>1 course livrée — 60 €</b> (💵 60 €)" in text
+    assert f" · #{c['id']} · Franchisé 1 · Paris 4e · 2 vodka + coca · 60 € 💵" in text
+    assert "🎒 <b>Stock encore sur lui</b>\nDIV <b>3</b>" in text and "US" not in text.split("Stock")[1]
+    assert "<b>À récupérer : 60 €</b>" in text
+    assert (await db.get_user(l1["id"]))["on_duty"] is False
+    assert h.tg.last(L1).text.endswith(texts.CLOSE_FOR_LIVREUR)
+
+    # Le livreur termine lui-même son service depuis son menu ; rien n'a été livré par Livreur 2.
+    await go_on_duty(h, L2, REPUBLIQUE)
+    await h.text(L2, "🏁 Fin de service")
+    mine = h.tg.last(L2).text
+    assert mine.startswith("🏁 <b>Fin de service — Livreur 2</b>") and "Aucune course livrée cette nuit." in mine
+    assert (await db.get_user(l2["id"]))["on_duty"] is False
+    assert any(t.startswith("🏁 <b>Fin de service — Livreur 2</b>") for t in h.tg.texts(DISPATCH))
+
+    await h.text(DISPATCH, "/close")                                # sans nom : débrief de la journée
+    assert h.tg.last(DISPATCH).text.startswith("🔒 <b>Journée close")
