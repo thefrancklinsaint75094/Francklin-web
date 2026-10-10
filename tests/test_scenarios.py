@@ -2534,3 +2534,54 @@ async def test_livreur_validates_with_ok_or_modif(h, monkeypatch):
 
     await h.text(L1, "OK CB")
     assert h.tg.last(L1).text == texts.NO_ASSIGNED
+
+
+async def test_franchise_reminded_of_pending_edit(h):
+    """Une « Modif » sans réponse : le franchisé est relancé à 10 min, 40 min et 1 h 10 (boutons ✅ / ❌),
+    une seule fois à chaque étape ; au dernier rappel le dispatch est prévenu ; plus rien après la décision."""
+    from bot import jobs
+    from bot.timeutil import iso
+
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    c = await order(h, F1, "oberkampf")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c['id']}"), "course_take:")
+    await h.text(L1, "Modif")
+    editor = h.tg.last(L1)
+    await h.press_data(L1, editor, "oe_q:0:1")
+    await h.press_data(L1, h.tg.messages[(L1, editor.message_id)], "oe_s:0")
+    await h.press_data(L1, h.tg.messages[(L1, editor.message_id)], "oe_p:0:30")
+    await h.press_data(L1, h.tg.messages[(L1, editor.message_id)], "oe_ok")
+    pending = (await db.get_course(c["id"]))["pending_edit"]
+
+    async def waited(minutes):
+        at = iso(now_utc() - timedelta(minutes=minutes))
+        await db.update_course(c["id"], {"pending_edit": {**pending, "at": at}})
+        for e in await db.list_events(c["id"], "edit_reminder"):     # les rappels suivent la même modification
+            await db._t("events").update({"payload": {**e["payload"], "at": at}}).eq("id", e["id"]).execute()
+        await jobs.edit_reminders(h.context)
+
+    def reminders():
+        return [t for t in h.tg.texts(F1) if t.startswith("⏰ <b>Rappel : modification")]
+
+    await waited(5)
+    assert reminders() == []
+    await waited(12)
+    assert len(reminders()) == 1 and "en attente depuis 12 min" in reminders()[0]
+    assert [d for _, d in h.tg.last(F1).buttons] == [f"me:{c['id']}:ok", f"me:{c['id']}:no"]
+    await waited(20)
+    assert len(reminders()) == 1                                    # pas deux fois la même étape
+    await waited(41)
+    assert len(reminders()) == 2 and not [t for t in h.tg.texts(DISPATCH) if "sans réponse" in t]
+    await waited(71)
+    assert len(reminders()) == 3 and "en attente depuis 1 h 11" in reminders()[-1]
+    assert [t for t in h.tg.texts(DISPATCH) if f"#{c['id']} — modification du livreur sans réponse" in t]
+    await waited(200)
+    assert len(reminders()) == 3                                    # on n'insiste plus
+
+    # Le franchisé décide depuis le rappel : plus de rappel ensuite.
+    await h.press_data(F1, h.tg.last(F1), f"me:{c['id']}:ok")
+    assert float((await db.get_course(c["id"]))["price"]) == 80
+    assert len(reminders()) == 2                                    # le rappel utilisé affiche la décision
+    await jobs.edit_reminders(h.context)
+    assert len(reminders()) == 2 and len(await db.list_events(c["id"], "edit_reminder")) == 3
