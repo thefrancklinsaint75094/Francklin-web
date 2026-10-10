@@ -69,7 +69,8 @@ WELCOME_LIVREUR = (
     "/pause — te retirer temporairement\n"
     "/macourse — revoir ta course en cours\n"
     "/depense — noter une dépense (essence, repas…) ou une avance sur ta paye\n"
-    "/macaisse — le cash que tu dois remettre\n\n"
+    "/macaisse — le cash que tu dois remettre\n"
+    "/gouts — coche les goûts qu'il te reste (MSX banane, fraise…)\n\n"
     "Tu ne reçois que les courses proches de toi. Une seule à la fois — appuie sur « Bientôt libre » "
     "quand tu termines pour enchaîner.\n\n"
     "Course livrée : écris <b>OK</b> (« OK CB » si payé par carte ou virement). Il faut valider ta course "
@@ -90,6 +91,7 @@ WELCOME_DISPATCH = (
     "/reactiver — rendre un accès\n"
     "/supprimer — supprimer un compte (définitif, la personne peut se réinscrire de zéro)\n"
     "/prenom — le prénom affiché à côté de chaque livreur : « Livreur A (Ketur) »\n"
+    "/gouts — goûts des produits (MSX banane, fraise…) et ce qu'il reste chez chaque livreur\n"
     "/produits — catalogue des produits (ajouter, supprimer)\n"
     "/recharge — charger ou reprendre un livreur, cash récupéré\n"
     "/ravi 1 — même chose en texte : livreur, box, quantités et produits\n"
@@ -143,7 +145,7 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /ravi · /swipe · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer · /prenom"
+    "/recap · /journal · /users · /recharge · /ravi · /swipe · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer · /prenom · /gouts"
 )
 
 
@@ -725,12 +727,16 @@ def boxes_overview(boxes: dict, totals: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def livreurs_stock(livreurs: dict) -> str:
+def livreurs_stock(livreurs: dict, flavors: dict | None = None) -> str:
     lines = ["🚴 <b>Stock chez les livreurs</b>", ""]
     for name, values in livreurs.items():
         have, _ = _qty_list(values)
         if have:                                 # un livreur sans rien n'est pas cité
             lines.append(f"<b>{esc(name)}</b> : {' · '.join(have)}")
+            mine = (flavors or {}).get(name, {})
+            for product in sorted(mine):         # goûts, seulement pour un produit qu'il a encore
+                if any(p == product and float(q or 0) > 0 for p, q in values.items()):
+                    lines.append(f"   🍬 {esc(product)} : {esc(', '.join(sorted(mine[product])))}")
     if len(lines) == 2:
         lines.append("Aucun stock chez les livreurs.")
     return "\n".join(lines)
@@ -1505,6 +1511,8 @@ def ravi_help(ravi: str) -> str:
             "• une ligne par produit : quantité puis produit (chargé au livreur) ;\n"
             "• avec un « - » devant : repris au livreur (retourne dans le box) ;\n"
             "• « cash 300 » : cash récupéré (facultatif) ;\n"
+            "• goûts : « 12 MSX banane fraise » (ou « 12 MSX (5 banane, 7 fraise) ») — cochés chez le livreur, "
+            "la compta ne voit que 12 MSX ;\n"
             "• le box reste le même pour les livreurs suivants, sauf si tu en écris un autre.\n"
             "Je te montre le récap avant d'enregistrer.")
 
@@ -1522,7 +1530,8 @@ def _ravi_blocks(blocks: list[dict]) -> list[str]:
         head = f"<b>{esc(b['livreur'])}</b>" + (f" · {esc(b['box'])}" if b.get("box") else "")
         lines += ["", head]
         if b["load"]:
-            lines.append("📦 " + " · ".join(f"+{i['q']} {esc(i['p'])}" for i in b["load"]))
+            lines.append("📦 " + " · ".join(f"+{i['q']} {esc(i['p'])}" + (f" ({esc(', '.join(i['v']))})" if i.get("v") else "")
+                                            for i in b["load"]))
         if b["unload"]:
             lines.append("↩️ " + " · ".join(f"−{i['q']} {esc(i['p'])}" for i in b["unload"]))
         if b.get("cash"):
@@ -1530,8 +1539,11 @@ def _ravi_blocks(blocks: list[dict]) -> list[str]:
     return lines
 
 
-def ravi_preview(ravi: str, blocks: list[dict]) -> str:
-    return "\n".join([f"📦 <b>Rechargement — {esc(ravi)}</b>"] + _ravi_blocks(blocks) + ["", "Tout est bon ?"])
+def ravi_preview(ravi: str, blocks: list[dict], warnings: list[str] | None = None) -> str:
+    lines = [f"📦 <b>Rechargement — {esc(ravi)}</b>"] + _ravi_blocks(blocks)
+    if warnings:
+        lines += [""] + [f"⚠️ {esc(w)}" for w in warnings[:10]]
+    return "\n".join(lines + ["", "Tout est bon ?"])
 
 
 def ravi_done(ravi: str, blocks: list[dict], count: int) -> str:
@@ -1719,4 +1731,43 @@ def d_edit_waiting(course: dict, franchise: dict, minutes: int) -> str:
     return (f"⏰ #{course['id']} — modification du livreur sans réponse de "
             f"{esc(franchise.get('display_name') or 'son franchisé')} depuis {_ago(minutes)} : "
             "la course n'est pas encore dans le tableau.")
+
+
+# ================================================================ goûts des produits (/gouts)
+
+VARIANTS_HELP = (
+    "🍬 <b>Goûts des produits</b> — même coût, même produit pour la compta.\n\n"
+    "<code>/gouts MSX noisette, fraise, orange, banane</code> — la liste des goûts de MSX\n"
+    "<code>/gouts MSX -</code> — plus de goûts pour MSX\n"
+    "/gouts — les goûts et ce qu'il reste chez chaque livreur\n\n"
+    "Les livreurs cochent ce qu'ils ont avec /gouts ; /ravi « 12 MSX banane fraise » les coche aussi."
+)
+
+
+def variants_set(product: str, variants: list[str]) -> str:
+    if not variants:
+        return f"🍬 {esc(product)} n'a plus de goûts."
+    return f"🍬 Goûts de <b>{esc(product)}</b> : {esc(', '.join(variants))}"
+
+
+def variants_overview(products: list[dict], flavors: dict, admin: bool) -> str:
+    if not products:
+        return VARIANTS_HELP if admin else "🍬 Aucun goût défini pour l'instant."
+    lines = ["🍬 <b>Goûts — ce qu'il reste chez les livreurs</b>"]
+    for p in products:
+        lines += ["", f"<b>{esc(p['name'])}</b> : {esc(', '.join(p['variants']))}"]
+        for name in sorted(flavors):
+            have = [v for v in p["variants"] if v in flavors[name].get(p["name"], set())]
+            if have:
+                lines.append(f"• {esc(name)} : {esc(', '.join(have))}")
+    if admin:
+        lines += ["", "<code>/gouts MSX noisette, fraise</code> pour changer une liste."]
+    return "\n".join(lines)
+
+
+def my_variants(products: list[dict]) -> str:
+    if not products:
+        return "🍬 Aucun goût défini pour l'instant."
+    return ("🍬 <b>Tes goûts</b> — touche un goût pour le cocher (✅ tu en as encore) "
+            "ou le décocher (tu n'en as plus).")
 

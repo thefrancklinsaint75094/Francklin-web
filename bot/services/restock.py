@@ -46,7 +46,7 @@ def change_cash(cash: float, delta: float) -> float:
 def items_text(items: list[dict], kind: str) -> str:
     """« +12 DIV, +6 KT » (chargement) ou « −3 DIV » (reprise)."""
     sign = "−" if kind == "unload" else "+"
-    return ", ".join(f"{sign}{i['q']} {i['p']}" for i in items)
+    return ", ".join(f"{sign}{i['q']} {i['p']}" + (f" ({', '.join(i['v'])})" if i.get("v") else "") for i in items)
 
 
 def signed_quantities(items: list[dict], kind: str) -> dict[str, int]:

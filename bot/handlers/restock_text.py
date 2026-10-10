@@ -72,7 +72,8 @@ async def _process(update: Update, user: dict, payload: dict, text: str, skip_fi
         return
     blocks = [{"livreur": b.livreur, "user_id": b.user["id"] if b.user else None, "box": b.box,
                "load": b.load, "unload": b.unload, "cash": b.cash} for b in parsed.blocks]
-    sent = await messaging.reply(update, texts.ravi_preview(base["ravi"], blocks), keyboards.ravi_confirm())
+    sent = await messaging.reply(update, texts.ravi_preview(base["ravi"], blocks, parsed.warnings),
+                                 keyboards.ravi_confirm())
     await _save(user, STATE_CONFIRM, {**base, "blocks": blocks, "msg": sent.message_id if sent else None})
 
 
@@ -121,5 +122,7 @@ async def action(update: Update, context):
             if user["role"] != "dispatch":
                 await messaging.notify_dispatch(context.bot, texts.d_restock(row, by, {"display_name": block["livreur"]}))
             stock.push_restock_later(row)
+        for item in block["load"]:                 # goûts chargés : cochés chez le livreur
+            await db.add_livreur_variants(block["livreur"], item["p"], item.get("v") or [])
     await messaging.edit(context.bot, chat_id, msg_id, texts.ravi_done(payload["ravi"], payload["blocks"], len(saved)))
     return "Enregistré ✅"

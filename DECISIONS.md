@@ -506,3 +506,10 @@ simple qui respecte le mur de confidentialité (§12).
      30 min, 3 fois au plus (job toutes les 2 min, rappels comptés par événement `edit_reminder` liés à la
      modification en cours : une nouvelle modification repart de zéro). Chaque rappel porte ✅ / ❌ ; au 3e, le
      dispatch est prévenu (la course manque au tableau tant que personne ne décide).
+132. **Goûts (variantes) hors compta** (demande de l'exploitant : même coût, même revente, mais savoir quel goût
+     il reste chez chaque livreur). Pas de produit par goût ni de quantité par goût (trop lourd et vite faux) :
+     `products.variants` (liste éditable par `/gouts`) et `livreur_variants` (le livreur en a / n'en a plus,
+     migration 016), clé = nom de feuille pour couvrir les livreurs sans compte. Les feuilles ne changent pas :
+     le catalogue trouve déjà « MSX » dans « MSX banane ». Sources de vérité légères : /ravi coche, le livreur
+     décoche, un produit épuisé décoche tout. Utilisé là où ça aide le choix : liste des livreurs du franchisé
+     (✅/❌, tri), /stock, /gouts.

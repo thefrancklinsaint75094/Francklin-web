@@ -255,6 +255,24 @@ la renvoie au même onglet.
 Base créée avant cette version : exécuter une fois `sql/migrations/009_sales.sql`, puis
 `sql/migrations/013_sales_night.sql`.
 
+### Goûts des produits (`/gouts`)
+
+Un produit peut avoir des goûts (variantes) au même coût, par exemple MSX en noisette, fraise, orange, banane.
+Pour la compta, rien ne change : « 12 MSX banane » reste 12 MSX dans les feuilles (le catalogue reconnaît le
+produit dans le texte), aucun produit à créer par goût. Le bot retient seulement **quels goûts chaque livreur
+a encore** (oui / non, jamais de quantité) :
+
+- `/gouts MSX noisette, fraise, orange, banane` (admins) : la liste des goûts ; `/gouts MSX -` l'efface ;
+  `/gouts` seul : les goûts et ce qu'il reste chez chaque livreur (ravitailleurs aussi) ;
+- `/ravi` : « 12 MSX banane fraise » ou « 12 MSX (5 banane, 7 fraise) » coche ces goûts chez le livreur (les
+  nombres entre parenthèses sont acceptés mais pas comptés ; un goût inconnu est signalé et ignoré) ;
+- le livreur coche / décoche avec `/gouts` (un bouton par goût) ; quand il n'a plus du tout de MSX, ses goûts
+  de MSX sont décochés tout seuls ;
+- une commande « 1 MSX banane » : la liste des livreurs proposée au franchisé affiche ✅banane / ❌banane, ceux
+  qui en ont d'abord ; `/stock` → Livreurs montre les goûts sous chaque produit.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/016_variants.sql`.
+
 ### Prénoms des livreurs (`/prenom`)
 
 Partout dans le bot (messages, boutons, journal), chaque livreur est écrit avec son prénom :

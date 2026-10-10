@@ -25,7 +25,7 @@ _ADMIN_COMMANDS = [("encours", "Courses en attente et en cours"), ("livreurs", "
                    ("users", "Tous les utilisateurs"), ("recharge", "Charger / reprendre un livreur"), ("ravi", "Rechargement en texte (/ravi 1)"), ("swipe", "Transfert entre livreurs"),
                    ("stock", "Stock des box et des livreurs"), ("caisse", "Cash à récupérer chez les livreurs"),
                    ("depense", "Noter une dépense d'un livreur"),
-                   ("synchro", "Renvoyer la nuit vers Google Sheets"), ("close", "Débrief de la journée"), ("ventes", "Ajouter un récap de ventes au tableau"), ("reset", "Remise à zéro de la semaine (archives)"), ("bannir", "Bannir quelqu'un (plus aucun accès)"), ("supprimer", "Supprimer un compte (définitif)"), ("prenom", "Prénoms des livreurs"),
+                   ("synchro", "Renvoyer la nuit vers Google Sheets"), ("close", "Débrief de la journée"), ("ventes", "Ajouter un récap de ventes au tableau"), ("reset", "Remise à zéro de la semaine (archives)"), ("bannir", "Bannir quelqu'un (plus aucun accès)"), ("supprimer", "Supprimer un compte (définitif)"), ("prenom", "Prénoms des livreurs"), ("gouts", "Goûts des produits"),
                    ("reactiver", "Rendre un accès")]
 
 COMMANDS = {
@@ -33,10 +33,10 @@ COMMANDS = {
                   ("produits", "Catalogue des produits")] + _ADMIN_COMMANDS,
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
                 ("macourse", "Revoir ma course en cours"), ("depense", "Noter une dépense"),
-                ("macaisse", "Mon cash à remettre")],
+                ("macaisse", "Mon cash à remettre"), ("gouts", "Mes goûts (ce qu'il me reste)")],
     "dispatch": _ADMIN_COMMANDS + [("produits", "Catalogue des produits")],
     "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash"), ("ravi", "Rechargement en texte"), ("swipe", "Transfert entre livreurs"), ("stock", "Stock des box et des livreurs"),
-                     ("caisse", "Cash à récupérer chez les livreurs")],
+                     ("caisse", "Cash à récupérer chez les livreurs"), ("gouts", "Goûts chez les livreurs")],
 }
 COMMON_COMMANDS = [("start", "Démarrer"), ("aide", "Aide")]
 

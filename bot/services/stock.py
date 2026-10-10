@@ -174,6 +174,8 @@ async def deliver_then_push(context, course: dict, livreur: dict | None, alerts:
                 empty = emptied_after_delivery(quantities, stock)
                 if empty:
                     await db.log_event("stock_empty", course["id"], livreur["id"], {"products": empty})
+                    for product in empty:            # plus de MSX du tout : plus de goûts de MSX
+                        await db.remove_livreur_variant(livreur["display_name"], product)
                     await _broadcast(context, course, livreur,
                                      texts.stock_empty_alert(course, livreur, sheet_name, empty))
     except Exception:  # noqa: BLE001

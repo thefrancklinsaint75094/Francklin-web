@@ -4,6 +4,7 @@
     Livreur A            ← le livreur qui reçoit
     Box 1                ← le box d'où sortent les produits (gardé pour les livreurs suivants)
     12 DIV               ← chargé au livreur
+    12 MSX banane fraise ← avec les goûts (ou « 12 MSX (5 banane, 7 fraise) ») : cochés chez le livreur
     -2 MSX               ← repris au livreur (retourne dans le box)
     cash 300             ← cash récupéré auprès du livreur
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from bot.services import variants as variants_svc
 from bot.services.sales import resolve_livreur
 
 ITEM_RE = re.compile(r"^(?P<sign>[-−+]?)\s*(?P<qty>\d{1,3})\s*[x×]?\s+(?P<product>.+?)$", re.I)
@@ -40,6 +42,7 @@ class Block:
 class Parsed:
     blocks: list[Block] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)   # goût inconnu : la ligne passe, le goût est ignoré
 
 
 def _key(text: str) -> str:
@@ -62,12 +65,14 @@ def resolve_box(num: str, boxes: tuple[str, ...]) -> str | None:
     return next((b for b in boxes if _key(b) in (wanted, f"box {wanted}") or _key(b).endswith(" " + wanted)), None)
 
 
-def _add(items: list[dict], name: str, qty: int) -> None:
+def _add(items: list[dict], name: str, qty: int, variants: list[str] | None = None) -> None:
     for item in items:
         if item["p"] == name:
             item["q"] += qty
+            if variants:
+                item["v"] = list(dict.fromkeys([*item.get("v", []), *variants]))
             return
-    items.append({"p": name, "q": qty})
+    items.append({"p": name, "q": qty, **({"v": list(variants)} if variants else {})})
 
 
 def parse(lines: list[str], catalog, livreur_names: list[str], livreurs: list[dict],
@@ -107,7 +112,13 @@ def parse(lines: list[str], catalog, livreur_names: list[str], livreurs: list[di
             elif qty <= 0:
                 out.errors.append(f"ligne {n} : quantité à 0")
             else:
-                _add(current.unload if m["sign"] in ("-", "−") else current.load, product, qty)
+                known = list(match.product.get("variants") or [])
+                found = variants_svc.found_in(m["product"], known) if known else []
+                odd = variants_svc.leftovers(m["product"], match.product, found) if known else []
+                if odd:
+                    out.warnings.append(f"ligne {n} : goût « {' '.join(odd)} » inconnu pour {product} "
+                                        f"(goûts : {', '.join(known)}) — ignoré")
+                _add(current.unload if m["sign"] in ("-", "−") else current.load, product, qty, found)
             continue
         if line[:1].isdigit() or line[:1] in "-−+":
             out.errors.append(f"ligne {n} : « {line} » — attendu : quantité puis produit (ex. 12 DIV, ou -2 MSX)")

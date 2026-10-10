@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from telegram import Update
 
-from bot import config, keyboards, messaging, texts
+from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common
-from bot.services import stock
+from bot.services import stock, variants
 
 ROLES = ("dispatch", "franchise", "ravitailleur")
 
@@ -66,7 +66,8 @@ async def show(update: Update, context):
         text = texts.boxes_overview(data["boxes"], data["totals"]) if data["ok"] else texts.stock_unavailable(data["error"])
     elif parts[1] == "liv":
         data = await stock.livreurs_now()
-        text = texts.livreurs_stock(data["livreurs"]) if data["ok"] else texts.stock_unavailable(data["error"])
+        flavors = variants.by_livreur(await db.list_livreur_variants())
+        text = texts.livreurs_stock(data["livreurs"], flavors) if data["ok"] else texts.stock_unavailable(data["error"])
     else:
         return None
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,

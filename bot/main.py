@@ -16,7 +16,7 @@ from telegram.ext import (
 from bot import config, db, jobs, messaging, texts
 from bot.config import PARIS
 from bot.handlers import (
-    cash, close_day, cloture, common, prenoms, restock_text, sales, swipe, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
+    cash, close_day, cloture, common, prenoms, variants as variants_h, restock_text, sales, swipe, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
 )
 from bot.services import names
 
@@ -150,6 +150,8 @@ def register_handlers(app: Application) -> None:
     cmd("ravi", restock_text.ravi)
     cmd("swipe", swipe.swipe)
     cmd("prenom", prenoms.prenom)
+    cmd("gouts", variants_h.gouts)
+    cmd("gout", variants_h.gouts)
     cmd("cloture", cloture.cloture)   # ancien nom, gardé
 
     callbacks = [
@@ -160,6 +162,7 @@ def register_handlers(app: Application) -> None:
         (r"^fp:", franchise.pick_livreur),
         (r"^fp_auto:", franchise.pick_auto),
         (r"^me:", franchise.edit_decision),
+        (r"^gv(:|_done$)", variants_h.toggle),
         (r"^draft_edit:", franchise.edit_draft),
         (r"^draft_edit_cancel:", franchise.cancel_edit),
         (r"^draft_cancel:", franchise.cancel_draft),

@@ -450,6 +450,27 @@ async def list_sales_between(start: datetime, end: datetime) -> list[dict]:
     return res.data
 
 
+async def list_livreur_variants(livreur_name: str | None = None) -> list[dict]:
+    q = _t("livreur_variants").select("*")
+    if livreur_name:
+        q = q.eq("livreur_name", livreur_name)
+    return (await q.order("product").execute()).data
+
+
+async def add_livreur_variants(livreur_name: str, product: str, variants: list[str]) -> None:
+    if variants:
+        await _t("livreur_variants").upsert(
+            [{"livreur_name": livreur_name, "product": product, "variant": v, "updated_at": iso(now_utc())}
+             for v in variants], on_conflict="livreur_name,product,variant").execute()
+
+
+async def remove_livreur_variant(livreur_name: str, product: str, variant: str | None = None) -> None:
+    q = _t("livreur_variants").delete().eq("livreur_name", livreur_name).eq("product", product)
+    if variant:
+        q = q.eq("variant", variant)
+    await q.execute()
+
+
 async def list_prenoms() -> list[dict]:
     return (await _t("prenoms").select("*").execute()).data
 

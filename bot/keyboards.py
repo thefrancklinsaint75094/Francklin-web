@@ -60,6 +60,8 @@ def franchise_pick(course_id: int, options: list[dict]) -> M:
             label = f"🛵 {name} · en livraison" + (f" ({o['busy']})" if o["busy"] > 1 else "")
         else:
             label = f"🟢 {name}" + (f" · {format_distance(o['m'])}" if o["m"] is not None else "")
+        if o.get("v"):                                    # goûts demandés : ✅ il en a · ❌ il n'en a plus
+            label += " · " + " ".join(f"{'✅' if ok else '❌'}{v}" for v, ok in o["v"])
         rows.append([B(label[:60], callback_data=f"fp:{course_id}:{lv['id']}")])
     rows.append([B("📣 Au plus proche", callback_data=f"fp_auto:{course_id}")])
     rows.append([B("🗑 Retirer", callback_data=f"course_withdraw:{course_id}")])
@@ -412,4 +414,18 @@ def swipe_confirm() -> M:
 def edit_decision(course_id: int) -> M:
     """Le franchisé valide (ou refuse) la modification faite par le livreur."""
     return M([[B("✅ Valider", callback_data=f"me:{course_id}:ok"), B("❌ Refuser", callback_data=f"me:{course_id}:no")]])
+
+
+def my_variants(products: list[dict], mine: dict) -> M | None:
+    """Le livreur coche les goûts qu'il a encore : ✅ MSX banane · ▫️ MSX fraise."""
+    if not products:
+        return None
+    buttons = []
+    for p in products:
+        for i, v in enumerate(p["variants"]):
+            mark = "✅" if v in mine.get(p["name"], set()) else "▫️"
+            buttons.append(B(f"{mark} {p['name']} {v}"[:40], callback_data=f"gv:{p['id']}:{i}"))
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([B("✔️ Terminé", callback_data="gv_done")])
+    return M(rows)
 
