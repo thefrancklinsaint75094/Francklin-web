@@ -106,9 +106,14 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
 PAYMENTS = {"e": "especes", "v": "virement"}   # code du bouton → valeur en base
 
 
-async def deliver(context, course: dict, by_dispatch: bool = False, payment: str | None = None) -> dict | None:
+async def deliver(context, course: dict, by_dispatch: bool = False, payment: str | None = None,
+                  ack: bool = False) -> dict | None:
     """Passe la course en `delivered` (avec le mode de paiement). Renvoie la course à jour, ou
-    None si elle n'était plus en cours (double appui, course déjà close…)."""
+    None si elle n'était plus en cours (double appui, course déjà close…).
+
+    ack : le livreur a validé en écrivant « OK » → un message de confirmation, avant la course suivante.
+    Une modification du livreur en attente (pending_edit) : la feuille n'est écrite qu'après la décision
+    du franchisé (handlers/franchise.edit_decision)."""
     livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
     now = now_utc()
     fields = {"status": "delivered", "delivered_at": iso(now), "closed_at": iso(now)}
@@ -150,7 +155,10 @@ async def deliver(context, course: dict, by_dispatch: bool = False, payment: str
         "course_delivered", course["id"], livreur["id"] if livreur else None,
         {"by_dispatch": by_dispatch, "distance_m": fields.get("delivered_distance_m")},
     )
-    stock.after_delivery_later(context, updated, livreur)
+    if not updated.get("pending_edit"):
+        stock.after_delivery_later(context, updated, livreur)
+    if livreur and ack:
+        await messaging.send(context.bot, livreur, texts.course_validated(updated))
     if livreur:
         await remind_next(context, livreur, course["id"])
     await broadcast.kick_pending(context)

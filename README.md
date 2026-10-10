@@ -387,6 +387,21 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
 
 Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
+### Validation par le livreur : « OK » ou « Modif »
+
+Le livreur valide sa course en cours en écrivant **OK** (espèces) ou **OK CB** / **OK virement**. Il doit
+valider sa course avant de passer à la suivante : le bouton « Livré » d'une course en attente répond
+« valide d'abord ta course en cours ». Un « ok merci » ne valide rien : seul un « OK » net compte.
+
+**Modif** (aussi « modifier », « modification ») : le client a pris autre chose. L'éditeur de la commande
+s'ouvre (quantités, produits du catalogue, prix de 10 en 10 €) ; à « Valider », la modification part au
+**franchisé**, qui a le dernier mot (✅ Valider / ❌ Refuser), puis le livreur choisit le paiement, ce qui
+valide la livraison. La commande ne change qu'à la validation du franchisé, et une course livrée n'est écrite
+dans le tableau Dispatch qu'une fois sa décision prise (`/synchro` l'attend aussi). Le bouton « ✏️ Modifier
+la commande » suit la même règle. Les modifications faites par un admin s'appliquent directement.
+
+Base créée avant cette version : exécuter une fois `sql/migrations/015_pending_edit.sql`.
+
 ### Modification de la commande par le livreur
 
 Sur place, le client prend parfois plus, moins ou autre chose. Sur sa course, le livreur appuie sur

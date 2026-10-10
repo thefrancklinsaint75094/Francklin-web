@@ -407,3 +407,9 @@ def ravi_confirm() -> M:
 
 def swipe_confirm() -> M:
     return M([[B("✅ Enregistrer", callback_data="sw_ok")], [B("❌ Annuler", callback_data="sw_x")]])
+
+
+def edit_decision(course_id: int) -> M:
+    """Le franchisé valide (ou refuse) la modification faite par le livreur."""
+    return M([[B("✅ Valider", callback_data=f"me:{course_id}:ok"), B("❌ Refuser", callback_data=f"me:{course_id}:no")]])
+

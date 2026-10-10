@@ -59,7 +59,8 @@ create table courses (
   delivered_at    timestamptz,
   closed_at       timestamptz,
   payment         text check (payment in ('especes','virement')),  -- mode de paiement à la livraison
-  detected_mode   text check (detected_mode in ('metro','vehicule','pied'))  -- déplacement détecté pendant la course
+  detected_mode   text check (detected_mode in ('metro','vehicule','pied')),  -- déplacement détecté pendant la course
+  pending_edit    jsonb           -- « Modif » du livreur en attente du franchisé : {products, price, by, at}
 );
 
 create table livreur_positions (

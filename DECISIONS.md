@@ -494,3 +494,11 @@ simple qui respecte le mur de confidentialité (§12).
      à 0 € (virement, payes, rechargements…) et les livreurs sans mouvement. Les alertes d'événement (« n'a
      plus de DIV sur lui ») restent. Dans les feuilles, format qui masque 0 sur la valeur du stock (Compta) et
      la caisse des livreurs (SOLDES ④).
+130. **« OK » / « Modif » et dernier mot au franchisé** (demande de l'exploitant). « OK » valide la course en
+     cours (la plus ancienne du livreur) ; seuls « OK », « OK CB », « OK virement » comptent, pour qu'un « ok
+     merci » ne livre rien. Une course suivante ne peut pas être validée avant (bouton « Livré » refusé). Une
+     modification par le livreur n'est plus appliquée tout de suite : `courses.pending_edit` (migration 015),
+     envoyée au franchisé avec ✅ / ❌ ; la livraison n'attend pas (le livreur enchaîne), mais l'écriture dans
+     la feuille, le stock et la caisse en vol attendent la décision (sinon la feuille, qui refuse les doublons,
+     garderait l'ancienne version). Les admins (dispatch, franchisés sur une autre course) modifient toujours
+     directement.
