@@ -513,3 +513,8 @@ simple qui respecte le mur de confidentialité (§12).
      le catalogue trouve déjà « MSX » dans « MSX banane ». Sources de vérité légères : /ravi coche, le livreur
      décoche, un produit épuisé décoche tout. Utilisé là où ça aide le choix : liste des livreurs du franchisé
      (✅/❌, tri), /stock, /gouts.
+133. **Le dispatch commande aussi** (demande de l'exploitant, « grand admin, tous les droits ») : ses messages
+     libres partent dans le circuit franchisé (`franchise.on_message`) au lieu du rappel des commandes ; les
+     contrôles « franchisé » acceptent le dispatch (`common.can_order`, `require(role="franchise")`). La course a
+     le dispatch pour franchisé ; pas d'avis « 🆕 » à lui-même. Il reçoit une copie de chaque message relayé
+     franchisé ↔ livreur (pas des siens).

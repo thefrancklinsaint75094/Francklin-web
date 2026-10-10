@@ -253,7 +253,7 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
 
 async def _own_draft(update: Update) -> tuple[dict | None, dict | None]:
     user = await common.actor(update)
-    if user is None or user["status"] != "active" or user["role"] != "franchise":
+    if not common.can_order(user):
         return user, None
     draft = await db.get_draft(common.arg(update))
     if draft is None or draft["franchise_id"] != user["id"]:
@@ -298,7 +298,8 @@ async def confirm(update: Update, context):
         pick.schedule_timeout(context.job_queue, course["id"], broadcast.pick_timeout)
     text, markup = lifecycle.franchise_view(course)
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, text, markup)
-    await messaging.notify_dispatch(context.bot, texts.d_created(course, user))
+    if user["role"] != "dispatch":                # le dispatch qui commande voit déjà sa fiche
+        await messaging.notify_dispatch(context.bot, texts.d_created(course, user))
     if opts:
         return f"Course #{course['id']} enregistrée : choisis le livreur"
     await broadcast.run_wave(context, course["id"], advance=False)
@@ -422,7 +423,7 @@ async def cancel_draft(update: Update, context):
 
 async def _own_course(update: Update) -> tuple[dict | None, dict | None]:
     user = await common.actor(update)
-    if user is None or user["status"] != "active" or user["role"] != "franchise":
+    if not common.can_order(user):
         return user, None
     course = await db.get_course(common.arg(update, int))
     if course is None or course["franchise_id"] != user["id"]:

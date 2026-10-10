@@ -25,7 +25,7 @@ def _is_party(course: dict, user: dict) -> bool:
 @common.callback
 async def start(update: Update, context):
     user = await common.actor(update)
-    if user is None or user["status"] != "active" or user["role"] not in ("franchise", "livreur"):
+    if user is None or user["status"] != "active" or user["role"] not in ("franchise", "livreur", "dispatch"):
         return None
     course = await db.get_course(common.arg(update, int))
     if course is None or not _is_party(course, user):
@@ -82,5 +82,7 @@ async def relay_text(update: Update, context, user: dict, course_id: int | None,
     )
     if sent is not None:
         await db.set_message_relayed_id(row["id"], sent.message_id)
+    if "dispatch" not in (user["role"], other["role"]):    # le dispatch voit toutes les conversations
+        await messaging.notify_dispatch(context.bot, texts.d_relay(course, user, other, content))
     await db.log_event("relay_message", course["id"], user["id"], {"message_id": row["id"]})
     await messaging.reply(update, texts.RELAY_SENT)

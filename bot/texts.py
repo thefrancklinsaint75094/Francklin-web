@@ -81,7 +81,9 @@ WELCOME_LIVREUR = (
 )
 
 WELCOME_DISPATCH = (
-    "Dispatch actif.\n\n"
+    "Dispatch actif — tous les droits.\n\n"
+    "📝 Tu peux aussi passer des commandes comme un franchisé : envoie l'adresse et les produits ici "
+    "(même fiche, même choix du livreur). Tu reçois une copie de chaque message 💬 entre livreurs et franchisés.\n\n"
     "/recap — totaux par livreur\n"
     "/journal — détail des courses livrées (envoyé automatiquement à 6h)\n"
     "/encours — courses en attente et en cours (👤 Attribuer à un livreur)\n"
@@ -1770,4 +1772,10 @@ def my_variants(products: list[dict]) -> str:
         return "🍬 Aucun goût défini pour l'instant."
     return ("🍬 <b>Tes goûts</b> — touche un goût pour le cocher (✅ tu en as encore) "
             "ou le décocher (tu n'en as plus).")
+
+
+def d_relay(course: dict, sender: dict, other: dict, content: str) -> str:
+    """Copie au dispatch d'un message « 💬 Contacter » entre un franchisé et un livreur."""
+    return (f"💬 #{course['id']} — {esc(sender.get('display_name') or '?')} → "
+            f"{esc(other.get('display_name') or '?')} :\n« {esc(content)} »")
 

@@ -53,10 +53,7 @@ async def on_message(update: Update, context) -> None:
 
         await dispatch.save_products(update, user, update.message.text)
         return
-    if user["role"] == "dispatch":
-        await messaging.reply(update, texts.WELCOME_DISPATCH)
-        return
-    if user["role"] == "franchise":
+    if user["role"] in ("franchise", "dispatch"):   # le dispatch passe aussi des commandes
         await franchise.on_message(update, context, user, state, payload)
     else:
         await livreur.on_message(update, context, user, state, payload)
