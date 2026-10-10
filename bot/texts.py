@@ -1700,3 +1700,23 @@ def edit_decided(course_id: int, accepted: bool, pending: dict, by: str) -> str:
 
 EDIT_ALREADY_DECIDED = "Cette modification a déjà été traitée."
 
+
+def _ago(minutes: int) -> str:
+    return f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d}"
+
+
+def edit_reminder(course: dict, livreur: dict, pending: dict, minutes: int) -> str:
+    return "\n".join([
+        f"⏰ <b>Rappel : modification de la course #{course['id']} en attente depuis {_ago(minutes)}</b>",
+        f"Par {esc(livreur.get('display_name') or 'le livreur')} — 📍 {esc(course['address'])}", "",
+        f"Avant : {esc(course.get('products') or '?')} — {eur(course['price'])}",
+        f"Après : <b>{esc(pending['products'])} — {eur(pending['price'])}</b>", "",
+        "Tant que tu n'as pas décidé, la course n'est pas dans le tableau. Tu valides ?",
+    ])
+
+
+def d_edit_waiting(course: dict, franchise: dict, minutes: int) -> str:
+    return (f"⏰ #{course['id']} — modification du livreur sans réponse de "
+            f"{esc(franchise.get('display_name') or 'son franchisé')} depuis {_ago(minutes)} : "
+            "la course n'est pas encore dans le tableau.")
+

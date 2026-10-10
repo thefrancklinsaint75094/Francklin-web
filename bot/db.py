@@ -198,6 +198,11 @@ async def take_course(course_id: int, livreur_id: str) -> dict | None:
     return _first(res)
 
 
+async def list_pending_edits() -> list[dict]:
+    """Courses dont la modification du livreur attend la décision du franchisé."""
+    return (await _t("courses").select("*").filter("pending_edit", "not.is", "null").order("id").execute()).data
+
+
 async def list_courses_by_status(status: str) -> list[dict]:
     return (await _t("courses").select("*").eq("status", status).order("id").execute()).data
 

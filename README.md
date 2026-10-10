@@ -399,6 +399,8 @@ s'ouvre (quantités, produits du catalogue, prix de 10 en 10 €) ; à « Valide
 valide la livraison. La commande ne change qu'à la validation du franchisé, et une course livrée n'est écrite
 dans le tableau Dispatch qu'une fois sa décision prise (`/synchro` l'attend aussi). Le bouton « ✏️ Modifier
 la commande » suit la même règle. Les modifications faites par un admin s'appliquent directement.
+Sans réponse, le franchisé est relancé à 10 min, 40 min et 1 h 10 (avec ✅ / ❌ dans le rappel) ; au dernier
+rappel, le dispatch est prévenu que la course n'est pas encore dans le tableau.
 
 Base créée avant cette version : exécuter une fois `sql/migrations/015_pending_edit.sql`.
 

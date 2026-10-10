@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import time, timedelta
 
-from bot import config, db, messaging, texts
+from bot import config, db, keyboards, messaging, texts
 from bot.config import PARIS
 from bot.handlers import cloture, dispatch
 from bot.services import broadcast, names
@@ -139,6 +139,36 @@ async def startup(context) -> None:
     await stations.load()
 
 
+EDIT_REMIND_FIRST = 10      # min : premier rappel au franchisé d'une « Modif » sans réponse
+EDIT_REMIND_EVERY = 30      # min : puis toutes les 30 min
+EDIT_REMIND_MAX = 3         # au 3e rappel, le dispatch est prévenu aussi ; ensuite on n'insiste plus
+
+
+async def edit_reminders(context) -> None:
+    """Modification du livreur toujours sans décision : le franchisé est relancé (10 min, 40 min, 1 h 10),
+    avec les boutons ✅ / ❌ ; au dernier rappel, le dispatch est prévenu."""
+    for course in await db.list_pending_edits():
+        pending = course.get("pending_edit") or {}
+        at = parse_ts(pending.get("at"))
+        if at is None or course["status"] not in ("assigned", "delivered"):
+            continue
+        minutes = minutes_since(at)
+        done = [e for e in await db.list_events(course["id"], "edit_reminder")
+                if (e.get("payload") or {}).get("at") == pending.get("at")]
+        n = len(done)
+        if n >= EDIT_REMIND_MAX or minutes < EDIT_REMIND_FIRST + n * EDIT_REMIND_EVERY:
+            continue
+        franchise = await db.get_user(course["franchise_id"])
+        livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
+        await db.log_event("edit_reminder", course["id"], payload={"at": pending.get("at"), "n": n + 1})
+        if franchise:
+            await messaging.send(context.bot, franchise,
+                                 texts.edit_reminder(course, livreur or {}, pending, int(minutes)),
+                                 keyboards.edit_decision(course["id"]))
+        if n + 1 == EDIT_REMIND_MAX:
+            await messaging.notify_dispatch(context.bot, texts.d_edit_waiting(course, franchise or {}, int(minutes)))
+
+
 async def refresh_prenoms(context) -> None:
     """Prénoms des livreurs (« Livreur A (Ketur) ») : nouvelles inscriptions et /prenom d'un autre admin."""
     await names.refresh()
@@ -163,6 +193,7 @@ def register(job_queue) -> None:
     job_queue.run_once(_safe(startup), when=1, name="startup")
     job_queue.run_repeating(_safe(expire_drafts), interval=60, first=30, name="expire_drafts")
     job_queue.run_repeating(_safe(refresh_prenoms), interval=120, first=120, name="refresh_prenoms")
+    job_queue.run_repeating(_safe(edit_reminders), interval=120, first=150, name="edit_reminders")
     job_queue.run_repeating(_safe(stale_positions), interval=120, first=60, name="stale_positions")
     job_queue.run_repeating(_safe(stuck_courses), interval=300, first=90, name="stuck_courses")
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")

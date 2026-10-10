@@ -502,3 +502,7 @@ simple qui respecte le mur de confidentialité (§12).
      la feuille, le stock et la caisse en vol attendent la décision (sinon la feuille, qui refuse les doublons,
      garderait l'ancienne version). Les admins (dispatch, franchisés sur une autre course) modifient toujours
      directement.
+131. **Rappel au franchisé** d'une « Modif » sans réponse (demande de l'exploitant) : 10 min, puis toutes les
+     30 min, 3 fois au plus (job toutes les 2 min, rappels comptés par événement `edit_reminder` liés à la
+     modification en cours : une nouvelle modification repart de zéro). Chaque rappel porte ✅ / ❌ ; au 3e, le
+     dispatch est prévenu (la course manque au tableau tant que personne ne décide).
