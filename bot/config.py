@@ -91,6 +91,8 @@ class Config:
     position_alert_minutes: int = 10           # dispatch prévenu quand un livreur en service n'envoie plus sa position
     transport_max_km: float = 5.0              # un livreur en transport / à pied ne reçoit pas de course plus loin
     stations_url: str | None = None            # liste des stations IDF (vide : adresse par défaut, « - » : aucune)
+    franchise_picks: bool = True               # le franchisé choisit le livreur à la confirmation (sinon : diffusion)
+    pick_timeout_minutes: int = 5              # sans choix : la course part au plus proche (0 : jamais)
 
     @property
     def uses_ai(self) -> bool:
@@ -138,6 +140,8 @@ class Config:
             position_alert_minutes=_int("POSITION_ALERT_MINUTES", 10),
             transport_max_km=float(_raw("TRANSPORT_MAX_KM") or 5),
             stations_url=_raw("STATIONS_URL"),
+            franchise_picks=(_raw("FRANCHISE_PICKS_LIVREUR") or "1").lower() not in ("0", "non", "false", "off"),
+            pick_timeout_minutes=_int("PICK_TIMEOUT_MINUTES", 5),
         )
         if cfg.extraction_mode == "ia" and not cfg.anthropic_api_key:
             raise ConfigError("EXTRACTION_MODE=ia demande ANTHROPIC_API_KEY")

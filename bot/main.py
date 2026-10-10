@@ -157,6 +157,8 @@ def register_handlers(app: Application) -> None:
         (r"^approve:", onboarding.approve),
         (r"^reject:", onboarding.reject),
         (r"^draft_confirm:", franchise.confirm),
+        (r"^fp:", franchise.pick_livreur),
+        (r"^fp_auto:", franchise.pick_auto),
         (r"^draft_edit:", franchise.edit_draft),
         (r"^draft_edit_cancel:", franchise.cancel_edit),
         (r"^draft_cancel:", franchise.cancel_draft),

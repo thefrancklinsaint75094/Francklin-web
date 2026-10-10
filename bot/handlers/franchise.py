@@ -8,7 +8,7 @@ from telegram import Update
 
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, relay
-from bot.services import broadcast, geocoding, lifecycle, transcription
+from bot.services import broadcast, geocoding, lifecycle, pick, transcription
 from bot.services import catalog, order_edit, rules_extraction
 from bot.services.rules_extraction import RuleExtractor
 from bot.services.extraction import (
@@ -291,11 +291,70 @@ async def confirm(update: Update, context):
         "franchise_message_id": update.callback_query.message.message_id,
     })
     await db.log_event("course_created", course["id"], user["id"], {"draft_id": locked["id"]})
+    # Le franchisé choisit son livreur parmi ceux en service ; personne en service : diffusion (attente).
+    opts = await pick.options(course) if config.get().franchise_picks else []
+    if opts:
+        pick.remember(course["id"], pick.build(course, opts))
+        pick.schedule_timeout(context.job_queue, course["id"], broadcast.pick_timeout)
     text, markup = lifecycle.franchise_view(course)
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, text, markup)
     await messaging.notify_dispatch(context.bot, texts.d_created(course, user))
+    if opts:
+        return f"Course #{course['id']} enregistrée : choisis le livreur"
     await broadcast.run_wave(context, course["id"], advance=False)
     return f"Course #{course['id']} envoyée"
+
+
+@common.callback
+async def pick_livreur(update: Update, context):
+    """fp:<course>:<livreur> : le franchisé envoie sa course à ce livreur, même s'il est déjà en livraison."""
+    user = await common.actor(update)
+    _, course_id, livreur_id = update.callback_query.data.split(":", 2)
+    course = await db.get_course(int(course_id))
+    if course is None or user is None or user["status"] != "active" or \
+            (course["franchise_id"] != user["id"] and not common.is_admin(user)):
+        return None
+    if course["status"] != "pending":
+        await lifecycle.refresh_franchise_message(context, course)
+        return texts.ALREADY_CLOSED, True
+    livreur = await db.get_user(livreur_id)
+    if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
+        return texts.ALREADY_HANDLED, True
+    ongoing = await db.list_assigned_for_livreurs([livreur["id"]])
+    won = await db.take_course(course["id"], livreur["id"])
+    if won is None:
+        await lifecycle.refresh_franchise_message(context, await db.get_course(course["id"]))
+        return texts.ALREADY_CLOSED, True
+    if won.get("franchise_message_id") != update.callback_query.message.message_id:
+        await db.update_course(won["id"], {"franchise_message_id": update.callback_query.message.message_id})
+        won["franchise_message_id"] = update.callback_query.message.message_id
+    await lifecycle.after_assignment(context, won, livreur, None)
+    await db.log_event("course_picked", won["id"], livreur["id"], {"by": user["id"], "busy": len(ongoing)})
+    if ongoing:
+        current = min(ongoing, key=lambda c: (c.get("assigned_at") or "", c["id"]))
+        await messaging.send(context.bot, livreur, texts.queued_for_livreur(won, current))
+        franchise = await db.get_user(won["franchise_id"])
+        if franchise:
+            await messaging.send(context.bot, franchise, texts.livreur_busy_for_franchise(won, livreur, current))
+        return "Envoyée — il est en livraison, il la fera juste après"
+    return "Envoyée ✅"
+
+
+@common.callback
+async def pick_auto(update: Update, context):
+    """fp_auto:<course> : diffusion habituelle, au plus proche."""
+    user = await common.actor(update)
+    course = await db.get_course(common.arg(update, int))
+    if course is None or user is None or user["status"] != "active" or \
+            (course["franchise_id"] != user["id"] and not common.is_admin(user)):
+        return None
+    pick.forget(context.job_queue, course["id"])
+    if course["status"] != "pending":
+        await lifecycle.refresh_franchise_message(context, course)
+        return texts.ALREADY_CLOSED, True
+    await lifecycle.refresh_franchise_message(context, course, franchise=user if user["id"] == course["franchise_id"] else None)
+    await broadcast.run_wave(context, course["id"], advance=False)
+    return "Envoyée au plus proche"
 
 
 @common.callback

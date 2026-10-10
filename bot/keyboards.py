@@ -48,6 +48,24 @@ def franchise_course(course: dict) -> M | None:
     return None
 
 
+def franchise_pick(course_id: int, options: list[dict]) -> M:
+    """Le franchisé choisit le livreur : 🟢 libre (distance) · 🛵 déjà en livraison."""
+    from bot.services.distance import format_distance
+
+    rows = []
+    for o in options:
+        lv = o["user"]
+        name = lv.get("display_name") or "?"
+        if o["busy"]:
+            label = f"🛵 {name} · en livraison" + (f" ({o['busy']})" if o["busy"] > 1 else "")
+        else:
+            label = f"🟢 {name}" + (f" · {format_distance(o['m'])}" if o["m"] is not None else "")
+        rows.append([B(label[:60], callback_data=f"fp:{course_id}:{lv['id']}")])
+    rows.append([B("📣 Au plus proche", callback_data=f"fp_auto:{course_id}")])
+    rows.append([B("🗑 Retirer", callback_data=f"course_withdraw:{course_id}")])
+    return M(rows)
+
+
 def withdraw_confirm(course_id: int) -> M:
     return M([[B("Oui", callback_data=f"fw_yes:{course_id}"), B("Non", callback_data=f"fw_no:{course_id}")]])
 

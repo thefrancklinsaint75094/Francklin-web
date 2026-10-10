@@ -2390,3 +2390,65 @@ async def test_prenoms_shown_everywhere(h):
     # Retour au prénom de l'inscription.
     await h.text(DISPATCH, "/prenom Livreur 1 -")
     assert names_service.label("Livreur 1") == "Livreur 1 (Livreur-3001)"
+
+
+async def test_franchise_picks_livreur(h, test_config):
+    """Le franchisé choisit son livreur : liste des livreurs en service (libres d'abord), envoi direct ;
+    un livreur déjà en livraison reçoit quand même la course, le franchisé est prévenu, et elle lui est
+    rappelée quand il valide celle en cours. « Au plus proche » et le délai sans choix : diffusion."""
+    import dataclasses
+    from types import SimpleNamespace
+
+    from bot import config
+
+    config.set_config(dataclasses.replace(test_config, franchise_picks=True, pick_timeout_minutes=5))
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    await go_on_duty(h, L2, REPUBLIQUE)
+
+    c1 = await order(h, F1, "rivoli")
+    card = h.tg.find(F1, f"Course #{c1['id']} enregistrée — <b>à quel livreur")
+    labels = [label for label, _ in card.buttons]
+    assert labels[0].startswith("🟢 Livreur 1 · ~") and labels[1].startswith("🟢 Livreur 2 · ~")
+    assert [d.split(":")[0] for _, d in card.buttons] == ["fp", "fp", "fp_auto", "course_withdraw"]
+    assert await db.list_broadcasts(c1["id"]) == []                 # rien n'est diffusé
+    await broadcast.kick_pending(h.context)                           # ni par une relance
+    assert await db.list_broadcasts(c1["id"]) == []
+
+    await h.press_data(F1, card, f"fp:{c1['id']}:{l1['id']}")
+    assert (await db.get_course(c1["id"]))["livreur_id"] == l1["id"]
+    fiche1 = h.tg.find(L1, f"🚴 Course #{c1['id']} — c'est pour toi")
+    assert "📍 12 Rue de Rivoli" in fiche1.text
+    assert f"Course #{c1['id']} — prise par Livreur 1" in h.tg.messages[(F1, card.message_id)].text
+
+    # Deuxième course : Livreur 1 est en livraison, le franchisé le choisit quand même.
+    c2 = await order(h, F2, "oberkampf")
+    card2 = h.tg.find(F2, f"Course #{c2['id']} enregistrée")
+    labels2 = [label for label, _ in card2.buttons]
+    assert labels2[0].startswith("🟢 Livreur 2") and labels2[1] == "🛵 Livreur 1 · en livraison"   # libres d'abord
+    await h.press_data(F2, card2, f"fp:{c2['id']}:{l1['id']}")
+    assert (await db.get_course(c2["id"]))["livreur_id"] == l1["id"]
+    assert h.tg.last(L1).text == texts.queued_for_livreur({"id": c2["id"]}, {"id": c1["id"]})
+    assert h.tg.find(L1, f"🚴 Course #{c2['id']} — c'est pour toi")
+    assert h.tg.last(F2).text == texts.livreur_busy_for_franchise({"id": c2["id"]}, l1, {"id": c1["id"]})
+
+    # Il valide la première : la suivante lui est renvoyée, à faire maintenant.
+    await deliver_course(h, L1, fiche1)
+    reminder = h.tg.last(L1)
+    assert reminder.text.startswith("🔔 <b>Course suivante, à faire maintenant</b>")
+    assert f"🚴 Course #{c2['id']}" in reminder.text and "course_deliver" in reminder.buttons[0][1]
+    assert (await db.get_course(c2["id"]))["livreur_message_id"] == reminder.message_id
+
+    # « Au plus proche » : diffusion habituelle.
+    c3 = await order(h, F1, "rivoli")
+    card3 = h.tg.find(F1, f"Course #{c3['id']} enregistrée")
+    await h.press_data(F1, card3, f"fp_auto:{c3['id']}")
+    assert await db.list_broadcasts(c3["id"]) != []
+
+    # Sans choix dans le délai : diffusion, le franchisé est prévenu.
+    c4 = await order(h, F2, "oberkampf")
+    assert await db.list_broadcasts(c4["id"]) == []
+    await broadcast.pick_timeout(SimpleNamespace(bot=h.app.bot, job_queue=h.app.job_queue,
+                                                 job=SimpleNamespace(data=c4["id"])))
+    assert texts.pick_timeout(c4["id"]) in h.tg.texts(F2)
+    assert await db.list_broadcasts(c4["id"]) != []
