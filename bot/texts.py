@@ -640,16 +640,29 @@ def d_created(course: dict, franchise: dict) -> str:
 
 def d_taken(course: dict, franchise: dict, livreur: dict) -> str:
     return (
-        f"🚴 #{course['id']} — {esc(franchise['display_name'])} → {esc(livreur['display_name'])} — "
-        f"{esc(course['district'])} — {eur(course['price'])}"
+        f"🚴 <b>Course #{course['id']} prise</b> par {esc(livreur['display_name'])}\n"
+        f"Pour {esc(franchise['display_name'])} · 📍 {esc(course.get('address') or course['district'])} · "
+        f"{eur(course['price'])}"
     )
 
 
 def d_delivered(course: dict, livreur: dict, far_label: str | None = None) -> str:
-    text = f"✅ #{course['id']} — livrée — {esc(livreur['display_name'])} — {eur(course['price'])}{_pay(course)}"
+    text = (f"✅ <b>Course #{course['id']} livrée</b> par {esc(livreur['display_name'])}\n"
+            f"📍 {esc(course.get('address') or course.get('district') or '')} · {eur(course['price'])}{_pay(course)}")
     if far_label:
         text += f"\n⚠️ livré à {far_label} de l'adresse"
     return text
+
+
+def taken_for_franchise(course: dict, livreur: dict) -> str:
+    return (f"🚴 <b>Ta course #{course['id']} est prise</b> par {esc(livreur.get('display_name') or 'un livreur')}"
+            f" — il est en route.\n📍 {esc(course['address'])} · {eur(course['price'])}")
+
+
+def delivered_for_franchise(course: dict, livreur: dict | None) -> str:
+    who = f" par {esc(livreur['display_name'])}" if livreur and livreur.get("display_name") else ""
+    return (f"✅ <b>Ta course #{course['id']} est livrée</b>{who}.\n"
+            f"📍 {esc(course['address'])} · {eur(course['price'])}{_pay(course)}")
 
 
 def d_livreur_cancel(course_id: int, livreur: dict) -> str:

@@ -96,6 +96,9 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
     course["livreur_message_id"] = msg_id
 
     await refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)
+    # Une fiche modifiée ne sonne pas sur le téléphone : un vrai message prévient le franchisé.
+    if franchise and franchise["role"] != "dispatch":
+        await messaging.send(context.bot, franchise, texts.taken_for_franchise(course, livreur))
     await messaging.notify_dispatch(context.bot, texts.d_taken(course, franchise or {"display_name": "?"}, livreur))
     await db.log_event("course_taken", course["id"], livreur["id"])
     stock.after_assignment_later(context, course, livreur)
@@ -147,6 +150,9 @@ async def deliver(context, course: dict, by_dispatch: bool = False, payment: str
             await messaging.edit(context.bot, livreur["telegram_id"], course.get("livreur_message_id"), text,
                                  sent_at=parse_ts(course.get("assigned_at")), user=livreur)
     await refresh_franchise_message(context, updated, livreur=livreur)
+    franchise = await db.get_user(updated["franchise_id"])
+    if franchise and franchise["role"] != "dispatch":       # le dispatch a déjà son avis ci-dessous
+        await messaging.send(context.bot, franchise, texts.delivered_for_franchise(updated, livreur))
     if not by_dispatch:
         await messaging.notify_dispatch(
             context.bot, texts.d_delivered(updated, livreur or {"display_name": "?"}, far_label)

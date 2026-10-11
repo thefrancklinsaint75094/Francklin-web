@@ -537,4 +537,10 @@ simple qui respecte le mur de confidentialité (§12).
      livreur qui fait /close (ou 🏁 dans son menu) termine son propre service. Il passe hors service (comme
      /pause) ; la nuit est celle du débrief (`closing_night`). Stock et cash viennent des mêmes lectures que
      /stock et /caisse (avec ce que le bot compte en attendant la feuille) ; feuille illisible : dit tel quel.
+138. **Prise et livraison : de vrais messages** (demande de l'exploitant : « pas de notification quand le livreur
+     prend la commande, ni quand elle est effectuée »). La fiche du franchisé était seulement modifiée — une
+     modification ne sonne pas sur le téléphone. Le franchisé reçoit maintenant un nouveau message à la prise
+     (« 🚴 Ta course #12 est prise par … — il est en route ») et à la livraison (« ✅ Ta course #12 est
+     livrée … »). Les avis du dispatch sont réécrits en clair, avec l'adresse (« 🚴 Course #12 prise par … »,
+     « ✅ Course #12 livrée par … »). Le dispatch qui commande lui-même ne reçoit pas deux fois la même chose.
 

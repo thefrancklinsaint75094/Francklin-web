@@ -353,7 +353,11 @@ async def test_dispo_broadcast_take_and_deliver(h):
     assert "lv3001" not in fmsg.text
     assert [d.split(":")[0] for _, d in fmsg.buttons] == ["force_deliver", "order_edit", "relay_start",
                                                           "course_withdraw"]
-    assert f"🚴 #{course['id']} — Franchisé 1 → Livreur 1 — Paris 4e — 60 €" in h.tg.texts(DISPATCH)
+    assert f"🚴 <b>Course #{course['id']} prise</b> par Livreur 1\nPour Franchisé 1 · 📍 12 Rue de Rivoli 75004 Paris · 60 €" in [
+        x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
+    # Le franchisé reçoit un vrai message (une fiche modifiée ne sonne pas sur le téléphone).
+    assert any(t.startswith(f"🚴 <b>Ta course #{course['id']} est prise</b> par Livreur 1 — il est en route.")
+               for t in h.tg.texts(F1))
 
     # L2 appuie trop tard.
     await h.press_data(L2, prop2, f"course_take:{course['id']}")
@@ -367,7 +371,8 @@ async def test_dispo_broadcast_take_and_deliver(h):
     assert delivered["status"] == "delivered" and delivered["delivered_distance_m"] is not None
     assert "✅ Course" in h.tg.last(L1).text or "livrée" in h.tg.messages[(L1, fiche.message_id)].text
     assert "— livrée à" in h.tg.find(F1, f"Course #{course['id']} — livrée").text
-    assert f"✅ #{course['id']} — livrée — Livreur 1 — 60 € · 💵 espèces" in [
+    assert any(t.startswith(f"✅ <b>Ta course #{course['id']} est livrée</b> par Livreur 1.") for t in h.tg.texts(F1))
+    assert f"✅ <b>Course #{course['id']} livrée</b> par Livreur 1\n📍 12 Rue de Rivoli 75004 Paris · 60 € · 💵 espèces" in [
         x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
     # Double « Livré » : sans effet.
     await h.press_data(L1, fiche, f"course_deliver:{course['id']}")
@@ -470,7 +475,7 @@ async def test_livreur_cancel_rebroadcast(h):
     assert (await db.get_user(l1["id"]))["cancel_count"] == 1
     assert h.tg.messages[(L1, fiche.message_id)].text == texts.livreur_cancelled(course["id"])
     assert h.tg.last(L2).text.startswith(f"🆕 Course #{course['id']}")
-    assert "Livreur 1 a annulé la course" in h.tg.find(F1, f"course #{course['id']}").text
+    assert "Livreur 1 a annulé la course" in h.tg.find(F1, "a annulé la course").text
     assert f"⚠️ #{course['id']} — annulée par Livreur 1 (1re annulation) — remise en diffusion" in h.tg.texts(DISPATCH)
     # Le livreur qui a annulé ne la reçoit plus.
     await broadcast.run_wave(h.context, course["id"], advance=True)
@@ -976,7 +981,7 @@ async def test_payment_mode_at_delivery(h, monkeypatch):
     await deliver_course(h, L1, h.tg.messages[(L1, fiche.message_id)], pay="v")
     delivered = await db.get_course(course["id"])
     assert delivered["status"] == "delivered" and delivered["payment"] == "virement"
-    assert "💳 virement" in h.tg.find(DISPATCH, f"✅ #{course['id']} — livrée").text
+    assert "💳 virement" in h.tg.find(DISPATCH, f"✅ <b>Course #{course['id']} livrée").text
     await asyncio.gather(*list(sheets._tasks))
     assert [r["paiement"] for r in sent] == ["Virement"]
 
@@ -1113,7 +1118,8 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     assert sent[0]["lignes"] == [{"produit": "vodka", "qte": 3, "prix": 90.0},
                                  {"produit": "coca", "qte": 1, "prix": 20.0},
                                  {"produit": "DIV", "qte": 1, "prix": 20.0}]
-    assert f"✅ #{course['id']} — livrée — Livreur 1 — 130 € · 💵 espèces" in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
+    assert any(t.startswith(f"✅ <b>Course #{course['id']} livrée</b> par Livreur 1") and "130 € · 💵 espèces" in t
+               for t in [x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)])
 
 
 async def test_franchise_order_price_must_be_multiple_of_ten(h):
@@ -1297,7 +1303,7 @@ async def test_franchise_has_full_admin_powers(h):
     assert assigned["status"] == "assigned" and assigned["livreur_id"] == l1["id"]
     fiche = h.tg.find(L1, "c'est pour toi")
     assert f"🚴 Course #{course['id']}" in fiche.text
-    assert f"🚴 #{course['id']} — Franchisé 1 → Livreur 1" in txt(h.tg.find(DISPATCH, f"🚴 #{course['id']}"))
+    assert f"Course #{course['id']} prise</b> par Livreur 1" in txt(h.tg.find(DISPATCH, f"🚴 <b>Course #{course['id']} prise"))
 
     # Le franchisé modifie sa course : une vodka de plus.
     fmsg = h.tg.find(F1, f"Course #{course['id']} — prise par")
