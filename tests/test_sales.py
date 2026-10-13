@@ -65,3 +65,24 @@ def test_preview_total_hides_zero_parts():
     assert "Total : 💵 espèces 60 € — 1 ligne" in text and "virement" not in text
     gift = [{"livreur": "Livreur A", "lines": [{"pay": "especes", "q": 1, "p": "US", "x": 0.0}]}]
     assert "Total : 🎁 tout offert — 1 ligne" in texts.sales_preview(gift, "Lundi")
+
+
+def test_parse_address_before_colon():
+    text = ("Livreur A :\n12 rue de la Paix 75002 Paris :2  US  100\n8 av. Foch Créteil : CB 1 divin 50€\n"
+            ": 1 MSX 50\nb : 1 US 50\nLivreur A: 1 MSX 40")
+    out = sales.parse(text, CAT, NAMES, USERS)
+    assert out.errors == []
+    assert [b.livreur for b in out.blocks] == ["Livreur A", "Livreur B"]
+    assert out.blocks[0].lines == [
+        {"pay": "especes", "q": 2, "p": "US", "x": 100.0, "a": "12 rue de la Paix 75002 Paris"},
+        {"pay": "virement", "q": 1, "p": "DIV", "x": 50.0, "a": "8 av. Foch Créteil"},
+        {"pay": "especes", "q": 1, "p": "MSX", "x": 50.0},
+        {"pay": "especes", "q": 1, "p": "MSX", "x": 40.0}]
+    assert out.blocks[1].lines == [{"pay": "especes", "q": 1, "p": "US", "x": 50.0}]
+
+
+def test_parse_address_line_errors():
+    out = sales.parse("Livreur A\n12 rue X : deux US\n5 rue Y : 1 KT 50", CAT, NAMES, USERS)
+    assert out.errors == [
+        "ligne 2 : « 12 rue X : deux US » — attendu : adresse : quantité, produit, prix (ex. 12 rue de la Paix : 2 US 60)",
+        "ligne 3 : produit inconnu « KT »"]

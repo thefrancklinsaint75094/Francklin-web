@@ -2159,6 +2159,7 @@ async def test_sales_recap_fills_the_sheet(h, monkeypatch):
         (f"V{rows[1]['id']}", "Livreur 1", "OK", "Virement", [{"produit": "DIV", "qte": 1, "prix": 30.0}]),
         (f"V{rows[2]['id']}", "Livreur 2", "OK", "Espèces", [{"produit": "US", "qte": 1, "prix": 30.0}]),
         (f"V{rows[3]['id']}", "Livreur 2", "OK", "Espèces", [{"produit": "DIV", "qte": 1, "prix": 0.0}])]
+    assert {r["adresse"] for r in sent} == {"Récap ventes"}
     # Bouton de nouveau : expiré.
     await h.press_data(DISPATCH, preview, "sl_ok")
     assert h.tg.answers()[-1]["text"] == texts.SALES_EXPIRED
@@ -2171,9 +2172,14 @@ async def test_sales_recap_fills_the_sheet(h, monkeypatch):
     await h.text(F1, "/ventes\nLivreur 2\nVirement 2 DIV 60")
     await h.press_data(F1, h.tg.last(F1), "sl_x")
     assert h.tg.last(F1).text == texts.SALES_CANCELLED
-    await h.text(F1, "/ventes\nLivreur 2\nVirement 2 DIV 60")
+    await h.text(F1, "/ventes\nLivreur 2\n12 rue de la Paix Paris : Virement 2 DIV 60")
+    assert "💳 2 DIV — 60 € · 📍 12 rue de la Paix Paris" in h.tg.last(F1).text.replace("\xa0", " ")
+    sent.clear()
     await h.press_data(F1, h.tg.last(F1), "sl_ok")
     assert "🧾 <b>Ventes ajoutées" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
+    assert [r["adresse"] for r in sent] == ["12 rue de la Paix Paris"]
+    last = (await db._t("sales").select("*").order("id", desc=True).limit(1).execute()).data[0]
+    assert last["address"] == "12 rue de la Paix Paris"
 
 
 async def test_ravi_text_restock(h, monkeypatch):

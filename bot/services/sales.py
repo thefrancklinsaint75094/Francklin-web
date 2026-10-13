@@ -5,9 +5,11 @@ Format (un bloc par livreur, autant de blocs que voulu) :
     Livreur A
     2 US 60
     CB 1 DIV 30
+    12 rue de la Paix Paris : 1 US 50
 
 Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €, ou 0 € pour un
-produit offert : il sort du stock du livreur sans rien rapporter).
+produit offert : il sort du stock du livreur sans rien rapporter). L'adresse, facultative, se met devant, suivie de
+« : » ; elle va dans la colonne Adresse de la feuille (sinon « Récap ventes »).
 Espèces par défaut ; sinon « CB » ou « virement » n'importe où avant le prix (CB compte comme virement :
 la feuille ne connaît que Espèces et Virement). Fonctions pures ici ; l'enregistrement est dans
 handlers/sales.py.
@@ -29,6 +31,7 @@ DEFAULT_PAY = "especes"
 LINE_RE = re.compile(r"^(?P<qty>\d{1,3})\s*[x×]?\s+(?P<product>.+?)\s+(?P<price>\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|e|eur|euros?)?$",
                      re.I)
 MAX_LINES = 60
+MAX_ADDRESS = 150
 
 
 DAYS = {"lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4, "samedi": 5, "dimanche": 6}
@@ -76,7 +79,7 @@ def split_payment(line: str) -> tuple[str | None, str]:
 class Block:
     livreur: str                          # nom tel qu'écrit, puis nom de la feuille une fois reconnu
     user: dict | None = None
-    lines: list[dict] = field(default_factory=list)   # {"pay": "especes", "q": 2, "p": "US", "x": 60.0}
+    lines: list[dict] = field(default_factory=list)   # {"pay": "especes", "q": 2, "p": "US", "x": 60.0[, "a": adresse]}
 
 
 @dataclass
@@ -110,6 +113,15 @@ def resolve_livreur(text: str, names: list[str], users: list[dict]) -> tuple[str
     return None, None
 
 
+def split_address(line: str) -> tuple[str | None, str]:
+    """« 12 rue de la Paix : 2 US 60 » → (« 12 rue de la Paix », « 2 US 60 ») ; sans « : », pas d'adresse.
+    « Livreur A : » → (« Livreur A », « ») : un nom de livreur suivi de deux-points."""
+    address, sep, rest = line.rpartition(":")
+    if not sep:
+        return None, line
+    return " ".join(address.split()) or None, rest.strip()
+
+
 def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
     out = Parsed()
     current: Block | None = None
@@ -117,7 +129,17 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
         line = raw.strip()
         if not line or line.lower().startswith("/vente"):
             continue
-        pay, rest = split_payment(line)
+        address, sale = split_address(line)
+        if address and not sale:                         # « Livreur A : »
+            line = sale = address
+            address = None
+        elif address and resolve_livreur(address, names, users)[0]:   # « Livreur A : 2 US 60 »
+            name, user = resolve_livreur(address, names, users)
+            current = next((b for b in out.blocks if b.livreur == name), None) or Block(name, user)
+            if current not in out.blocks:
+                out.blocks.append(current)
+            address = None
+        pay, rest = split_payment(sale)
         m = LINE_RE.match(rest)
         if m:
             if current is None:
@@ -133,7 +155,12 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             elif int(m["qty"]) <= 0:
                 out.errors.append(f"ligne {n} : quantité à 0")
             else:
-                current.lines.append({"pay": pay or DEFAULT_PAY, "q": int(m["qty"]), "p": product, "x": price})
+                current.lines.append({"pay": pay or DEFAULT_PAY, "q": int(m["qty"]), "p": product, "x": price,
+                                      **({"a": address[:MAX_ADDRESS]} if address else {})})
+            continue
+        if address:
+            out.errors.append(f"ligne {n} : « {line} » — attendu : adresse : quantité, produit, prix "
+                              "(ex. 12 rue de la Paix : 2 US 60)")
             continue
         if pay is not None or rest[:1].isdigit():
             out.errors.append(f"ligne {n} : « {line} » — attendu : quantité, produit, prix "

@@ -179,7 +179,7 @@ def sale_row(sale: dict) -> dict:
         "livreur_nom": "",
         "statut": STATUT_LIVRE,
         "paiement": PAYMENT_SHEET.get(sale["payment"], ""),
-        "adresse": "Récap ventes",
+        "adresse": sale.get("address") or "Récap ventes",
         "lignes": [{"produit": sale["product"], "qte": int(sale["qty"]), "prix": price}],
         "prix": price,
     }

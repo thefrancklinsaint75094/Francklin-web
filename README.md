@@ -236,7 +236,8 @@ Livreur A
 CB 1 DIV 30
 
 Livreur B
-3 MSX 90
+12 rue de la Paix Paris : 3 MSX 90
+8 av. Foch Créteil : CB 1 US 50
 ```
 
 Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €).
@@ -244,7 +245,9 @@ Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la 
 **0 € = produit offert** (`1 US 0`) : il sort du stock du livreur sans rien rapporter. CB est
 écrit « Virement » dans la feuille, qui ne connaît que Espèces et Virement. `/ventes` seul donne l'exemple et attend le
 récap. Le bot montre l'aperçu (par livreur, totaux espèces / virement) ; **✅ Ajouter au tableau** écrit une
-ligne au statut OK par vente dans l'onglet de la nuit (adresse « Récap ventes »). Ces ventes comptent dans le
+ligne au statut OK par vente dans l'onglet de la nuit. **Adresse facultative** devant la vente, suivie de
+« : » (`12 rue de la Paix : 2 US 60`) : elle va dans la colonne Adresse ; sans adresse, « Récap ventes ».
+« Livreur A : 2 US 60 » sur une seule ligne marche aussi. Ces ventes comptent dans le
 stock et la caisse du livreur comme des courses, et `/synchro` les renvoie. Une erreur (livreur ou produit
 inconnu, prix hors pas de 10 €, ligne mal écrite) est expliquée ligne par ligne et rien n'est ajouté.
 

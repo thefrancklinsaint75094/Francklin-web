@@ -104,7 +104,7 @@ async def action(update: Update, context):
 
     rows = await db.create_sales([
         {"livreur_name": b["livreur"], "livreur_id": b["user_id"], "by_user_id": user["id"], "night": payload.get("night"),
-         "payment": line["pay"], "product": line["p"], "qty": line["q"], "price": line["x"]}
+         "payment": line["pay"], "product": line["p"], "qty": line["q"], "price": line["x"], "address": line.get("a")}
         for b in payload["blocks"] for line in b["lines"]
     ])
     await db.log_event("sales_entered", user_id=user["id"], payload={"sales": [r["id"] for r in rows]})
