@@ -238,6 +238,8 @@ CB 1 DIV 30
 Livreur B
 12 rue de la Paix Paris : 3 MSX 90
 8 av. Foch Créteil : CB 1 US 50
+charge = 20 essence
+paye = 100
 ```
 
 Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €).
@@ -247,7 +249,11 @@ Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la 
 récap. Le bot montre l'aperçu (par livreur, totaux espèces / virement) ; **✅ Ajouter au tableau** écrit une
 ligne au statut OK par vente dans l'onglet de la nuit. **Adresse facultative** devant la vente, suivie de
 « : » (`12 rue de la Paix : 2 US 60`) : elle va dans la colonne Adresse ; sans adresse, « Récap ventes ».
-« Livreur A : 2 US 60 » sur une seule ligne marche aussi. Ces ventes comptent dans le
+« Livreur A : 2 US 60 » sur une seule ligne marche aussi.
+**Charges et paye** dans le même récap : `charge = 20 essence`, `paye = 100` (seules sur leur ligne, ou au bout
+d'une ligne de vente : `12 rue X : 2 US 100 charge = 20`) → dépense du livreur du bloc, écrite dans la zone
+DÉPENSES LIVREURS de l'onglet (Charges / Paye, montant, motif), comme le bouton 🧾 Dépense. Elle compte dans
+sa caisse et dans le débrief, même pour un livreur des feuilles sans compte dans le bot. Ces ventes comptent dans le
 stock et la caisse du livreur comme des courses, et `/synchro` les renvoie. Une erreur (livreur ou produit
 inconnu, prix hors pas de 10 €, ligne mal écrite) est expliquée ligne par ligne et rien n'est ajouté.
 

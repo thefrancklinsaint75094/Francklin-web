@@ -80,7 +80,8 @@ async def build_debrief(night: date) -> str:
         fr["n"] += 1
         fr["total"] += price
     for e in expenses:
-        per_livreur[name(e["livreur_id"])]["depenses"] += float(e["amount"])
+        per_livreur[users.get(e.get("livreur_id"), {}).get("display_name") or e.get("livreur_name") or "?"][
+            "depenses"] += float(e["amount"])
 
     # Déplacements détectés pendant les courses, avec le mode déclaré par le livreur.
     moves = [(c["id"], name(c.get("livreur_id")), c["detected_mode"],
@@ -140,7 +141,9 @@ async def close_livreur(update: Update, context, actor: dict, name: str, livreur
     delivered = sorted((c for c in await db.list_delivered_between(start, end) if uid and c.get("livreur_id") == uid),
                        key=lambda c: c.get("delivered_at") or "")
     still = [c for c in await db.list_assigned_for_livreur(uid)] if uid else []
-    expenses = [e for e in await db.list_expenses_between(start, end) if uid and e.get("livreur_id") == uid]
+    expenses = [e for e in await db.list_expenses_between(start, end)
+                if (uid and e.get("livreur_id") == uid)
+                or (not e.get("livreur_id") and stock._key(e.get("livreur_name") or "") == stock._key(name))]
     franchises = await db.get_users(c["franchise_id"] for c in delivered)
     rows = [(hhmm(parse_ts(c["delivered_at"])), c, franchises.get(c["franchise_id"], {}).get("display_name") or "?")
             for c in delivered]

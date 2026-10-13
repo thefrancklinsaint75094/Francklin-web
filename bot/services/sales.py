@@ -10,6 +10,8 @@ Format (un bloc par livreur, autant de blocs que voulu) :
 Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €, ou 0 € pour un
 produit offert : il sort du stock du livreur sans rien rapporter). L'adresse, facultative, se met devant, suivie de
 « : » ; elle va dans la colonne Adresse de la feuille (sinon « Récap ventes »).
+Dépenses du livreur dans le même bloc : « charge = 20 essence » ou « paye = 100 » (seules sur leur ligne, ou au
+bout d'une ligne de vente avec « = ») → zone DÉPENSES LIVREURS de l'onglet (Charges / Paye, montant, motif).
 Espèces par défaut ; sinon « CB » ou « virement » n'importe où avant le prix (CB compte comme virement :
 la feuille ne connaît que Espèces et Virement). Fonctions pures ici ; l'enregistrement est dans
 handlers/sales.py.
@@ -32,6 +34,10 @@ LINE_RE = re.compile(r"^(?P<qty>\d{1,3})\s*[x×]?\s+(?P<product>.+?)\s+(?P<price
                      re.I)
 MAX_LINES = 60
 MAX_ADDRESS = 150
+_AMOUNT = r"(?P<amount>\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|eur|euros?|e(?=\s|$))?"
+_KIND = r"(?P<kind>charges?|pay[eé]s?|paies?)"
+EXPENSE_RE = re.compile(rf"^{_KIND}\s*[=:]?\s*{_AMOUNT}\s*[-:,]?\s*(?P<motif>.*)$", re.I)
+EXPENSE_TAIL_RE = re.compile(rf"\s{_KIND}\s*=\s*{_AMOUNT}\s*[-:,]?\s*(?P<motif>.*)$", re.I)   # « … 2 US 60 charge = 20 »
 
 
 DAYS = {"lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4, "samedi": 5, "dimanche": 6}
@@ -80,6 +86,7 @@ class Block:
     livreur: str                          # nom tel qu'écrit, puis nom de la feuille une fois reconnu
     user: dict | None = None
     lines: list[dict] = field(default_factory=list)   # {"pay": "especes", "q": 2, "p": "US", "x": 60.0[, "a": adresse]}
+    expenses: list[dict] = field(default_factory=list)   # {"k": "charges" | "paye", "x": 20.0, "m": "essence"}
 
 
 @dataclass
@@ -90,6 +97,27 @@ class Parsed:
     @property
     def count(self) -> int:
         return sum(len(b.lines) for b in self.blocks)
+
+    @property
+    def expense_count(self) -> int:
+        return sum(len(b.expenses) for b in self.blocks)
+
+
+def split_expense(line: str) -> tuple[dict | None, str]:
+    """« charge = 20 essence » → ({k, x, m}, « ») ; « 12 rue X : 2 US 60 paye = 50 » → ({…}, « 12 rue X : 2 US
+    60 ») ; sinon (None, ligne). Montant 0 ou illisible : {"bad": texte}."""
+    m = EXPENSE_RE.match(line)
+    rest = ""
+    if not m:
+        m = EXPENSE_TAIL_RE.search(line)
+        if not m:
+            return None, line
+        rest = line[:m.start()].strip()
+    amount = float(m["amount"].replace(",", "."))
+    if amount <= 0:
+        return {"bad": m.group(0).strip()}, rest
+    kind = "charges" if m["kind"].lower().startswith("charge") else "paye"
+    return {"k": kind, "x": amount, "m": " ".join(m["motif"].split())[:80]}, rest
 
 
 def _key(text: str) -> str:
@@ -129,6 +157,16 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
         line = raw.strip()
         if not line or line.lower().startswith("/vente"):
             continue
+        expense, line = split_expense(line)
+        if expense is not None:
+            if "bad" in expense:
+                out.errors.append(f"ligne {n} : « {expense['bad']} » — montant à 0")
+            elif current is None:
+                out.errors.append(f"ligne {n} : écris d'abord le nom du livreur (ex. « Livreur A »)")
+            else:
+                current.expenses.append(expense)
+            if not line:
+                continue
         address, sale = split_address(line)
         if address and not sale:                         # « Livreur A : »
             line = sale = address
@@ -173,7 +211,7 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             continue
         current = Block(name, user)
         out.blocks.append(current)
-    out.blocks = [b for b in out.blocks if b.lines]
-    if out.count > MAX_LINES:
-        out.errors.append(f"trop de lignes ({out.count}) : envoie-les en plusieurs fois (au plus {MAX_LINES})")
+    out.blocks = [b for b in out.blocks if b.lines or b.expenses]
+    if out.count + out.expense_count > MAX_LINES:
+        out.errors.append(f"trop de lignes ({out.count + out.expense_count}) : envoie-les en plusieurs fois (au plus {MAX_LINES})")
     return out

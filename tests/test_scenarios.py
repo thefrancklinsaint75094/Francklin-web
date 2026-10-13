@@ -2397,6 +2397,52 @@ async def test_sales_for_an_earlier_night(h, monkeypatch):
     assert sent[-1]["onglet"] == tab
 
 
+async def test_sales_recap_with_charges_and_paye(h, monkeypatch, test_config):
+    """/ventes : « charge = 20 essence » / « paye = 100 » → dépenses du livreur du bloc, écrites dans la zone
+    DÉPENSES de l'onglet (même pour un livreur des feuilles sans compte), comptées dans le débrief."""
+    import dataclasses
+
+    from bot import config
+    from bot.handlers import close_day
+    from bot.services import cash, sheets
+    from bot.timeutil import night_start_date, now_utc
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    await db.create_product("US", "us", [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    config.set_config(dataclasses.replace(test_config, livreur_names=("Livreur Z",)))   # sans compte dans le bot
+
+    await h.text(DISPATCH, "/ventes lundi\nLivreur 1\n12 rue X : 2 US 100 charge = 20 essence\npaye = 100\n\n"
+                           "Livreur Z\ncharge 15 parking")
+    preview = h.tg.last(DISPATCH)
+    text = preview.text.replace("\xa0", " ")
+    assert "💵 2 US — 100 € · 📍 12 rue X\n🧾 Charge 20 € — essence\n💸 Paye 100 €" in text
+    assert "<b>Livreur Z</b>\n🧾 Charge 15 € — parking" in text
+    assert "Dépenses : 🧾 Charge 35 € · 💸 Paye 100 €" in text
+    await h.press_data(DISPATCH, preview, "sl_ok")
+    assert "✅ 1 vente et 3 dépenses ajoutées au tableau" in h.tg.last(DISPATCH).text
+    rows = (await db._t("expenses").select("*").order("id").execute()).data
+    assert [(r["livreur_id"], r["livreur_name"], r["kind"], float(r["amount"]), r["motif"]) for r in rows] == [
+        (l1["id"], "Livreur 1", "charges", 20.0, "essence"), (l1["id"], "Livreur 1", "paye", 100.0, None),
+        (None, "Livreur Z", "charges", 15.0, "parking")]
+    deps = [r for r in sent if r.get("type") == "depense"]
+    assert [(d["onglet"], d["livreur"], d["depense"], d["montant"], d["motif"]) for d in deps] == [
+        ("Lundi", "Livreur 1", "Charges", 20.0, "essence"), ("Lundi", "Livreur 1", "Paye", 100.0, ""),
+        ("Lundi", "Livreur Z", "Charges", 15.0, "parking")]
+    assert cash.inflight(l1["id"]) == 0                         # la feuille les a : plus rien « en vol »
+    # /synchro et le débrief de la nuit les gardent (même sans compte).
+    assert sheets.expense_row(rows[2], {})["livreur"] == "Livreur Z"
+    await close_day.build_debrief(night_start_date(now_utc(), 6))
+
+
 async def test_prenoms_shown_everywhere(h):
     """/prenom : liste, prénom fixé pour un livreur ; chaque message du bot écrit « Livreur 1 (Ketur) » ;
     le prénom suffit dans /ventes."""
