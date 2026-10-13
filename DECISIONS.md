@@ -544,3 +544,8 @@ simple qui respecte le mur de confidentialité (§12).
      livrée … »). Les avis du dispatch sont réécrits en clair, avec l'adresse (« 🚴 Course #12 prise par … »,
      « ✅ Course #12 livrée par … »). Le dispatch qui commande lui-même ne reçoit pas deux fois la même chose.
 
+139. **`/ventes` : adresse devant la vente** (demande de l'exploitant : « Adresse : quantité produit prix »).
+     Ce qui précède le dernier « : » d'une ligne de vente est l'adresse, gardée avec la vente (colonne
+     `sales.address`, migration 017) et écrite dans la colonne Adresse de la feuille Dispatch ; sans adresse,
+     « Récap ventes » comme avant. Si ce qui précède « : » est un livreur (« Livreur A : 2 US 60 »), c'est le
+     livreur, pas une adresse. La reconnaissance des produits n'est pas touchée.

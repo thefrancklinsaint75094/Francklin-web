@@ -1493,8 +1493,10 @@ SALES_HELP = (
     "2 US 60\n"
     "CB 1 DIV 30\n\n"
     "Livreur B\n"
-    "3 MSX 90</code>\n\n"
+    "12 rue de la Paix Paris : 3 MSX 90\n"
+    "8 av. Foch Créteil : CB 1 US 50</code>\n\n"
     "Chaque ligne : quantité, produit, prix total de la ligne (de 10 en 10 €, ou 0 si c'est offert). "
+    "L'adresse est facultative : écris-la devant, suivie de « : ». "
     "<b>Espèces par défaut</b> ; sinon écris « CB » ou « virement » au début de la ligne. "
     "Je te montre le récap avant de remplir le tableau.\n\n"
     "En retard d'un jour ? <b>/ventes lundi</b> (ou /ventes hier) : les ventes vont dans l'onglet de ce jour-là."
@@ -1531,7 +1533,8 @@ def sales_preview(blocks: list[dict], tab: str, done: bool = False) -> str:
         for line in b["lines"]:
             icon = "💵" if line["pay"] == "especes" else "💳"
             price = "🎁 offert" if float(line["x"]) == 0 else eur(line["x"])
-            lines.append(f"{icon} {line['q']} {esc(line['p'])} — {price}")
+            where = f" · 📍 {esc(line['a'])}" if line.get("a") else ""
+            lines.append(f"{icon} {line['q']} {esc(line['p'])} — {price}{where}")
             totals[line["pay"]] += float(line["x"])
             n += 1
     parts = [f"{icon} {label} {eur(totals[k])}" for k, icon, label in
