@@ -549,3 +549,10 @@ simple qui respecte le mur de confidentialité (§12).
      `sales.address`, migration 017) et écrite dans la colonne Adresse de la feuille Dispatch ; sans adresse,
      « Récap ventes » comme avant. Si ce qui précède « : » est un livreur (« Livreur A : 2 US 60 »), c'est le
      livreur, pas une adresse. La reconnaissance des produits n'est pas touchée.
+
+140. **`/ventes` : charges et paye** (demande de l'exploitant : « charge = un prix … même principe pour paye »).
+     Une ligne `charge = 20 [motif]` / `paye = 100` (aussi `charge 20`, `payé: 40`, ou au bout d'une ligne de
+     vente avec « = ») devient une dépense du livreur du bloc : table `expenses`, zone DÉPENSES LIVREURS de
+     l'onglet de la nuit choisie. Pour un livreur des feuilles sans compte, la dépense garde son nom
+     (`expenses.livreur_id` devient facultatif, `livreur_name` et `night` ajoutés : migration 018). Au milieu
+     d'une ligne, le « = » est obligatoire, pour ne pas lire « rue de la Charge 12 » comme une dépense.

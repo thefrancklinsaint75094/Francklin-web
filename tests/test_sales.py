@@ -86,3 +86,33 @@ def test_parse_address_line_errors():
     assert out.errors == [
         "ligne 2 : « 12 rue X : deux US » — attendu : adresse : quantité, produit, prix (ex. 12 rue de la Paix : 2 US 60)",
         "ligne 3 : produit inconnu « KT »"]
+
+
+def test_parse_charges_and_paye():
+    text = ("Livreur A\n12 rue X : 2 US 100\ncharge = 20 essence\nPaye 100\nCharges: 15,5 € - parking\n"
+            "5 rue Y : 1 MSX 50 paye = 30\nb\npayé=40")
+    out = sales.parse(text, CAT, NAMES, USERS)
+    assert out.errors == []
+    assert out.blocks[0].lines == [{"pay": "especes", "q": 2, "p": "US", "x": 100.0, "a": "12 rue X"},
+                                   {"pay": "especes", "q": 1, "p": "MSX", "x": 50.0, "a": "5 rue Y"}]
+    assert out.blocks[0].expenses == [{"k": "charges", "x": 20.0, "m": "essence"}, {"k": "paye", "x": 100.0, "m": ""},
+                                      {"k": "charges", "x": 15.5, "m": "parking"}, {"k": "paye", "x": 30.0, "m": ""}]
+    assert out.blocks[1].livreur == "Livreur B" and out.blocks[1].lines == []
+    assert out.blocks[1].expenses == [{"k": "paye", "x": 40.0, "m": ""}]
+    assert (out.count, out.expense_count) == (2, 5)
+
+
+def test_parse_expense_errors_and_street_names():
+    out = sales.parse("charge = 20\nLivreur A\npaye = 0\n3 rue de la Charge : 1 US 50", CAT, NAMES, USERS)
+    assert out.errors == ["ligne 1 : écris d'abord le nom du livreur (ex. « Livreur A »)", "ligne 3 : « paye = 0 » — montant à 0"]
+    assert out.blocks[0].lines == [{"pay": "especes", "q": 1, "p": "US", "x": 50.0, "a": "3 rue de la Charge"}]
+
+
+def test_preview_with_expenses():
+    from bot import texts
+
+    blocks = [{"livreur": "Livreur A", "lines": [], "expenses": [{"k": "charges", "x": 20.0, "m": "essence"},
+                                                                 {"k": "paye", "x": 100.0, "m": ""}]}]
+    text = texts.sales_preview(blocks, "Lundi").replace("\xa0", " ")
+    assert "🧾 Charge 20 € — essence\n💸 Paye 100 €" in text
+    assert "Dépenses : 🧾 Charge 20 € · 💸 Paye 100 €" in text and "Total :" not in text

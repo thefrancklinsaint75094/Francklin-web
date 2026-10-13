@@ -1494,9 +1494,13 @@ SALES_HELP = (
     "CB 1 DIV 30\n\n"
     "Livreur B\n"
     "12 rue de la Paix Paris : 3 MSX 90\n"
-    "8 av. Foch Créteil : CB 1 US 50</code>\n\n"
+    "8 av. Foch Créteil : CB 1 US 50\n"
+    "charge = 20 essence\n"
+    "paye = 100</code>\n\n"
     "Chaque ligne : quantité, produit, prix total de la ligne (de 10 en 10 €, ou 0 si c'est offert). "
     "L'adresse est facultative : écris-la devant, suivie de « : ». "
+    "<b>charge = …</b> et <b>paye = …</b> (motif facultatif après le montant) vont dans les dépenses du "
+    "livreur du bloc. "
     "<b>Espèces par défaut</b> ; sinon écris « CB » ou « virement » au début de la ligne. "
     "Je te montre le récap avant de remplir le tableau.\n\n"
     "En retard d'un jour ? <b>/ventes lundi</b> (ou /ventes hier) : les ventes vont dans l'onglet de ce jour-là."
@@ -1523,10 +1527,14 @@ def sales_errors(errors: list[str]) -> str:
     return "\n".join(lines)
 
 
+SALES_EXPENSE_LABEL = {"charges": "🧾 Charge", "paye": "💸 Paye"}
+
+
 def sales_preview(blocks: list[dict], tab: str, done: bool = False) -> str:
     head = "🧾 <b>Ventes ajoutées" if done else "🧾 <b>Ventes à ajouter"
     lines = [f"{head} — onglet {esc(tab)}</b>"]
     totals = {"especes": 0.0, "virement": 0.0}
+    spent = {"charges": 0.0, "paye": 0.0}
     n = 0
     for b in blocks:
         lines += ["", f"<b>{esc(b['livreur'])}</b>"]
@@ -1537,19 +1545,32 @@ def sales_preview(blocks: list[dict], tab: str, done: bool = False) -> str:
             lines.append(f"{icon} {line['q']} {esc(line['p'])} — {price}{where}")
             totals[line["pay"]] += float(line["x"])
             n += 1
+        for e in b.get("expenses", []):
+            motif = f" — {esc(e['m'])}" if e.get("m") else ""
+            lines.append(f"{SALES_EXPENSE_LABEL[e['k']]} {eur(e['x'])}{motif}")
+            spent[e["k"]] += float(e["x"])
     parts = [f"{icon} {label} {eur(totals[k])}" for k, icon, label in
              (("especes", "💵", "espèces"), ("virement", "💳", "virement")) if totals[k]]
-    lines += ["", f"Total : {' · '.join(parts) or '🎁 tout offert'} — {plural(n, 'ligne')}"]
+    if n:
+        lines += ["", f"Total : {' · '.join(parts) or '🎁 tout offert'} — {plural(n, 'ligne')}"]
+    if any(spent.values()):
+        lines += ([] if n else [""]) + [
+            "Dépenses : " + " · ".join(f"{SALES_EXPENSE_LABEL[k]} {eur(v)}" for k, v in spent.items() if v)]
     if not done:
         lines += ["", "Tout est bon ?"]
     return "\n".join(lines)
 
 
-def sales_done(count: int, tab: str, added: int, error: str | None) -> str:
+def sales_done(count: int, tab: str, added: int, error: str | None, expenses: int = 0) -> str:
+    what = [plural(count, "vente")] if count else []
+    if expenses:
+        what.append(plural(expenses, "dépense"))
+    what = " et ".join(what) or "rien"
+    many = count + expenses > 1
     if error:
-        return (f"⚠️ {plural(count, 'vente')} enregistrée{'s' if count > 1 else ''}, mais le tableau n'a pas pu "
+        return (f"⚠️ {what} enregistrée{'s' if many else ''}, mais le tableau n'a pas pu "
                 f"être rempli : {esc(error[:200])}\n/synchro les renverra.")
-    return f"✅ {plural(count, 'vente')} ajoutée{'s' if count > 1 else ''} au tableau (onglet {esc(tab)})."
+    return f"✅ {what} ajoutée{'s' if many else ''} au tableau (onglet {esc(tab)})."
 
 
 # ================================================================ rechargement en texte (/ravi)

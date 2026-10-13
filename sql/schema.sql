@@ -133,11 +133,13 @@ create table restocks (
 
 create table expenses (
   id          serial primary key,
-  livreur_id  uuid not null references users(id),
+  livreur_id  uuid references users(id),              -- vide : livreur des feuilles sans compte (/ventes)
+  livreur_name text,                                   -- nom de la feuille (dépense saisie par /ventes)
   by_user_id  uuid not null references users(id),     -- livreur lui-même ou admin
   kind        text not null check (kind in ('charges','paye')),  -- à tes frais / avance sur paye
   amount      numeric(8,2) not null check (amount > 0),
   motif       text,
+  night       date,                                    -- nuit choisie (/ventes lundi) ; vide : celle de created_at
   created_at  timestamptz not null default now()
 );
 

@@ -189,13 +189,14 @@ def expense_row(expense: dict, users: dict[str, dict]) -> dict:
     """Dépense d'un livreur pour la zone DÉPENSES LIVREURS de l'onglet de la nuit (feuille Dispatch)."""
     from bot.services import cash
 
-    livreur = users.get(expense["livreur_id"], {})
+    livreur = users.get(expense.get("livreur_id"), {})
     return {
         "type": "depense",
         "numero": expense["id"],
-        "onglet": day_tab(expense["created_at"]),
+        "onglet": JOURS[date.fromisoformat(str(expense["night"])[:10]).weekday()] if expense.get("night")
+                  else day_tab(expense["created_at"]),
         "heure": to_paris(parse_ts(expense["created_at"])).strftime("%H:%M"),
-        "livreur": livreur.get("display_name", ""),
+        "livreur": livreur.get("display_name") or expense.get("livreur_name") or "",
         "livreur_nom": livreur.get("real_name") or "",
         "depense": cash.KIND_SHEET.get(expense["kind"], ""),
         "montant": round(float(expense["amount"]), 2),

@@ -4,7 +4,8 @@
 même message → directement l'aperçu. « /ventes lundi » (ou « hier ») : les ventes vont dans l'onglet de
 cette nuit-là, pour un récap saisi en retard. « ✅ Ajouter au tableau » : ventes en base (table sales, avec
 la nuit choisie), une ligne OK par vente dans l'onglet ; stock et caisse du livreur les comptent comme
-des courses."""
+des courses. Les lignes « charge = 20 » / « paye = 100 » deviennent des dépenses du livreur (table expenses,
+zone DÉPENSES LIVREURS de l'onglet)."""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -72,13 +73,14 @@ async def _process(update: Update, user: dict, text: str, payload: dict) -> None
         await _save(user, STATE_INPUT, keep)
         await messaging.reply(update, texts.sales_errors(parsed.errors))
         return
-    if not parsed.count:
+    if not parsed.count and not parsed.expense_count:
         await _save(user, STATE_INPUT, keep)
         await messaging.reply(update, texts.SALES_EMPTY)
         return
     night = date.fromisoformat(keep["night"]) if keep else _current_night()
     tab = _tab_label(night)
-    blocks = [{"livreur": b.livreur, "user_id": b.user["id"] if b.user else None, "lines": b.lines}
+    blocks = [{"livreur": b.livreur, "user_id": b.user["id"] if b.user else None, "lines": b.lines,
+               "expenses": b.expenses}
               for b in parsed.blocks]
     sent = await messaging.reply(update, texts.sales_preview(blocks, tab), keyboards.sales_confirm())
     await _save(user, STATE_CONFIRM, {"blocks": blocks, "tab": tab, "night": night.isoformat(),
@@ -102,31 +104,41 @@ async def action(update: Update, context):
         await messaging.edit(context.bot, chat_id, msg_id, texts.SALES_CANCELLED)
         return None
 
-    rows = await db.create_sales([
+    sale_fields = [
         {"livreur_name": b["livreur"], "livreur_id": b["user_id"], "by_user_id": user["id"], "night": payload.get("night"),
          "payment": line["pay"], "product": line["p"], "qty": line["q"], "price": line["x"], "address": line.get("a")}
         for b in payload["blocks"] for line in b["lines"]
-    ])
-    await db.log_event("sales_entered", user_id=user["id"], payload={"sales": [r["id"] for r in rows]})
+    ]
+    rows = await db.create_sales(sale_fields) if sale_fields else []
+    spent = [await db.create_expense({"livreur_id": b["user_id"], "livreur_name": b["livreur"], "by_user_id": user["id"],
+                                      "night": payload.get("night"), "kind": e["k"], "amount": e["x"],
+                                      "motif": e.get("m") or None})
+             for b in payload["blocks"] for e in b.get("expenses", [])]
+    await db.log_event("sales_entered", user_id=user["id"],
+                       payload={"sales": [r["id"] for r in rows], "expenses": [e["id"] for e in spent]})
     # Comptées par le bot (stock, espèces) tant que la feuille ne les a pas.
     for r in rows:
         if r.get("livreur_id"):
             token = f"sale:{r['id']}"
             stock.add_inflight(r["livreur_id"], token, {r["product"]: -int(r["qty"])})
             cash.track(r["livreur_id"], token, float(r["price"]) if r["payment"] == "especes" else 0.0)
+    for e in spent:
+        cash.track(e.get("livreur_id"), f"expense:{e['id']}", -float(e["amount"]))
     added, error = 0, None
     if sheets.enabled():
         try:
-            added = await sheets.send_rows([sheets.sale_row(r) for r in rows])
+            added = await sheets.send_rows([sheets.sale_row(r) for r in rows] + [sheets.expense_row(e, {}) for e in spent])
             for r in rows:
                 if r.get("livreur_id"):
                     stock.remove_inflight(r["livreur_id"], f"sale:{r['id']}")
                     cash.done(r["livreur_id"], f"sale:{r['id']}")
+            for e in spent:
+                cash.done(e.get("livreur_id"), f"expense:{e['id']}")
         except RuntimeError as exc:
             error = str(exc)
     else:
         error = texts.SHEETS_DISABLED
-    text = texts.sales_done(len(rows), payload["tab"], added, error)
+    text = texts.sales_done(len(rows), payload["tab"], added, error, len(spent))
     await messaging.edit(context.bot, chat_id, msg_id, text)
     if user["role"] != "dispatch":
         await messaging.notify_dispatch(context.bot, f"{texts.sales_preview(payload['blocks'], payload['tab'], done=True)}"
