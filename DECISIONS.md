@@ -563,3 +563,9 @@ simple qui respecte le mur de confidentialité (§12).
      utilisateur (`common.claim_state`), le second appui reçoit « expiré ». Une écriture refusée par un
      tableau (ex. produit sans colonne dans le tableau Rechargement) n'apparaissait que dans les journaux :
      le job `sheet_errors` (chaque minute) la signale au dispatch, avec la raison et le rappel de /synchro.
+
+142. **Box « Stock antérieur »** (demande de l'exploitant : une option à part pour le stock de la semaine d'avant,
+     plutôt qu'une ligne de report posée sur un box). 5ᵉ valeur de `Lst_Box` (PARAMETRES F8 du tableau
+     Rechargement). Produits : comptés chez le livreur (SOLDES ② prend toutes les lignes sauf Swipe), aucun box ne
+     bouge (ORGA ③ ne compte que Box 1 à 3). Cash en colonne C : encore sur le livreur, donc retiré du « cash
+     récupéré » (SOLDES ④ D35:D40 et `cashLivreurs_`). La clôture écrit ses lignes « Report clôture » avec ce box.
