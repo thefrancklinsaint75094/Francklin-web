@@ -2443,6 +2443,57 @@ async def test_sales_recap_with_charges_and_paye(h, monkeypatch, test_config):
     await close_day.build_debrief(night_start_date(now_utc(), 6))
 
 
+async def test_double_tap_on_confirm_saves_once(h, monkeypatch):
+    """Deux appuis presque simultanés sur ✅ (/ravi, /ventes) : un seul enregistrement, le second « expiré »."""
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_send(rows, client=None):
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    await db.create_product("US", "us", [])
+    await setup_network(h)
+    await register(h, R1, "ravitailleur", "Sam")
+
+    await h.text(DISPATCH, "/ravi 1")
+    await h.text(DISPATCH, "Livreur 1\nBox 1\n3 US")
+    preview = h.tg.last(DISPATCH)
+    assert [d for _, d in preview.buttons][:1] == ["rv_ok"]
+    await asyncio.gather(h.press_data(DISPATCH, preview, "rv_ok"), h.press_data(DISPATCH, preview, "rv_ok"))
+    assert len((await db._t("restocks").select("id").execute()).data) == 1
+    assert texts.RAVI_EXPIRED in [a.get("text") for a in h.tg.answers()]
+
+    await h.text(DISPATCH, "/ventes\nLivreur 1\n1 US 50")
+    preview = h.tg.last(DISPATCH)
+    await asyncio.gather(h.press_data(DISPATCH, preview, "sl_ok"), h.press_data(DISPATCH, preview, "sl_ok"))
+    assert len((await db._t("sales").select("id").execute()).data) == 1
+
+
+async def test_sheet_error_alerts_dispatch(h):
+    """Une écriture refusée par un tableau est signalée au dispatch (une fois), pas seulement dans les journaux ;
+    au démarrage, les erreurs déjà passées ne sont pas resignalées."""
+    from bot import jobs
+
+    jobs._sheet_error_seen = None
+    await db.log_event("sheet_error", payload={"restock_id": 3, "error": "ancienne"})
+    await jobs.sheet_errors(h.context)                       # démarrage : point de départ, rien d'envoyé
+    assert not any("ancienne" in t for t in h.tg.texts(DISPATCH))
+    await db.log_event("sheet_error", payload={"restock_id": 19, "error": "réponse du script : rechargement R19 : "
+                                                                          "produit absent des colonnes : XYZ"})
+    await db.log_event("sheet_error", payload={"expense_id": 4, "error": "dépenses pleines"})
+    await jobs.sheet_errors(h.context)
+    alert = h.tg.last(DISPATCH).text
+    assert "⚠️ <b>Pas écrit dans le tableau</b>" in alert
+    assert "• Rechargement R#19 : rechargement R19 : produit absent des colonnes : XYZ" in alert
+    assert "• Dépense D#4 : dépenses pleines" in alert and "/synchro" in alert
+    count = len(h.tg.texts(DISPATCH))
+    await jobs.sheet_errors(h.context)                       # rien de nouveau : pas de second message
+    assert len(h.tg.texts(DISPATCH)) == count
+
+
 async def test_prenoms_shown_everywhere(h):
     """/prenom : liste, prénom fixé pour un livreur ; chaque message du bot écrit « Livreur 1 (Ketur) » ;
     le prénom suffit dans /ventes."""

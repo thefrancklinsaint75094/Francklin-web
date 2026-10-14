@@ -2,8 +2,10 @@
 réponse systématique aux callbacks."""
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
+from collections import defaultdict
 
 from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.error import TelegramError
@@ -73,6 +75,22 @@ def active_state(user: dict) -> tuple[str | None, dict]:
     if expires is not None and expires < now_utc():
         return None, {}
     return state, user.get("state_payload") or {}
+
+
+_claim_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+async def claim_state(user: dict, state: str, msg_id: int) -> dict | None:
+    """Bouton ✅ / ❌ d'un aperçu : prend l'état (et l'efface) une seule fois. Deux appuis rapprochés sur le
+    même bouton : le second attend, relit l'état déjà effacé et reçoit None (« expiré »), au lieu
+    d'enregistrer deux fois la même chose."""
+    async with _claim_locks[user["id"]]:
+        fresh = await db.get_user(user["id"]) or user
+        current, payload = active_state(fresh)
+        if current != state or payload.get("msg") != msg_id:
+            return None
+        await db.clear_state(user["id"])
+        return payload
 
 
 async def require(update: Update, user: dict | None, role: str | None = None, silent: bool = False) -> bool:

@@ -95,11 +95,10 @@ async def action(update: Update, context):
         return None
     chat_id = update.effective_chat.id
     msg_id = update.callback_query.message.message_id
-    state, payload = common.active_state(user)
-    if state != STATE_CONFIRM or payload.get("msg") != msg_id:
+    payload = await common.claim_state(user, STATE_CONFIRM, msg_id)
+    if payload is None:
         await messaging.edit_markup(context.bot, chat_id, msg_id, None)
         return texts.SALES_EXPIRED, True
-    await db.clear_state(user["id"])
     if update.callback_query.data == "sl_x":
         await messaging.edit(context.bot, chat_id, msg_id, texts.SALES_CANCELLED)
         return None

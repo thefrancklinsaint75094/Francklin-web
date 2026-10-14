@@ -556,3 +556,10 @@ simple qui respecte le mur de confidentialité (§12).
      l'onglet de la nuit choisie. Pour un livreur des feuilles sans compte, la dépense garde son nom
      (`expenses.livreur_id` devient facultatif, `livreur_name` et `night` ajoutés : migration 018). Au milieu
      d'une ligne, le « = » est obligatoire, pour ne pas lire « rue de la Charge 12 » comme une dépense.
+
+141. **Double appui sur ✅ et écritures refusées par un tableau** (signalé par l'exploitant : un rechargement
+     `/ravi` absent du tableau). Deux appuis rapprochés sur ✅ de `/ravi`, `/ventes` ou `/swipe`
+     enregistraient deux fois la même chose : l'état de l'aperçu est maintenant pris sous un verrou par
+     utilisateur (`common.claim_state`), le second appui reçoit « expiré ». Une écriture refusée par un
+     tableau (ex. produit sans colonne dans le tableau Rechargement) n'apparaissait que dans les journaux :
+     le job `sheet_errors` (chaque minute) la signale au dispatch, avec la raison et le rappel de /synchro.
