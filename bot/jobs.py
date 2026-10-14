@@ -181,6 +181,23 @@ async def refresh_prenoms(context) -> None:
     await names.refresh()
 
 
+_sheet_error_seen: int | None = None   # dernier sheet_error signalé ; None : pas encore lu depuis le démarrage
+
+
+async def sheet_errors(context) -> None:
+    """Une écriture refusée par un tableau (rechargement, dépense, course) : le dispatch est prévenu, au lieu
+    d'un simple avertissement dans les journaux. Au démarrage, les erreurs déjà passées ne sont pas resignalées."""
+    global _sheet_error_seen
+    if _sheet_error_seen is None:
+        _sheet_error_seen = await db.last_event_id("sheet_error")
+        return
+    events = await db.events_after("sheet_error", _sheet_error_seen)
+    if not events:
+        return
+    _sheet_error_seen = events[-1]["id"]
+    await messaging.notify_dispatch(context.bot, texts.d_sheet_errors(events))
+
+
 def _safe(job):
     async def wrapper(context):
         try:
@@ -202,6 +219,7 @@ def register(job_queue) -> None:
     job_queue.run_repeating(_safe(refresh_prenoms), interval=120, first=120, name="refresh_prenoms")
     job_queue.run_once(_safe(refresh_menus), when=10, name="refresh_menus")
     job_queue.run_repeating(_safe(edit_reminders), interval=120, first=150, name="edit_reminders")
+    job_queue.run_repeating(_safe(sheet_errors), interval=60, first=20, name="sheet_errors")
     job_queue.run_repeating(_safe(stale_positions), interval=120, first=60, name="stale_positions")
     job_queue.run_repeating(_safe(stuck_courses), interval=300, first=90, name="stuck_courses")
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")

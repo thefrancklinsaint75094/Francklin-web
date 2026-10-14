@@ -525,5 +525,16 @@ async def last_user_events(type_: str, since: datetime) -> dict[str, str]:
     return {r["user_id"]: r["created_at"] for r in res.data if r.get("user_id")}
 
 
+async def events_after(type_: str, after_id: int, limit: int = 20) -> list[dict]:
+    """Événements d'un type plus récents qu'un id, du plus ancien au plus récent."""
+    res = await (_t("events").select("*").eq("type", type_).gt("id", after_id).order("id").limit(limit).execute())
+    return res.data
+
+
+async def last_event_id(type_: str) -> int:
+    res = await _t("events").select("id").eq("type", type_).order("id", desc=True).limit(1).execute()
+    return res.data[0]["id"] if res.data else 0
+
+
 async def list_events(course_id: int, type_: str) -> list[dict]:
     return (await _t("events").select("*").eq("course_id", course_id).eq("type", type_).execute()).data

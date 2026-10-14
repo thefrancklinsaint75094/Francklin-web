@@ -1136,6 +1136,23 @@ def catalog_summary(summary: dict) -> str:
 SHEETS_DISABLED = "Google Sheets n'est pas encore relié au bot."
 
 
+def d_sheet_errors(events: list[dict]) -> str:
+    """Écritures refusées par un tableau (événements sheet_error)."""
+    lines = ["⚠️ <b>Pas écrit dans le tableau</b>"]
+    for ev in events[:10]:
+        p = ev.get("payload") or {}
+        what = (f"Rechargement R#{p['restock_id']}" if p.get("restock_id") else
+                f"Dépense D#{p['expense_id']}" if p.get("expense_id") else
+                f"Course #{ev['course_id']}" if ev.get("course_id") else "Envoi")
+        error = str(p.get("error") or "erreur inconnue").replace("réponse du script : ", "")
+        lines.append(f"• {what} : {esc(error[:200])}")
+    if len(events) > 10:
+        lines.append(f"• … et {len(events) - 10} autres")
+    lines += ["", "C'est enregistré dans le bot. Corrige le tableau (ex. une colonne produit manquante), puis "
+                  "/synchro pour renvoyer la nuit en cours."]
+    return "\n".join(lines)
+
+
 def sheets_synced(total: int, added: int, restocks: int = 0, expenses: int = 0, sold: int = 0) -> str:
     if total == 0 and restocks == 0 and expenses == 0 and sold == 0:
         return "📗 Aucune course livrée ni rechargement cette nuit : rien à envoyer."
