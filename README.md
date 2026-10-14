@@ -550,8 +550,13 @@ ravitailleur (**remis à zéro** : récupère-les avant), courses encore ouverte
 2. le stock actuel des box (ORGA ④) devient le **stock initial** (COMPTA, onglet STOCK, colonnes B à P) ;
 3. remise à zéro : lignes de commande et dépenses des 7 onglets de la feuille Dispatch (Vendeur repasse à
    TOTAL), lignes des 7 onglets du tableau Rechargement, MOUVEMENTS et RAVI du COMPTA ;
-4. le stock encore chez chaque livreur est reporté par une ligne « Report clôture » (sans box) dans l'onglet
-   du jour du tableau Rechargement.
+4. le stock encore chez chaque livreur est reporté par une ligne « Report clôture », box **« Stock antérieur »**,
+   dans l'onglet du jour du tableau Rechargement.
+
+**Box « Stock antérieur »** (5ᵉ choix de la colonne Box du tableau Rechargement, après Box 1, Box 2, Box 3 et
+Swipe) : ce que le livreur avait déjà sur lui avant la semaine. Les produits comptent dans son stock (SOLDES ②)
+sans sortir d'aucun box (ORGA ③) ; un montant en colonne C est du cash encore sur lui, qui s'ajoute au cash à
+récupérer (SOLDES ④ et `/caisse`) au lieu d'être compté comme récupéré.
 
 Il faut `COMPTA_SPREADSHEET_ID` dans le script et l'accès à Google Drive : après avoir collé le script, choisis
 la fonction **autoriser**, **▶ Exécuter**, accepte, puis **Déployer → Gérer les déploiements → ✏️ → Version :

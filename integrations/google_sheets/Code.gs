@@ -114,6 +114,7 @@ const C_MOVES = 'MOUVEMENTS!A3:P22';
 const C_RAVI = 'RAVI!A5:E15';
 const REPORT_LABEL = 'Report clôture';
 const SWIPE_BOX = 'Swipe';       // transfert entre livreurs : A donne, T (colonne Ravitailleur) reçoit
+const STOCK_ANTERIEUR = 'Stock antérieur';   // box du report de clôture : stock (et cash) de la semaine d'avant
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -322,7 +323,8 @@ function cashLivreurs_() {
       sheet.getRange(R_FIRST_ROW, 1, R_LAST_ROW - R_FIRST_ROW + 1, R_COLS).getValues().forEach(function (row) {
         const cash = num_(row[2]);
         if (!key_(row[0]) || !cash) return;
-        who(row[0]).recupere += cash;
+        // Stock antérieur : cash encore sur le livreur depuis la semaine d'avant (à récupérer, pas récupéré).
+        who(row[0]).recupere += key_(row[1]) === key_(STOCK_ANTERIEUR) ? -cash : cash;
         // Swipe : celui de la colonne T doit ce cash à son tour (le total récupéré reste le même).
         if (key_(row[1]) === key_(SWIPE_BOX) && key_(row[R_COLS - 1])) who(row[R_COLS - 1]).recupere -= cash;
       });
@@ -426,7 +428,7 @@ function cloture_(data) {
     }
   });
 
-  // 5. Report du stock encore chez les livreurs (sans box : les box ne bougent pas).
+  // 5. Report du stock encore chez les livreurs, box « Stock antérieur » (compté chez le livreur, aucun box ne bouge).
   const rsheet = rss.getSheetByName(data.onglet);
   const nProducts = R_LAST_PRODUCT_COL - R_FIRST_PRODUCT_COL + 1;
   const rheader = rsheet.getRange(R_HEADER_ROW, R_FIRST_PRODUCT_COL, 1, nProducts).getDisplayValues()[0];
@@ -438,7 +440,7 @@ function cloture_(data) {
     Object.keys(values).forEach(function (p) { byProduct[key_(p)] = values[p]; });
     const qty = rheader.map(function (p) { return String(p).trim() && byProduct[key_(p)] ? byProduct[key_(p)] : ''; });
     if (qty.every(function (q) { return q === ''; }) || rowNum > R_LAST_ROW) return;
-    rsheet.getRange(rowNum, 1, 1, R_COLS).setValues([[name, '', ''].concat(qty).concat([REPORT_LABEL, ''])]);
+    rsheet.getRange(rowNum, 1, 1, R_COLS).setValues([[name, STOCK_ANTERIEUR, ''].concat(qty).concat([REPORT_LABEL, ''])]);
     rsheet.getRange(rowNum, 1).setNote(REPORT_LABEL);
     reports[name] = {};
     rheader.forEach(function (p, j) { if (qty[j] !== '') reports[name][String(p).trim()] = qty[j]; });
