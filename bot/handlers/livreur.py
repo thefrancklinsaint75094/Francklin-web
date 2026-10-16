@@ -10,7 +10,7 @@ from datetime import timedelta
 from telegram import Update
 
 from bot import config, db, keyboards, messaging, texts
-from bot.handlers import common, relay
+from bot.handlers import common, declare, relay
 from bot.services import broadcast, catalog, lifecycle, order_edit, sales
 from bot.timeutil import iso, now_utc, parse_ts
 
@@ -46,6 +46,7 @@ async def dispo(update: Update, context) -> None:
         await db.log_event("livreur_on_duty", user_id=user["id"])
         await messaging.reply(update, texts.ON_DUTY, keyboards.livreur_menu())
         await messaging.reply(update, texts.TRANSPORT_QUESTION, keyboards.transport_mode(user.get("transport_mode")))
+        await declare.ask(context.bot, user, "start")      # une fois par nuit
         await broadcast.kick_pending(context)
     else:
         await messaging.reply(update, texts.DISPO_PROMPT, keyboards.livreur_menu())
@@ -175,6 +176,11 @@ async def on_menu(update: Update, context, user: dict, action: str) -> None:
             await messaging.reply(update, texts.NO_ASSIGNED, keyboards.livreur_menu())
             return
         await messaging.reply(update, texts.deliver_ask(course), keyboards.payment_choice(course["id"]))
+
+
+def is_validation(text: str | None) -> bool:
+    """« OK », « OK CB », « Modif » : le livreur valide sa course, quoi qu'il soit en train de saisir."""
+    return bool(text) and bool(_ok_payment(text) or MODIF_RE.match(text))
 
 
 def _ok_payment(text: str) -> str | None:

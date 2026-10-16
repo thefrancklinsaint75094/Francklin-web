@@ -331,7 +331,8 @@ async def test_dispo_broadcast_take_and_deliver(h):
     await h.text(L1, "/dispo")
     assert h.tg.texts(L1)[-2:] == [texts.DISPO_PROMPT, texts.TRANSPORT_QUESTION]   # position, puis transport
     await h.location(L1, *BASTILLE, message_id=L1)
-    assert h.tg.last(L1).text == texts.ON_DUTY
+    assert h.tg.texts(L1)[-2] == texts.ON_DUTY                  # puis la question du stock
+    assert h.tg.last(L1).text.startswith("📦 <b>Début de service : ton stock</b>")
     await go_on_duty(h, L2, REPUBLIQUE)
 
     course = await order(h, F1, "rivoli")
@@ -513,7 +514,7 @@ async def test_static_position_and_stale(h):
     from bot import jobs
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await h.location(L1, *BASTILLE, live=False)
-    assert h.tg.texts(L1)[-2:] == [texts.ON_DUTY, texts.STATIC_POSITION_WARNING]
+    assert h.tg.texts(L1)[-3:-1] == [texts.ON_DUTY, texts.STATIC_POSITION_WARNING]   # puis le stock
     await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(minutes=31))}).eq(
         "livreur_id", l1["id"]).execute()
     await jobs.stale_positions(h.context)
@@ -1431,6 +1432,7 @@ async def test_stock_alerts_last_units_and_empty(h, monkeypatch, test_config):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     r1 = await register(h, R1, "ravitailleur", "Sam")
     await go_on_duty(h, L1, BASTILLE)
+    order_of_calls.clear()               # la question du stock de début de service lit aussi le tableau
     course = await order(h, F1, "commande us")
     await h.press(L1, h.tg.last(L1), "course_take:")
     await asyncio.gather(*list(sheets._tasks))
@@ -1881,7 +1883,8 @@ async def test_close_day_debrief(h, monkeypatch):
     await asyncio.gather(*list(sheets._tasks))
 
     await h.text(L1, "/close")                                    # un livreur : sa propre fin de service
-    assert h.tg.last(L1).text.startswith("🏁 <b>Fin de service — Livreur 1</b>")
+    assert h.tg.texts(L1)[-2].startswith("🏁 <b>Fin de service — Livreur 1</b>")      # puis ce qu'il lui reste
+    assert h.tg.last(L1).text.startswith("🏁 <b>Fin de service : ce qu'il te reste</b>")
 
     await h.text(F1, "/close")
     text = h.tg.last(F1).text.replace("\xa0", " ")
@@ -2517,6 +2520,83 @@ async def test_sheet_error_alerts_dispatch(h):
     assert len(h.tg.texts(DISPATCH)) == count
 
 
+async def test_livreur_declares_stock_at_start_and_end(h, monkeypatch):
+    """Début de service : le livreur déclare son stock (ou ✅ si le tableau est exact) et confirme ; une seule
+    fois par nuit. Fin de service (/close) : ce qu'il lui reste. Le dispatch voit les écarts ; sans réponse,
+    une relance et le dispatch est prévenu."""
+    from datetime import timedelta
+
+    from bot.handlers import declare as declare_h
+    from bot.services import sheets, stock
+    from bot.timeutil import iso, now_utc
+
+    for name in ("US", "DIV"):
+        await db.create_product(name, name.lower(), [])
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)                        # en service : la question est posée
+    prompt = h.tg.find(L1, "📦 <b>Début de service : ton stock</b>")
+    assert "Écris ce que tu as <b>sur toi</b>" in prompt.text and not prompt.buttons   # tableau non relié
+
+    await h.text(L1, "3 US, 2 machin")
+    assert "produit inconnu « machin »" in h.tg.last(L1).text
+    await h.text(L1, "OK")                                   # valide toujours une course, n'est pas un stock
+    assert "machin" not in h.tg.last(L1).text
+    await h.text(L1, "3 US, 2 DIV")
+    preview = h.tg.last(L1)
+    assert "tu déclares :</b> 3 US · 2 DIV" in preview.text
+    assert [d for _, d in preview.buttons] == [f"dc_ok:{_decl_id(preview)}", f"dc_fix:{_decl_id(preview)}"]
+    confirm = preview.buttons[0][1]
+    await h.press_data(L1, preview, confirm)
+    assert h.tg.messages[(L1, preview.message_id)].text.startswith("✅ <b>Début de service — stock noté :</b> 3 US · 2 DIV")
+    assert any("Livreur 1 — début de service, stock déclaré : <b>3 US · 2 DIV</b>" in t for t in h.tg.texts(DISPATCH))
+    [row] = (await db._t("stock_declarations").select("*").execute()).data
+    assert (row["kind"], row["status"], row["items"]) == ("start", "confirmed", {"US": 3, "DIV": 2})
+    await h.press_data(L1, preview, confirm)                 # second appui : rien de plus
+    assert h.tg.answers()[-1]["text"] == texts.DECLARE_DONE_ALREADY
+
+    # Pause puis reprise la même nuit : pas de nouvelle question.
+    n = len(h.tg.inbox(L1))
+    await h.text(L1, "/pause")
+    await h.text(L1, "/dispo")
+    assert not any("Début de service : ton stock" in m.text for m in h.tg.inbox(L1)[n:])
+
+    # Fin de service, tableau relié : ✅ C'est exact reprend le stock du tableau ; l'écart est signalé.
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_stock(livreur):
+        return {"US": 1.0, "DIV": 0.0}, "Livreur 1"
+
+    monkeypatch.setattr(stock, "current_stock", fake_stock)
+
+    async def no_sheet():
+        return {"ok": False, "error": "x"}
+
+    monkeypatch.setattr(stock, "livreurs_now", no_sheet)
+    monkeypatch.setattr(sheets, "fetch_action", lambda *a, **k: no_sheet())
+    await h.text(L1, "/close")
+    end = h.tg.find(L1, "🏁 <b>Fin de service : ce qu'il te reste</b>")
+    assert "D'après le tableau : <b>1 US</b>" in end.text and end.buttons[0][0] == "✅ C'est exact"
+    await h.text(L1, "2 US")
+    await h.press_data(L1, h.tg.last(L1), h.tg.last(L1).buttons[0][1])
+    alert = h.tg.last(DISPATCH).text
+    assert "fin de service, stock déclaré : <b>2 US</b>" in alert and "• US : 2 au lieu de 1" in alert
+
+    # Relance : une déclaration restée sans réponse 10 min → livreur relancé, dispatch prévenu, une fois.
+    await db._t("stock_declarations").update({"status": "asked", "asked_at": iso(now_utc() - timedelta(minutes=11))}) \
+        .eq("kind", "end").execute()
+    await declare_h.remind(h.context)
+    assert h.tg.last(L1).text.startswith("⏳ <b>Rappel — Fin de service")
+    assert "Livreur 1 n'a pas confirmé son stock (fin de service) depuis 10 min" in h.tg.last(DISPATCH).text
+    n = len(h.tg.inbox(DISPATCH))
+    await declare_h.remind(h.context)
+    assert len(h.tg.inbox(DISPATCH)) == n
+
+
+def _decl_id(msg) -> int:
+    return int(msg.buttons[0][1].split(":")[1])
+
+
 async def test_prenoms_shown_everywhere(h):
     """/prenom : liste, prénom fixé pour un livreur ; chaque message du bot écrit « Livreur 1 (Ketur) » ;
     le prénom suffit dans /ventes."""
@@ -2934,12 +3014,12 @@ async def test_close_livreur_end_of_service(h, monkeypatch):
     assert "🎒 <b>Stock encore sur lui</b>\nDIV <b>3</b>" in text and "US" not in text.split("Stock")[1]
     assert "<b>À récupérer : 60 €</b>" in text
     assert (await db.get_user(l1["id"]))["on_duty"] is False
-    assert h.tg.last(L1).text.endswith(texts.CLOSE_FOR_LIVREUR)
+    assert any(t.endswith(texts.CLOSE_FOR_LIVREUR) for t in h.tg.texts(L1))
 
     # Le livreur termine lui-même son service depuis son menu ; rien n'a été livré par Livreur 2.
     await go_on_duty(h, L2, REPUBLIQUE)
     await h.text(L2, "🏁 Fin de service")
-    mine = h.tg.last(L2).text
+    mine = h.tg.find(L2, "🏁 <b>Fin de service — Livreur 2</b>").text
     assert mine.startswith("🏁 <b>Fin de service — Livreur 2</b>") and "Aucune course livrée cette nuit." in mine
     assert (await db.get_user(l2["id"]))["on_duty"] is False
     assert any(t.startswith("🏁 <b>Fin de service — Livreur 2</b>") for t in h.tg.texts(DISPATCH))

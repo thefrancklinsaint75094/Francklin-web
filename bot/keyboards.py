@@ -451,3 +451,14 @@ def my_variants(products: list[dict], mine: dict) -> M | None:
     rows.append([B("✔️ Terminé", callback_data="gv_done")])
     return M(rows)
 
+
+
+def declare_prompt(decl_id: int, has_expected: bool) -> M | None:
+    """Stock à déclarer : ✅ si le tableau est exact (sinon il écrit son stock)."""
+    if not has_expected:
+        return None
+    return M([[B("✅ C'est exact", callback_data=f"dc_same:{decl_id}")]])
+
+
+def declare_confirm(decl_id: int) -> M:
+    return M([[B("✅ Confirmer", callback_data=f"dc_ok:{decl_id}")], [B("✏️ Corriger", callback_data=f"dc_fix:{decl_id}")]])

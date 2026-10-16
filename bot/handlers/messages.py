@@ -7,7 +7,7 @@ from __future__ import annotations
 from telegram import Update
 
 from bot import config, messaging, texts
-from bot.handlers import cash, common, franchise, livreur, onboarding, restock, restock_text, sales, swipe
+from bot.handlers import cash, common, declare, franchise, livreur, onboarding, restock, restock_text, sales, swipe
 
 
 async def on_message(update: Update, context) -> None:
@@ -32,6 +32,11 @@ async def on_message(update: Update, context) -> None:
     # Livreur : les gros boutons du menu en bas de l'écran passent avant tout le reste.
     if user["role"] == "livreur" and livreur.menu_action(update.message.text):
         await livreur.on_menu(update, context, user, livreur.menu_action(update.message.text))
+        return
+    # Livreur qui déclare son stock (début / fin de service) ; « OK » / « Modif » valident toujours sa course.
+    if (state == declare.STATE and declare.looks_like_stock(update.message.text)
+            and not livreur.is_validation(update.message.text)):
+        await declare.on_message(update, context, user, payload)
         return
     # États communs à plusieurs rôles (admins : dispatch et franchisés).
     if state == livreur.EDIT_STATE and payload.get("sel") is not None:

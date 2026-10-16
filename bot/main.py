@@ -16,6 +16,7 @@ from telegram.ext import (
 from bot import config, db, jobs, messaging, texts
 from bot.config import PARIS
 from bot.handlers import (
+    declare,
     cash, close_day, cloture, common, prenoms, variants as variants_h, restock_text, sales, swipe, dispatch, franchise, livreur, location, messages, onboarding, relay, restock, stock_view,
 )
 from bot.services import names
@@ -191,6 +192,7 @@ def register_handlers(app: Application) -> None:
         (r"^sl_(ok|x)$", sales.action),
         (r"^rv_(ok|x)$", restock_text.action),
         (r"^sw_(ok|x)$", swipe.action),
+        (r"^dc_(ok|same|fix):", declare.action),
         (r"^sname:", dispatch.name_ask),
         (r"^loc:", dispatch.show_position),
         (r"^loc_all$", dispatch.show_all_positions),
