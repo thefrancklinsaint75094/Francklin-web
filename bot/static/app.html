@@ -598,8 +598,13 @@ function viewCash() {
   wrap.append(el("div", { class: "h2" }, "Par livreur", refreshBtn("cash")));
   wrap.append(el("div", { class: "list" }, s.livreurs.map((r) => el("div", { class: "card" },
     el("div", { class: "row" }, el("b", { class: "grow" }, who(r)), el("b", {}, eur(r.cash))),
-    el("div", { class: "small muted", style: "margin-top:4px" },
-      `💵 ventes ${eur(r.especes)} · 💳 ${eur(r.virement)} · 🧾 dépenses ${eur(r.depenses)} · récupéré ${eur(r.recupere)}`)))));
+    el("div", { class: "kv small", style: "margin-top:6px" }, el("span", {}, "📅 Reste d'avant (pas remis)"), el("b", {}, eur(r.avant))),
+    el("div", { class: "kv small" }, el("span", {}, "💵 + Encaissé aujourd'hui"), el("b", {}, eur(r.jour_especes))),
+    el("div", { class: "kv small" }, el("span", {}, "🧾 − Charges"), el("b", {}, eur(r.jour_depenses))),
+    r.jour_remis ? el("div", { class: "kv small" }, el("span", {}, "🤝 − Remis aujourd'hui"), el("b", {}, eur(r.jour_remis))) : null,
+    r.jour_recu ? el("div", { class: "kv small" }, el("span", {}, "↔️ + Reçu d'un livreur"), el("b", {}, eur(r.jour_recu))) : null,
+    el("div", { class: "kv small" }, el("span", {}, "= Il lui reste"), el("b", {}, eur(r.cash))),
+    r.virement ? el("div", { class: "small muted", style: "margin-top:4px" }, `💳 virements de la semaine : ${eur(r.virement)}`) : null))));
   return wrap;
 }
 

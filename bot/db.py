@@ -465,6 +465,22 @@ async def list_sales_between(start: datetime, end: datetime) -> list[dict]:
     return res.data
 
 
+async def _for_night(table: str, night: date, start: datetime, end: datetime) -> list[dict]:
+    """Lignes d'une nuit : nuit choisie (/ventes lundi), ou sans nuit et créées pendant la nuit."""
+    chosen = await _t(table).select("*").eq("night", night.isoformat()).order("id").execute()
+    plain = await (_t(table).select("*").is_("night", "null").gte("created_at", iso(start))
+                   .lt("created_at", iso(end)).order("id").execute())
+    return chosen.data + plain.data
+
+
+async def list_sales_for_night(night: date, start: datetime, end: datetime) -> list[dict]:
+    return await _for_night("sales", night, start, end)
+
+
+async def list_expenses_for_night(night: date, start: datetime, end: datetime) -> list[dict]:
+    return await _for_night("expenses", night, start, end)
+
+
 async def list_livreur_variants(livreur_name: str | None = None) -> list[dict]:
     q = _t("livreur_variants").select("*")
     if livreur_name:

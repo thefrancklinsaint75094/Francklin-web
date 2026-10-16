@@ -724,3 +724,11 @@ simple qui respecte le mur de confidentialité (§12).
      Arrivée = `arrival_date_time` du trajet ; étapes simplifiées pour le livreur (ligne, direction, arrêts,
      marche, attente) ; nombre de perturbations signalé. Adresse de l'API réglable (`IDFM_URL`) au cas où PRIM la
      change. Sans clé, rien ne change.
+
+168. **Caisse des livreurs au jour le jour** (l'exploitant : « je veux des comptes journaliers… une ligne avec
+     l'argent de la veille si elle ne l'a pas donné au ravitailleur, l'argent encaissé aujourd'hui, les charges,
+     et par soustraction ce qui lui reste »). Le total de la semaine (script `cash_livreurs`) reste la référence ;
+     les mouvements de la nuit en cours sont relus dans la base (livraisons en espèces, ventes et dépenses de la
+     nuit — `night` choisie ou, sinon, date de création —, cash remis, transferts) et « reste d'avant » = total −
+     mouvements du jour. Pas de changement du script Google à redéployer. Une saisie faite à la main dans la
+     feuille pour aujourd'hui compte dans « reste d'avant ».

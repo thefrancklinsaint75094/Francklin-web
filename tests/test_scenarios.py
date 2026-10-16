@@ -1741,8 +1741,10 @@ async def test_expenses_and_cash_to_collect(h, monkeypatch):
 
     await h.text(L1, "/macaisse")
     mine = txt(h.tg.last(L1))
-    assert "Espèces encaissées : 910 €" in mine and "Pas encore dans la feuille : + 60 €" in mine
-    assert "<b>À remettre : 250 €</b>" in mine and "Virements (pour info) : 60 €" in mine
+    # Compte du jour : reste d'avant + encaissé aujourd'hui − charges du jour (25 + 50 + 12,50) = reste.
+    assert "📅 Reste d'avant (pas encore remis) : 277,50 €" in mine
+    assert "💵 + Encaissé aujourd'hui : 60 €" in mine and "🧾 − Charges : 87,50 €" in mine
+    assert "<b>= Il te reste : 250 €</b>" in mine and "Virements de la semaine (pour info) : 60 €" in mine
 
     await h.text(R1, "/caisse")
     caisse = h.tg.last(R1)
@@ -3192,7 +3194,7 @@ async def test_close_livreur_end_of_service(h, monkeypatch):
     assert "📦 <b>1 course livrée — 60 €</b> (💵 60 €)" in text
     assert f" · #{c['id']} · Franchisé 1 · Paris 4e · 2 vodka + coca · 60 € 💵" in text
     assert "🎒 <b>Stock encore sur lui</b>\nDIV <b>3</b>" in text and "US" not in text.split("Stock")[1]
-    assert "<b>À récupérer : 60 €</b>" in text
+    assert "<b>= À récupérer : 60 €</b>" in text
     assert (await db.get_user(l1["id"]))["on_duty"] is False
     assert any(t.endswith(texts.CLOSE_FOR_LIVREUR) for t in h.tg.texts(L1))
 
@@ -3967,3 +3969,51 @@ async def test_idfm_transit_route(h, test_config):
         assert me["current"]["traffic"]["source"] == "transports" and len(me["current"]["traffic"]["steps"]) == 4
         board = await (await client.post("/api/board", headers={"X-Init-Data": _init_data(DISPATCH)})).json()
         assert board["routes"][0]["arrival"]["source"] == "transports"
+
+
+async def test_daily_cash_account(h, monkeypatch):
+    """Caisse du livreur au jour le jour : reste d'avant (pas remis) + encaissé aujourd'hui − charges
+    (− cash remis, + cash reçu d'un livreur) = ce qui lui reste. Une vente notée pour une nuit passée
+    compte dans « avant »."""
+    from bot import web_livreur
+    from bot.services import cash, sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_action(action, client=None, **kw):     # cumul de la semaine, comme le script
+        return {"ok": True, "livreurs": {"Livreur 1": {"especes": 700, "depenses": 40, "recupere": 360, "cash": 300},
+                                         "Livreur 2": {"cash": 30, "recupere": -30}}}
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    f1, _, (l1, l2) = await setup_network(h)
+    now = now_utc()
+    await db._t("courses").insert({
+        "franchise_id": f1["id"], "livreur_id": l1["id"], "raw_message": "x", "address": "1 rue X", "postal_code": "75004",
+        "district": "Paris 4e", "lat": 48.85, "lon": 2.35, "products": "x", "price": 80, "status": "delivered",
+        "payment": "especes", "delivered_at": iso(now)}).execute()
+    await db._t("sales").insert({"livreur_name": "Livreur 1", "livreur_id": l1["id"], "by_user_id": f1["id"],
+                                 "payment": "especes", "product": "TEST", "qty": 1, "price": 50,
+                                 "night": (now - timedelta(days=2)).date().isoformat()}).execute()
+    await db._t("expenses").insert({"livreur_id": l1["id"], "by_user_id": l1["id"], "kind": "charges",
+                                    "amount": 20}).execute()
+    await db._t("restocks").insert({"livreur_id": l1["id"], "by_user_id": f1["id"], "kind": "cash",
+                                    "cash": 100}).execute()
+    await db._t("restocks").insert({"livreur_id": l1["id"], "livreur_name": "Livreur 1", "by_user_id": f1["id"],
+                                    "kind": "swipe", "box": "Swipe", "cash": 30, "to_livreur_id": l2["id"],
+                                    "to_livreur_name": "Livreur 2"}).execute()
+
+    row = (await cash.livreur_now(l1))["row"]
+    assert (row["jour_especes"], row["jour_depenses"], row["jour_remis"], row["jour_recu"]) == (80, 20, 130, 0)
+    assert row["avant"] == 370 and row["cash"] == 300          # 370 + 80 − 20 − 130 = 300
+    other = (await cash.livreur_now(l2))["row"]
+    assert other["jour_recu"] == 30 and other["avant"] == 0
+
+    money = await web_livreur.section(await db.get_user(l1["id"]), "money")
+    assert money["ok"] and money["avant"] == 370 and money["jour_especes"] == 80 and money["cash"] == 300
+
+    await h.text(L1, "/macaisse")
+    mine = h.tg.last(L1).text.replace("\xa0", " ")
+    assert mine.split("\n")[2:6] == ["📅 Reste d'avant (pas encore remis) : 370 €", "💵 + Encaissé aujourd'hui : 80 €",
+                                     "🧾 − Charges : 20 €", "🤝 − Remis aujourd'hui : 130 €"]
+    assert "<b>= Il te reste : 300 €</b>" in mine

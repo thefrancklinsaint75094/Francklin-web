@@ -1267,16 +1267,20 @@ def d_expense(expense: dict, by: dict, livreur: dict) -> str:
     return f"🧾 D#{expense['id']} — {who} — {_expense_line(expense)}"
 
 
+def _day_lines(row: dict) -> list[str]:
+    """Compte du jour : reste d'avant + encaissé aujourd'hui − charges (− remis, + reçu) = reste."""
+    lines = [f"📅 Reste d'avant (pas encore remis) : {eur(row.get('avant') or 0)}",
+             f"💵 + Encaissé aujourd'hui : {eur(row.get('jour_especes') or 0)}",
+             f"🧾 − Charges : {eur(row.get('jour_depenses') or 0)}"]
+    if row.get("jour_remis"):
+        lines.append(f"🤝 − Remis aujourd'hui : {eur(row['jour_remis'])}")
+    if row.get("jour_recu"):
+        lines.append(f"↔️ + Reçu d'un livreur : {eur(row['jour_recu'])}")
+    return lines
+
+
 def _cash_detail(row: dict) -> str:
-    parts = [f"espèces {eur(row['especes'])}"] if row.get("especes") else []
-    if row.get("depenses"):
-        parts.append(f"− dépenses {eur(row['depenses'])}")
-    if row.get("recupere"):
-        parts.append(f"− récupéré {eur(row['recupere'])}")
-    if row.get("en_vol"):
-        sign = "+" if row["en_vol"] > 0 else "−"
-        parts.append(f"{sign} {eur(abs(row['en_vol']))} pas encore dans la feuille")
-    return " ".join(parts)
+    return "\n".join(f"   {line}" for line in _day_lines(row))
 
 
 def cash_overview(rows: list[dict]) -> str:
@@ -1287,9 +1291,7 @@ def cash_overview(rows: list[dict]) -> str:
     for row in shown:                            # un livreur sans aucun mouvement n'est pas cité
         total += max(0.0, row["cash"])
         lines.append(f"<b>{esc(row['nom'])}</b> : {eur(row['cash'])}")
-        detail = _cash_detail(row)
-        if detail:
-            lines.append(f"   {detail}")
+        lines.append(_cash_detail(row))
         if row.get("virement"):
             lines.append(f"   💳 virements : {eur(row['virement'])}")
     if not shown:
@@ -1299,19 +1301,10 @@ def cash_overview(rows: list[dict]) -> str:
 
 
 def my_cash(row: dict) -> str:
-    lines = [f"💶 <b>Ta caisse — {esc(row['nom'])}</b>", ""]
-    if row.get("especes"):
-        lines.append(f"Espèces encaissées : {eur(row['especes'])}")
-    if row.get("depenses"):
-        lines.append(f"Dépenses et avances : − {eur(row['depenses'])}")
-    if row.get("recupere"):
-        lines.append(f"Déjà remis : − {eur(row['recupere'])}")
-    if row.get("en_vol"):
-        sign = "+" if row["en_vol"] > 0 else "−"
-        lines.append(f"Pas encore dans la feuille : {sign} {eur(abs(row['en_vol']))}")
-    lines += ["", f"<b>À remettre : {eur(row['cash'])}</b>"]
+    lines = [f"💶 <b>Ta caisse aujourd'hui — {esc(row['nom'])}</b>", "", *_day_lines(row),
+             "", f"<b>= Il te reste : {eur(row['cash'])}</b> (à remettre)"]
     if row.get("virement"):
-        lines.append(f"💳 Virements (pour info) : {eur(row['virement'])}")
+        lines.append(f"💳 Virements de la semaine (pour info) : {eur(row['virement'])}")
     return "\n".join(lines)
 
 
@@ -1971,10 +1964,8 @@ def livreur_close(name: str, label: str, rows: list, still: list[dict], expenses
     if cash_row is None:
         lines.append("   illisible pour l'instant (/caisse)" if sheets_on else "   (Google Sheets non relié)")
     else:
-        lines.append(f"<b>À récupérer : {eur(cash_row['cash'])}</b>")
-        detail = _cash_detail(cash_row)
-        if detail:
-            lines.append(f"   {detail}")
+        lines.append(_cash_detail(cash_row))
+        lines.append(f"<b>= À récupérer : {eur(cash_row['cash'])}</b>")
     return "\n".join(lines)
 
 

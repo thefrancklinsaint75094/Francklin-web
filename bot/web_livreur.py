@@ -134,7 +134,8 @@ async def section(user: dict, name: str) -> dict:
             return {"ok": False, "error": data["error"]}
         row = data["row"]
         return {"ok": True, **{k: round(float(row.get(k) or 0), 2) for k in ("cash", "especes", "virement",
-                                                                              "depenses", "recupere")}}
+                                                                              "depenses", "recupere", "avant",
+                                                                              *cash.DAY_FIELDS)}}
     if name == "stock":
         have, _ = await stock.current_stock(user)
         products = [p for p in await db.list_products() if p.get("variants")]
