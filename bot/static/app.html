@@ -408,7 +408,11 @@ function viewCourses() {
   const wrap = el("div", {});
   wrap.append(el("div", { class: "seg" }, segs.map(([k, l, n]) =>
     el("button", { class: S.seg === k ? "on" : "", onclick: () => { tap(); S.seg = k; S.open = null; render(); } }, `${l} · ${n}`))));
-  const items = d[S.seg];
+  // Entre franchisés on s'entraide : toutes les courses sont visibles ; « Les miennes » ne garde que les siennes.
+  if (!d.me.dispatch) wrap.append(el("div", { class: "seg" },
+    el("button", { class: S.mineOnly ? "" : "on", onclick: () => { S.mineOnly = false; render(); } }, "Toutes les courses"),
+    el("button", { class: S.mineOnly ? "on" : "", onclick: () => { S.mineOnly = true; render(); } }, "⭐ Les miennes")));
+  const items = d[S.seg].filter((c) => !S.mineOnly || c.mine);
   const list = el("div", { class: "list" });
   if (!items.length) list.append(el("div", { class: "card empty" }, el("b", {}, S.seg === "pending" ? "🎉" : "🌙"),
     S.seg === "pending" ? "Aucune course à attribuer." : S.seg === "assigned" ? "Aucune course en cours." : "Aucune course livrée cette nuit."));
@@ -437,6 +441,7 @@ function courseCard(c) {
   if (c.minutes !== null && c.minutes >= 60 && c.status === "assigned") badges.push(el("span", { class: "badge warn" }, "⏰ longue"));
   if (c.payment) badges.push(el("span", { class: "badge" }, c.payment === "especes" ? "💵 espèces" : "💳 virement"));
   if (c.detail) badges.push(el("span", { class: "badge" }, "🔑 " + c.detail));
+  if (c.mine && !S.data.me.dispatch) badges.unshift(el("span", { class: "badge", style: "font-weight:700" }, "⭐ ta commande"));
   const card = el("div", { class: "card tap", onclick: (e) => { if (e.target.closest(".actions")) return; tap(); S.open = S.open === c.id ? null : c.id; render(); } },
     el("div", { class: "row" }, el("span", { class: "num" }, "#" + c.id), pill, el("span", { class: "right" }, right)),
     el("div", { class: "place" }, c.district || ""),

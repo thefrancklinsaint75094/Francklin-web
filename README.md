@@ -469,6 +469,10 @@ vraie appli dans Telegram, avec un **menu à gauche** (☰ ou glisser depuis le 
 
 Restent dans le chat : le catalogue des produits (`/produits`, `/gouts`) et ce que font les livreurs eux-mêmes.
 
+**Entre franchisés, tout est partagé** : chaque franchisé voit toutes les courses (adresse complète, livreur,
+produits, prix), même celles qu'il n'a pas envoyées, et peut agir dessus (attribuer, changer de livreur, heure,
+adresse, produits…) pour donner un coup de main. Ses propres commandes portent ⭐ ; « ⭐ Les miennes » les isole.
+
 Les données se mettent à jour toutes les 10 secondes. Chaque appel est signé par Telegram (vérifié avec le token
 du bot) et réservé aux admins actifs ; les actions passent par exactement le même code que les boutons du chat.
 Serveur web dans le bot (aiohttp, `PORT`), domaine public Railway. Base : `sql/migrations/021_webapp.sql`.
