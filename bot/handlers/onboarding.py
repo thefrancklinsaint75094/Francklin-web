@@ -12,6 +12,24 @@ from bot.services import names
 log = logging.getLogger(__name__)
 
 MAX_NAME = 80
+NEWCOMER_ALERT_SECONDS = 3600
+_newcomers: dict[int, float] = {}        # telegram_id → dernière alerte (une par heure et par personne)
+
+
+async def newcomer(update: Update, context, what: str) -> None:
+    """Une personne inconnue du bot écrit ou ouvre le bot : trace dans les journaux et dispatch prévenu (une
+    fois par heure), pour savoir si son appui arrive bien jusqu'au bot."""
+    import time
+
+    tg = update.effective_user
+    if tg is None:
+        return
+    log.info("Personne inconnue (%s) : id %s @%s %s", what, tg.id, tg.username, tg.full_name)
+    now = time.monotonic()
+    if now - _newcomers.get(tg.id, -NEWCOMER_ALERT_SECONDS) < NEWCOMER_ALERT_SECONDS:
+        return
+    _newcomers[tg.id] = now
+    await messaging.notify_dispatch(context.bot, texts.d_newcomer(tg.full_name, tg.username, what))
 
 
 async def start(update: Update, context) -> None:
@@ -32,6 +50,7 @@ async def start(update: Update, context) -> None:
     user = await common.actor(update)
     if user is None:
         await messaging.reply(update, texts.ASK_ROLE, keyboards.role_choice())
+        await newcomer(update, context, "/start")
         return
     if user["status"] == "banned":
         return

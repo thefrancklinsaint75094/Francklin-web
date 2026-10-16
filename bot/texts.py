@@ -2039,3 +2039,9 @@ def d_eta(course: dict, livreur: dict, minutes: int, at: str, update: bool = Fal
     return (f"⏱ #{course['id']} — {esc(livreur.get('display_name') or '?')} {what} dans {_eta(minutes)} (vers {at}) — "
             f"{esc(course.get('district') or '')}")
 
+
+def d_newcomer(full_name: str | None, username: str | None, what: str) -> str:
+    who = esc(full_name or "?") + (f" (@{esc(username)})" if username else "")
+    step = "vient d'ouvrir le bot (/start), choix du rôle en cours" if what == "/start" else "message reçu sans inscription"
+    return f"👋 Nouvelle personne sur le bot : {who} — {step}."
+

@@ -146,6 +146,10 @@ async def test_onboarding_and_welcome(h):
     assert h.tg.last(DISPATCH).text.startswith("Dispatch actif — tous les droits.")
     await h.text(F1, "/start", username="barducoin")
     assert h.tg.last(F1).text == texts.ASK_ROLE
+    # Le dispatch sait qu'une nouvelle personne a ouvert le bot (une fois par heure).
+    assert sum("👋 Nouvelle personne sur le bot" in t and "@barducoin" in t for t in h.tg.texts(DISPATCH)) == 1
+    await h.text(F1, "/start", username="barducoin")
+    assert sum("👋 Nouvelle personne sur le bot" in t for t in h.tg.texts(DISPATCH)) == 1
     await h.press(F1, h.tg.last(F1), "role:franchise", username="barducoin")
     assert h.tg.last(F1).text == texts.ASK_NAME
     await h.text(F1, "hello", username="barducoin")  # le nom
