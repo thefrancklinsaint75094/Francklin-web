@@ -528,14 +528,58 @@ function viewStock() {
 function viewProducts() {
   const wait = sectionState("products"); if (wait) return wait;
   const q = S.q.toLowerCase();
-  const items = S.cache.products.products.filter((p) => !q || p.name.toLowerCase().includes(q));
-  const search = el("input", { class: "search", placeholder: "Rechercher un produit", value: S.q });
+  const all = S.cache.products.products;
+  const items = all.filter((p) => !q || p.name.toLowerCase().includes(q) || p.aliases.some((a) => a.toLowerCase().includes(q)));
+  const search = el("input", { class: "search", placeholder: "Rechercher (nom ou surnom)", value: S.q });
   search.addEventListener("input", () => { S.q = search.value; const pos = search.selectionStart; render();
     const s2 = document.querySelector(".search"); s2.focus(); s2.setSelectionRange(pos, pos); });
-  return el("div", {}, search, el("div", { class: "list" }, el("div", { class: "card" },
-    items.length ? items.map((p) => el("div", { class: "kv" }, el("span", {}, p.name),
-      el("span", { class: "muted small", style: "text-align:right" }, p.variants.length ? p.variants.join(", ") : ""))) : el("div", { class: "muted" }, "Aucun produit."))),
-    el("div", { class: "muted small", style: "text-align:center;margin:14px" }, "Ajouter ou retirer un produit : /produits dans le chat (dispatch)."));
+  return el("div", {},
+    el("div", { class: "tools", style: "grid-template-columns:1fr; margin-bottom:8px" },
+      el("button", { class: "btn main", onclick: addProductsSheet }, "➕ Ajouter des produits")),
+    search,
+    el("div", { class: "list" }, el("div", { class: "card" },
+      items.length ? items.map((p) => el("button", { class: "cmd", onclick: () => productSheet(p) },
+        el("span", { class: "grow" }, p.name,
+          el("small", {}, [p.aliases.length ? "surnoms : " + p.aliases.join(", ") : "aucun surnom",
+                           p.variants.length ? "goûts : " + p.variants.join(", ") : null].filter(Boolean).join(" · "))),
+        el("span", { class: "muted" }, "›"))) : el("div", { class: "muted" }, all.length ? "Aucun produit trouvé." : "Catalogue vide."))),
+    el("div", { class: "muted small", style: "text-align:center;margin:14px" }, `${all.length} produit${all.length > 1 ? "s" : ""} · les surnoms servent à reconnaître les commandes`));
+}
+
+function addProductsSheet() {
+  const input = el("textarea", { rows: "7", placeholder: "Un produit par ligne. Après « : », les surnoms :\nNom du produit : surnom, autre surnom\nAutre produit" });
+  openSheet(el("h3", {}, "➕ Ajouter des produits"),
+    el("p", {}, "Un produit par ligne. Après « : », les autres façons dont les franchisés l'écrivent. Un produit déjà connu est complété, pas dupliqué."),
+    input,
+    el("button", { class: "btn main full", onclick: async () => {
+      const r = await call({ type: "catalog_add", text: input.value });
+      if (!r.ok) { toast(r.message || "Erreur"); return; }
+      showResult("➕ Catalogue", r.html, true, () => loadSection("products"));
+    } }, "Ajouter"));
+  setTimeout(() => input.focus(), 250);
+}
+
+function productSheet(p) {
+  const name = textInput({ value: p.name, maxlength: "80" });
+  const aliases = el("textarea", { rows: "3", placeholder: "surnom, autre surnom" });
+  aliases.value = p.aliases.join(", ");
+  const flavors = el("textarea", { rows: "2", placeholder: "goût, autre goût (vide : pas de goûts)" });
+  flavors.value = p.variants.join(", ");
+  openSheet(el("h3", {}, "✏️ " + p.name),
+    field("Nom", name),
+    el("div", { class: "muted small", style: "margin-top:4px" }, "⚠️ Le nom doit rester celui des colonnes des tableaux : si tu le changes ici, change-le aussi dans les feuilles."),
+    field("Surnoms (séparés par des virgules)", aliases),
+    field("Goûts (séparés par des virgules)", flavors),
+    el("button", { class: "btn main full", onclick: async () => {
+      const r = await call({ type: "catalog_edit", id: p.id, name: name.value, aliases: aliases.value, variants: flavors.value });
+      if (!r.ok) { if (r.html) showResult("⚠️ Rien n'a changé", r.html, false); else toast(r.message || "Erreur"); return; }
+      showResult("✅ Enregistré", r.html, true, () => loadSection("products"));
+    } }, "Enregistrer"),
+    el("button", { class: "btn full danger", onclick: async () => {
+      if (!(await confirmBox(`Supprimer ${p.name} du catalogue ?`))) return;
+      const r = await call({ type: "catalog_delete", id: p.id });
+      toast(r.message || ""); if (r.ok) { closeSheet(); loadSection("products"); }
+    } }, "🗑 Supprimer ce produit"));
 }
 
 function viewCash() {

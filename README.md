@@ -467,7 +467,9 @@ vraie appli dans Telegram, avec un **menu à gauche** (☰ ou glisser depuis le 
 - **👥 Équipe** (dispatch) : valider / refuser une inscription, nom ou nom de feuille, prénom (aussi pour les
   livreurs des feuilles sans compte), rôle, bannir, réactiver, supprimer ; message à chacun.
 
-Restent dans le chat : le catalogue des produits (`/produits`, `/gouts`) et ce que font les livreurs eux-mêmes.
+- **🍾 Produits** : le catalogue (dispatch et franchisés, comme `/produits`) — ➕ ajouter des produits (un par
+  ligne, « Nom : surnoms »), et pour chaque produit : nom, surnoms (pour reconnaître les commandes), goûts,
+  🗑 supprimer. Mêmes contrôles que dans le chat (nom déjà pris, surnom partagé par deux produits).
 
 **Entre franchisés, tout est partagé** : chaque franchisé voit toutes les courses (adresse complète, livreur,
 produits, prix), même celles qu'il n'a pas envoyées, et peut agir dessus (attribuer, changer de livreur, heure,
