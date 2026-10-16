@@ -450,6 +450,25 @@ vraie appli dans Telegram, avec un **menu à gauche** (☰ ou glisser depuis le 
 - **📦 Stock** (box et livreurs), **🍾 Produits** (lecture), **💶 Caisse**, **📊 Bilan de la nuit**,
   **🔔 Activité** (tous les avis), **👥 Équipe**, **⚙️ Commandes et réglages** (les commandes du chat par chapitre).
 
+**Tout se fait dans l'appli** (le chat reste disponible) :
+
+- **➕ Commande** (En direct, Courses) : même écriture que dans le chat (adresse, une ligne par produit avec
+  son prix, commentaire) → fiche à vérifier → ✅ Envoyer → choix du livreur (🟢 libres, 🛵 en livraison) ou au
+  plus proche.
+- **✏️ Produits** d'une course : lignes produit · quantité · prix (multiples de 10 €), total ; livreur et franchisé
+  prévenus. **💬 Livreur** : message au livreur de la course.
+- **📦 Stock** : 🔄 Recharger (ravitailleur, livreur, box, charger / reprendre, cash récupéré) et ↔️ Transfert
+  entre livreurs (ou « tout son stock ») — récap, puis ✅ Enregistrer, comme `/ravi` et `/swipe`.
+- **💶 Caisse** : 💶 Cash récupéré, 🧾 Dépense (charges / avance sur paye).
+- **🛵 Livreurs** (⋯) : carte (Google Maps), message, recharger, dépense, service / pause, 🏁 fin de service
+  (le récap de sa nuit s'affiche dans l'appli).
+- **📊 Bilan** : débrief de la journée et totaux (affichés dans l'appli), 🧮 récap de ventes, 🔁 synchro d'une nuit
+  de la semaine, journal (fichier dans le chat), 🗄 remise à zéro (dispatch, avec la vérification avant).
+- **👥 Équipe** (dispatch) : valider / refuser une inscription, nom ou nom de feuille, prénom (aussi pour les
+  livreurs des feuilles sans compte), rôle, bannir, réactiver, supprimer ; message à chacun.
+
+Restent dans le chat : le catalogue des produits (`/produits`, `/gouts`) et ce que font les livreurs eux-mêmes.
+
 Les données se mettent à jour toutes les 10 secondes. Chaque appel est signé par Telegram (vérifié avec le token
 du bot) et réservé aux admins actifs ; les actions passent par exactement le même code que les boutons du chat.
 Serveur web dans le bot (aiohttp, `PORT`), domaine public Railway. Base : `sql/migrations/021_webapp.sql`.

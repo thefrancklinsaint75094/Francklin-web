@@ -185,26 +185,42 @@ async def on_message(update: Update, context, admin: dict, payload: dict) -> Non
         return
     value = " ".join((update.message.text or "").split())
     if payload.get("field") == "prenom":
-        if value.lower() in ("-", "aucun", "rien", "supprimer"):
-            await db.delete_prenom(user["display_name"])
-        elif NAME_MIN <= len(value) <= 30:
-            await db.set_prenom(user["display_name"], value)
-        else:
-            await messaging.reply(update, texts.USER_NAME_INVALID)
-            return
-        await names.refresh()
-        await db.log_event("prenom", user_id=admin["id"], payload={"name": user["display_name"], "prenom": value})
+        ok = await set_prenom(admin, user["display_name"], value)
     else:
-        if not NAME_MIN <= len(value) <= NAME_MAX:
-            await messaging.reply(update, texts.USER_NAME_INVALID)
-            return
-        old = user.get("display_name")
-        user = await db.update_user(user["id"], {"display_name": value}) or user
-        await db.log_event("user_renamed", user_id=user["id"], payload={"from": old, "to": value, "by": admin["id"]})
+        updated = await rename(admin, user, value)
+        ok, user = updated is not None, updated or user
+    if not ok:
+        await messaging.reply(update, texts.USER_NAME_INVALID)
+        return
     text, markup = await _card(user, admin)
     await messaging.reply(update, text, markup)
     if payload.get("msg"):
         await messaging.edit_markup(context.bot, update.effective_chat.id, payload["msg"], None)
+
+
+async def set_prenom(admin: dict, sheet_name: str, value: str) -> bool:
+    """Prénom affiché à côté d'un nom de feuille (« - » l'enlève). False si le prénom est invalide."""
+    value = " ".join((value or "").split())
+    if value.lower() in ("-", "aucun", "rien", "supprimer", ""):
+        await db.delete_prenom(sheet_name)
+    elif NAME_MIN <= len(value) <= 30:
+        await db.set_prenom(sheet_name, value)
+    else:
+        return False
+    await names.refresh()
+    await db.log_event("prenom", user_id=admin["id"], payload={"name": sheet_name, "prenom": value})
+    return True
+
+
+async def rename(admin: dict, user: dict, value: str) -> dict | None:
+    """Nouveau nom affiché ; None s'il est trop court ou trop long."""
+    value = " ".join((value or "").split())
+    if not NAME_MIN <= len(value) <= NAME_MAX:
+        return None
+    old = user.get("display_name")
+    user = await db.update_user(user["id"], {"display_name": value}) or user
+    await db.log_event("user_renamed", user_id=user["id"], payload={"from": old, "to": value, "by": admin["id"]})
+    return user
 
 
 @common.callback

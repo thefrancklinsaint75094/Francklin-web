@@ -121,12 +121,18 @@ async def _validate(context, chat_id: int, user: dict, payload: dict):
     if livreur is None:
         await db.clear_state(user["id"])
         return texts.ALREADY_HANDLED, True
-    row = await db.create_expense({
-        "livreur_id": livreur["id"], "by_user_id": user["id"], "kind": payload["kind"],
-        "amount": amount, "motif": payload.get("motif") or None,
-    })
     await db.clear_state(user["id"])
+    row = await save_expense(context, user, livreur, payload["kind"], amount, payload.get("motif"))
     await messaging.edit(context.bot, chat_id, payload["msg"], texts.expense_done(row, livreur["display_name"]))
+    return "Enregistré ✅"
+
+
+async def save_expense(context, user: dict, livreur: dict, kind: str, amount: float, motif: str | None) -> dict:
+    """Dépense d'un livreur (charges / paye) : en base, livreur et dispatch prévenus, envoyée au tableau."""
+    row = await db.create_expense({
+        "livreur_id": livreur["id"], "by_user_id": user["id"], "kind": kind,
+        "amount": amount, "motif": motif or None,
+    })
     await db.log_event("expense", user_id=user["id"], payload={"expense_id": row["id"], "livreur_id": livreur["id"]})
     if user["id"] != livreur["id"]:
         await messaging.send(context.bot, livreur, texts.expense_for_livreur(row, user))
@@ -134,7 +140,7 @@ async def _validate(context, chat_id: int, user: dict, payload: dict):
         context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
         text=texts.d_expense(row, user, livreur))
     cash.push_expense_later(row)
-    return "Enregistré ✅"
+    return row
 
 
 async def on_message(update: Update, context, user: dict, payload: dict) -> None:

@@ -672,3 +672,12 @@ simple qui respecte le mur de confidentialité (§12).
 160. **Avis : l'essentiel en message, le reste dans le fil** (« trop d'informations envoyées »). Table `feed` ;
      `notify_dispatch(important=…)` ; `users.notify_level` (« essentiel » par défaut, « tout » au choix dans l'appli).
      « Bot démarré » et les avis de routine (créée, prise, délai, arrivée, livrée…) ne sonnent plus.
+
+161. **Tout depuis l'appli** (l'exploitant : « fais en sorte qu'on puisse tout faire depuis l'appli »). Chaque
+     fonction du chat est coupée en « préparer » / « enregistrer », appelées par le chat et par l'appli :
+     `franchise.analyse` / `create_course` / `send_to_livreur`, `restock_text.prepare` / `commit`,
+     `swipe.prepare` / `commit`, `sales.prepare` / `commit`, `cash.save_expense`, `dispatch.ban_user` /
+     `unban_user` / `delete_user` / `set_sheet_name`, `onboarding.approve_user` / `reject_user`,
+     `user_card.rename` / `set_prenom`, `cloture.precheck` / `run`. Les résultats en lecture (débrief, fin de
+     service, synchro, récap) passent par la commande du chat dont la réponse est capturée et affichée dans
+     l'appli. Le catalogue (`/produits`, goûts) n'est pas dans l'appli : il demande l'accord de l'exploitant.

@@ -134,16 +134,13 @@ async def _start_draft(user: dict, raw: str, correcting_id: str | None) -> dict:
     return await db.create_draft(user["id"], raw)
 
 
-async def process(update: Update, context, user: dict, raw: str, correcting_id: str | None = None,
-                  draft: dict | None = None, extract_input: str | None = None, image=None) -> None:
-    """Pipeline complet : draft → extraction → validation → géocodage → fiches."""
-    cfg = config.get()
-    if draft is None:
-        draft = await _start_draft(user, raw, correcting_id)
-    is_correction = correcting_id is not None and draft["id"] == correcting_id
-    fail_status = "correcting" if is_correction else "error"
-    dead_status = "correcting" if is_correction else "expired"
+async def analyse(user: dict, raw: str, extract_input: str | None = None, image=None) -> tuple[str | None, list]:
+    """Lecture d'un message de commande, sans rien envoyer : (problème, résultats).
 
+    problème : « unavailable » (extraction injoignable), « parse » (illisible), « complement:<n° de course> »
+    (complément d'une course récente), « none » (aucune commande), sinon None.
+    résultats : [("order", fiche prête à confirmer) | ("error", texte) | ("technical", texte)], dans l'ordre."""
+    cfg = config.get()
     try:
         template = None
         if image is None:
@@ -156,54 +153,40 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
         else:
             orders = await extractor().extract_text(extract_input or raw)
     except ExtractionUnavailable:
-        await db.update_draft(draft["id"], {"status": fail_status})
-        await messaging.reply(update, texts.GENERIC_ERROR)
-        await messaging.notify_dispatch(context.bot, texts.d_error("API Anthropic injoignable"), team=False,
-                                            important=True)
-        return
+        return "unavailable", []
     except ExtractionParseError:
-        await db.update_draft(draft["id"], {"status": fail_status})
-        await messaging.reply(update, texts.EXTRACTION_PARSE_FAIL)
-        return
+        return "parse", []
 
     if not orders or looks_like_complement(orders):
         recent = [c for c in await db.list_franchise_courses_since(user["id"], now_utc() - COMPLEMENT_WINDOW)
                   if c["status"] in db.OPEN_STATUSES]
         if recent:
-            await db.update_draft(draft["id"], {"status": dead_status})
-            await messaging.reply(update, texts.complement_hint(recent[-1]["id"]))
-            return
+            return f"complement:{recent[-1]['id']}", []
         if not orders:
-            await db.update_draft(draft["id"], {"status": dead_status})
-            await messaging.reply(update, texts.NO_ORDER_IN_IMAGE if image is not None else texts.NO_ORDER_FOUND)
-            return
+            return "none", []
 
     total = len(orders)
     recent_courses = await db.list_franchise_courses_since(user["id"], now_utc() - DUPLICATE_WINDOW)
-    reuse = draft
-    produced = 0
-    technical_error = False
+    results: list = []
     for index, order in enumerate(orders, start=1):
         if not order.valid:
-            await messaging.reply(update, texts.missing_fields(order))
+            results.append(("error", texts.missing_fields(order)))
             continue
         problems = order_edit.price_problems(order.price, order.products)
         if problems:
-            await messaging.reply(update, texts.price_not_round(order, problems))
+            results.append(("error", texts.price_not_round(order, problems)))
             continue
         try:
             geo = await geocoding.geocode(order.address)
         except geocoding.GeocodingUnavailable:
-            technical_error = True
-            await messaging.reply(update, texts.GENERIC_ERROR)
+            results.append(("technical", texts.GENERIC_ERROR))
             continue
         if geo is None:
-            await messaging.reply(update, texts.geocode_not_found(order.address))
+            results.append(("error", texts.geocode_not_found(order.address)))
             continue
         if not geocoding.in_zone(geo.postcode, cfg.departements_autorises):
-            await messaging.reply(update, texts.out_of_zone(f"{geo.city} {geo.postcode}".strip()))
+            results.append(("error", texts.out_of_zone(f"{geo.city} {geo.postcode}".strip())))
             continue
-
         extracted = {
             "address": geo.label,
             "address_detail": order.address_detail,
@@ -225,7 +208,49 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
         if dup:
             extracted["duplicate_of"] = dup["id"]
             extracted["duplicate_minutes"] = minutes_since(parse_ts(dup["created_at"]))
+        results.append(("order", extracted))
+    return None, results
 
+
+async def process(update: Update, context, user: dict, raw: str, correcting_id: str | None = None,
+                  draft: dict | None = None, extract_input: str | None = None, image=None) -> None:
+    """Pipeline complet : draft → extraction → validation → géocodage → fiches."""
+    cfg = config.get()
+    if draft is None:
+        draft = await _start_draft(user, raw, correcting_id)
+    is_correction = correcting_id is not None and draft["id"] == correcting_id
+    fail_status = "correcting" if is_correction else "error"
+    dead_status = "correcting" if is_correction else "expired"
+
+    problem, results = await analyse(user, raw, extract_input, image)
+    if problem == "unavailable":
+        await db.update_draft(draft["id"], {"status": fail_status})
+        await messaging.reply(update, texts.GENERIC_ERROR)
+        await messaging.notify_dispatch(context.bot, texts.d_error("API Anthropic injoignable"), team=False,
+                                            important=True)
+        return
+    if problem == "parse":
+        await db.update_draft(draft["id"], {"status": fail_status})
+        await messaging.reply(update, texts.EXTRACTION_PARSE_FAIL)
+        return
+    if problem and problem.startswith("complement:"):
+        await db.update_draft(draft["id"], {"status": dead_status})
+        await messaging.reply(update, texts.complement_hint(int(problem.split(":")[1])))
+        return
+    if problem == "none":
+        await db.update_draft(draft["id"], {"status": dead_status})
+        await messaging.reply(update, texts.NO_ORDER_IN_IMAGE if image is not None else texts.NO_ORDER_FOUND)
+        return
+
+    reuse = draft
+    produced = 0
+    technical_error = False
+    for kind, item in results:
+        if kind != "order":
+            technical_error = technical_error or kind == "technical"
+            await messaging.reply(update, item)
+            continue
+        extracted = item
         if reuse is not None:
             old_message_id = reuse.get("telegram_message_id") if is_correction else None
             target = await db.update_draft(reuse["id"], {
@@ -274,11 +299,20 @@ async def confirm(update: Update, context):
             course = await db.get_course_by_draft(draft["id"])
             return texts.draft_already_confirmed(course["id"] if course else None), True
         return texts.DRAFT_NOT_ACTIVE, True
-    ex = locked["extracted"]
+    course, opts = await create_course(context, user, locked, update.callback_query.message.message_id)
+    if opts:
+        return f"Course #{course['id']} enregistrée : choisis le livreur"
+    return f"Course #{course['id']} envoyée"
+
+
+async def create_course(context, user: dict, draft: dict, message_id: int | None) -> tuple[dict, list]:
+    """Fiche confirmée → course. Le message de course du franchisé (message_id, sinon un nouveau) montre le
+    choix du livreur, ou la diffusion part tout de suite. (course, livreurs proposés au choix)."""
+    ex = draft["extracted"]
     course = await db.create_course({
-        "draft_id": locked["id"],
+        "draft_id": draft["id"],
         "franchise_id": user["id"],
-        "raw_message": locked["raw_message"],
+        "raw_message": draft["raw_message"],
         "address": ex["address"],
         "address_detail": ex.get("address_detail"),
         "postal_code": ex["postal_code"],
@@ -289,23 +323,21 @@ async def confirm(update: Update, context):
         "price": ex["price"],
         "requested_time": ex.get("requested_time"),
         "possible_duplicate_of": ex.get("duplicate_of"),
-        "franchise_message_id": update.callback_query.message.message_id,
+        "franchise_message_id": message_id,
     })
-    await db.log_event("course_created", course["id"], user["id"], {"draft_id": locked["id"]})
+    await db.log_event("course_created", course["id"], user["id"], {"draft_id": draft["id"]})
     # Le franchisé choisit son livreur parmi ceux en service ; personne en service : diffusion (attente).
     opts = await pick.options(course) if config.get().franchise_picks else []
     if opts:
         pick.remember(course["id"], pick.build(course, opts))
         pick.schedule_timeout(context.job_queue, course["id"], broadcast.pick_timeout)
-    text, markup = lifecycle.franchise_view(course)
-    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, text, markup)
+    await lifecycle.refresh_franchise_message(context, course, franchise=user)
     await messaging.notify_dispatch(
         context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
         text=texts.d_created(course, user))
-    if opts:
-        return f"Course #{course['id']} enregistrée : choisis le livreur"
-    await broadcast.run_wave(context, course["id"], advance=False)
-    return f"Course #{course['id']} envoyée"
+    if not opts:
+        await broadcast.run_wave(context, course["id"], advance=False)
+    return course, opts
 
 
 @common.callback
@@ -323,14 +355,21 @@ async def pick_livreur(update: Update, context):
     livreur = await db.get_user(livreur_id)
     if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
         return texts.ALREADY_HANDLED, True
+    result = await send_to_livreur(context, user, course, livreur, update.callback_query.message.message_id)
+    return result if result else (texts.ALREADY_CLOSED, True)
+
+
+async def send_to_livreur(context, user: dict, course: dict, livreur: dict, message_id: int | None = None) -> str | None:
+    """Le franchisé (ou un admin) envoie la course en attente à ce livreur, même s'il est déjà en livraison.
+    Texte du résultat, ou None si la course n'était plus en attente."""
     ongoing = await db.list_assigned_for_livreurs([livreur["id"]])
     won = await db.take_course(course["id"], livreur["id"])
     if won is None:
         await lifecycle.refresh_franchise_message(context, await db.get_course(course["id"]))
-        return texts.ALREADY_CLOSED, True
-    if won.get("franchise_message_id") != update.callback_query.message.message_id:
-        await db.update_course(won["id"], {"franchise_message_id": update.callback_query.message.message_id})
-        won["franchise_message_id"] = update.callback_query.message.message_id
+        return None
+    if message_id and won.get("franchise_message_id") != message_id:
+        await db.update_course(won["id"], {"franchise_message_id": message_id})
+        won["franchise_message_id"] = message_id
     await lifecycle.after_assignment(context, won, livreur, None)
     await db.log_event("course_picked", won["id"], livreur["id"], {"by": user["id"], "busy": len(ongoing)})
     if ongoing:

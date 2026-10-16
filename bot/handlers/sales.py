@@ -65,26 +65,31 @@ async def on_message(update: Update, context, user: dict, payload: dict | None =
     await _process(update, user, update.message.text or "", {"night": (payload or {}).get("night")})
 
 
-async def _process(update: Update, user: dict, text: str, payload: dict) -> None:
-    keep = {"night": payload["night"]} if payload.get("night") else {}
+async def prepare(text: str, night: str | None = None) -> tuple[list[str], dict | None]:
+    """Récap de ventes → (erreurs, {blocks, tab, night}) ; rien n'est enregistré. Erreurs sans récap :
+    texte vide de ventes et de dépenses."""
     livreurs = await db.list_users(role="livreur", status="active")
     parsed = sales.parse(text, await sheets.load_catalog(), list(config.get().livreur_names), livreurs)
     if parsed.errors:
-        await _save(user, STATE_INPUT, keep)
-        await messaging.reply(update, texts.sales_errors(parsed.errors))
-        return
+        return parsed.errors, None
     if not parsed.count and not parsed.expense_count:
-        await _save(user, STATE_INPUT, keep)
-        await messaging.reply(update, texts.SALES_EMPTY)
-        return
-    night = date.fromisoformat(keep["night"]) if keep else _current_night()
-    tab = _tab_label(night)
+        return [], None
+    day = date.fromisoformat(night) if night else _current_night()
     blocks = [{"livreur": b.livreur, "user_id": b.user["id"] if b.user else None, "lines": b.lines,
                "expenses": b.expenses}
               for b in parsed.blocks]
-    sent = await messaging.reply(update, texts.sales_preview(blocks, tab), keyboards.sales_confirm())
-    await _save(user, STATE_CONFIRM, {"blocks": blocks, "tab": tab, "night": night.isoformat(),
-                                      "msg": sent.message_id if sent else None})
+    return [], {"blocks": blocks, "tab": _tab_label(day), "night": day.isoformat()}
+
+
+async def _process(update: Update, user: dict, text: str, payload: dict) -> None:
+    keep = {"night": payload["night"]} if payload.get("night") else {}
+    errors, ready = await prepare(text, keep.get("night"))
+    if errors or ready is None:
+        await _save(user, STATE_INPUT, keep)
+        await messaging.reply(update, texts.sales_errors(errors) if errors else texts.SALES_EMPTY)
+        return
+    sent = await messaging.reply(update, texts.sales_preview(ready["blocks"], ready["tab"]), keyboards.sales_confirm())
+    await _save(user, STATE_CONFIRM, {**ready, "msg": sent.message_id if sent else None})
 
 
 @common.callback
@@ -102,7 +107,13 @@ async def action(update: Update, context):
     if update.callback_query.data == "sl_x":
         await messaging.edit(context.bot, chat_id, msg_id, texts.SALES_CANCELLED)
         return None
+    text, ok = await commit(context, user, payload)
+    await messaging.edit(context.bot, chat_id, msg_id, text)
+    return "Ajouté ✅" if ok else None
 
+
+async def commit(context, user: dict, payload: dict) -> tuple[str, bool]:
+    """Ventes et dépenses enregistrées, envoyées au tableau ; (texte du résultat, tableau bien rempli)."""
     sale_fields = [
         {"livreur_name": b["livreur"], "livreur_id": b["user_id"], "by_user_id": user["id"], "night": payload.get("night"),
          "payment": line["pay"], "product": line["p"], "qty": line["q"], "price": line["x"], "address": line.get("a")}
@@ -138,9 +149,8 @@ async def action(update: Update, context):
     else:
         error = texts.SHEETS_DISABLED
     text = texts.sales_done(len(rows), payload["tab"], added, error, len(spent))
-    await messaging.edit(context.bot, chat_id, msg_id, text)
     await messaging.notify_dispatch(
         context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
         text=f"{texts.sales_preview(payload['blocks'], payload['tab'], done=True)}"
-                                                     f"\n\n(par {texts.esc(user['display_name'])})")
-    return "Ajouté ✅" if not error else None
+             f"\n\n(par {texts.esc(user['display_name'])})")
+    return text, not error

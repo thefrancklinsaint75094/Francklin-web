@@ -3546,3 +3546,112 @@ async def test_quiet_notifications_go_to_the_feed(h, test_config):
     await db.update_user(f2["id"], {"notify_level": "tout"})
     await messaging.notify_dispatch(h.app.bot, "🆕 routine 2")
     assert h.tg.last(F2).text == "🆕 routine 2" and h.tg.last(DISPATCH).text == "⚠️ problème"
+
+
+async def test_webapp_does_everything(h, monkeypatch, test_config):
+    """Tout depuis l'appli : commande (lecture, envoi, choix du livreur), produits d'une course, rechargement,
+    swipe, dépense, ventes, fiches (valider, rôle, nom, prénom, bannir, réactiver), message, carte,
+    débrief et fin de service affichés dans l'appli, remise à zéro réservée au dispatch."""
+    import asyncio
+    import dataclasses
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import config, web
+    from bot.services import sheets
+
+    config.set_config(dataclasses.replace(test_config, franchise_picks=True))
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_send(rows, client=None):
+        return len(rows)
+
+    async def fake_action(action, client=None, **kw):
+        return {"ok": False, "error": "tableau non relié (test)"}
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    for name in ("DIV", "US"):
+        await db.create_product(name, name.lower(), [])
+    EXTRACTIONS["commande rivoli"] = [RIVOLI]
+    f1, f2, (l1, l2) = await setup_network(h)
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+    await go_on_duty(h, L1, BASTILLE)
+
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        async def act(tg_id, **body):
+            r = await client.post("/api/action", json=body, headers={"X-Init-Data": _init_data(tg_id)})
+            return await r.json()
+
+        # Commande : lecture → fiche, envoi → choix du livreur → Livreur 1.
+        r = await act(F1, type="order_analyse", text="commande rivoli")
+        assert r["ok"] and r["cards"][0]["ok"] and "Rivoli" in r["cards"][0]["html"]
+        sent = await act(F1, type="order_send", draft_id=r["cards"][0]["draft_id"])
+        assert sent["ok"] and [o["id"] for o in sent["options"]] == [l1["id"]]
+        cid = sent["course_id"]
+        assert (await act(F1, type="order_send", draft_id=r["cards"][0]["draft_id"]))["ok"] is False   # une fois
+        r = await act(F1, type="order_pick", course_id=cid, livreur_id=l1["id"])
+        assert r["ok"] and (await db.get_course(cid))["livreur_id"] == l1["id"]
+        h.tg.find(L1, f"Course #{cid} — c'est pour toi")
+
+        # Produits de la course.
+        r = await act(DISPATCH, type="edit_lines", course_id=cid)
+        assert r["ok"] and r["lines"]
+        r = await act(DISPATCH, type="edit_apply", course_id=cid, lines=[{"p": "DIV", "q": 3, "x": 90}])
+        assert r["ok"] and (await db.get_course(cid))["price"] == 90
+        assert (await act(DISPATCH, type="edit_apply", course_id=cid, lines=[{"p": "DIV", "q": 1, "x": 15}]))["ok"] is False
+
+        # Rechargement, cash seul, swipe, dépense, ventes.
+        r = await act(DISPATCH, type="ravi_prepare", ravi="Ravitailleur 1", text="Livreur 1\nBox 1\n12 DIV\ncash 50")
+        assert r["ok"] and "+12 DIV" in r["html"]
+        r = await act(DISPATCH, type="ravi_commit", ravi="Ravitailleur 1", text="Livreur 1\nBox 1\n12 DIV\ncash 50")
+        assert r["ok"] and "Rechargement enregistré" in r["html"]
+        r = await act(DISPATCH, type="ravi_commit", ravi="Ravitailleur 1", text="Livreur 2\ncash 30")
+        assert r["ok"]
+        rows = (await db._t("restocks").select("*").order("id").execute()).data
+        assert [(x["kind"], x["livreur_id"], float(x["cash"]), x["by_user_id"]) for x in rows] == [
+            ("load", l1["id"], 50.0, r1["id"]), ("cash", l2["id"], 30.0, r1["id"])]
+        assert (await act(DISPATCH, type="ravi_prepare", ravi="Inconnu", text="Livreur 1\ncash 5"))["ok"] is False
+        r = await act(DISPATCH, type="swipe_commit", text="Livreur 1 > Livreur 2\n2 DIV")
+        assert r["ok"] and len((await db._t("restocks").select("*").eq("kind", "swipe").execute()).data) == 1
+        r = await act(DISPATCH, type="expense", livreur="Livreur 2", kind="paye", amount="40", motif="avance")
+        assert r["ok"] and (await db._t("expenses").select("*").execute()).data[0]["kind"] == "paye"
+        r = await act(DISPATCH, type="sales_commit", text="Livreur 2\n2 US 60")
+        assert r["ok"] and len((await db._t("sales").select("*").execute()).data) == 1
+        await asyncio.gather(*list(sheets._tasks))
+
+        # Fiches : nouvelle inscription validée, rôle, nom, prénom, bannir / réactiver ; franchisé : non.
+        await h.text(5000, "/start")
+        await h.press(5000, h.tg.last(5000), "role:livreur")
+        await h.text(5000, "Sofiane")
+        newbie = await db.get_user_by_tg(5000)
+        assert (await act(F1, type="user_approve", user_id=newbie["id"]))["message"] == texts.DISPATCH_ONLY
+        assert (await act(DISPATCH, type="user_approve", user_id=newbie["id"]))["ok"]
+        assert (await db.get_user(newbie["id"]))["status"] == "active"
+        assert (await act(DISPATCH, type="user_prenom", name="Livreur 2", value="Karim"))["ok"]
+        assert (await act(DISPATCH, type="user_rename", user_id=f2["id"], value="Le Kiosque"))["ok"]
+        assert (await db.get_user(f2["id"]))["display_name"] == "Le Kiosque"
+        assert (await act(DISPATCH, type="user_role", user_id=newbie["id"], value="ravitailleur"))["ok"]
+        assert (await db.get_user(newbie["id"]))["role"] == "ravitailleur"
+        assert (await act(DISPATCH, type="user_ban", user_id=newbie["id"]))["ok"]
+        assert (await db.get_user(newbie["id"]))["status"] == "banned"
+        assert (await act(DISPATCH, type="user_unban", user_id=newbie["id"]))["ok"]
+        team = await (await client.post("/api/section", json={"name": "team"},
+                                        headers={"X-Init-Data": _init_data(DISPATCH)})).json()
+        assert team["manage"] and any(u["name"] == "Le Kiosque" for u in team["users"])
+
+        # Message, carte, débrief et fin de service dans l'appli.
+        r = await act(DISPATCH, type="message", user_id=l1["id"], text="Passe au dépôt")
+        assert r["ok"] and "Passe au dépôt" in h.tg.last(L1).text
+        r = await act(DISPATCH, type="position", livreur_id=l1["id"])
+        assert r["ok"] and r["map"].startswith("https://www.google.com/maps")
+        n = len(h.tg.inbox(DISPATCH))
+        r = await act(DISPATCH, type="debrief")
+        assert r["ok"] and "Journée close" in r["html"]
+        assert len(h.tg.inbox(DISPATCH)) == n                       # affiché dans l'appli, pas dans le chat
+        r = await act(DISPATCH, type="close_livreur", arg="Livreur 2")
+        assert r["ok"] and "Livreur 2" in r["html"] and (await db.get_user(l2["id"]))["on_duty"] is False
+        assert (await act(F1, type="reset_check"))["message"] == texts.DISPATCH_ONLY
+        r = await act(DISPATCH, type="reset_check")
+        assert r["ok"] is False and r["html"]                        # tableau illisible : pas de remise à zéro

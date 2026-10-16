@@ -155,6 +155,25 @@ textarea { min-height: 76px; resize: vertical; }
   background: #222; color: #fff; padding: 12px 14px; border-radius: 12px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: .95; }
 .hidden { display: none !important; }
+.fab { position: fixed; right: 18px; bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 30; height: 54px; padding: 0 20px;
+  border-radius: 99px; background: var(--accent); color: var(--accent-text); font-weight: 700; font-size: 15px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.field { margin-top: 10px; }
+.field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+select { width: 100%; font: inherit; color: var(--text); background: var(--soft); border: 1px solid var(--line);
+  border-radius: 10px; padding: 11px 12px; outline: none; -webkit-appearance: none; appearance: none; }
+.line { display: grid; grid-template-columns: 1fr 74px 84px 34px; gap: 6px; margin-top: 8px; align-items: center; }
+.line.two { grid-template-columns: 80px 1fr 34px; }
+.line input { padding: 9px 8px; }
+.x { width: 34px; height: 38px; border-radius: 10px; background: var(--soft); color: var(--red); font-size: 16px; }
+.tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 12px; }
+.tools .btn { padding: 14px 6px; }
+.result { font-size: 14px; white-space: pre-wrap; word-break: break-word; background: var(--soft); border-radius: 12px; padding: 12px; margin-top: 10px; }
+.toggle { display: flex; background: var(--soft); border-radius: 10px; padding: 3px; }
+.toggle button { flex: 1; padding: 8px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.toggle button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.row-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.row-actions .btn { flex: 1; min-width: 30%; }
 .loading { text-align: center; color: var(--muted); padding: 40px; }
 </style>
 </head>
@@ -255,6 +274,32 @@ async function loadSection(name) {
   if (S.screen === name) render();
 }
 
+async function forms() {
+  if (!S.forms) S.forms = await api("/api/section", { name: "forms" });
+  return S.forms;
+}
+function select(options, value, placeholder) {
+  const s = el("select", {}, placeholder ? el("option", { value: "" }, placeholder) : null,
+    options.map((o) => { const v = typeof o === "string" ? o : o.value; const l = typeof o === "string" ? o : o.label;
+      const opt = el("option", { value: v }, l); if (v === value) opt.selected = true; return opt; }));
+  return s;
+}
+const field = (label, input) => el("label", { class: "field" }, el("span", {}, label), input);
+function productList() {
+  const id = "products-list";
+  if (!document.getElementById(id) && S.forms) document.body.append(el("datalist", { id }, S.forms.products.map((p) => el("option", { value: p }))));
+  return id;
+}
+function showResult(title, html, ok, after) {
+  openSheet(el("h3", {}, (ok === false ? "⚠️ " : "") + title), el("div", { class: "result" }, safeHtml(html || "")),
+    el("button", { class: "btn main full", onclick: () => { closeSheet(); if (after) after(); } }, "OK"));
+}
+async function call(body) {
+  tap();
+  try { const r = await api("/api/action", body); haptic(r.ok ? "success" : "error"); return r; }
+  catch (e) { haptic("error"); toast("Erreur : " + e.message); return { ok: false }; }
+}
+
 // ------------------------------------------------------------------ menu de gauche
 function drawer() {
   const d = S.data;
@@ -294,7 +339,9 @@ function render() {
   if (!S.data) return;
   const views = { home: viewHome, courses: viewCourses, livreurs: viewLivreurs, stock: viewStock, products: viewProducts,
                   cash: viewCash, bilan: viewBilan, feed: viewFeed, team: viewTeam, plus: viewPlus };
-  $("view").replaceChildren(views[S.screen]());
+  const v = views[S.screen]();
+  const fab = ["home", "courses"].includes(S.screen) ? el("button", { class: "fab", onclick: newOrder }, "➕ Commande") : null;
+  $("view").replaceChildren(...nodes(v, fab, el("div", { style: "height:70px" })));
 }
 
 function stats() {
@@ -412,7 +459,8 @@ function courseActions(c) {
   a.push(el("button", { class: "btn", onclick: () => timeSheet(c) }, "🕐 Heure"));
   a.push(el("button", { class: "btn", onclick: () => addressSheet(c) }, "📍 Adresse"));
   if (c.status === "assigned") a.push(el("button", { class: "btn", onclick: () => doAction({ type: "release", course_id: c.id }, `Remettre la course #${c.id} en diffusion ?`) }, "🔁 Rediffuser"));
-  a.push(el("button", { class: "btn", onclick: () => doAction({ type: "open_chat", course_id: c.id }) }, "✏️ Produits"));
+  a.push(el("button", { class: "btn", onclick: () => editProducts(c) }, "✏️ Produits"));
+  if (c.livreur && c.status === "assigned") a.push(el("button", { class: "btn", onclick: () => messageForm(c.livreur) }, "💬 Livreur"));
   a.push(el("button", { class: "btn danger", onclick: () => doAction({ type: "cancel", course_id: c.id }, `Annuler la course #${c.id} ?`) }, "🗑 Annuler"));
   return el("div", { class: "actions" }, a);
 }
@@ -432,9 +480,10 @@ function viewLivreurs() {
         el("div", { class: "grow" },
           el("div", { style: "font-weight:600" }, (lv.on_duty ? "🟢 " : "⏸ ") + who(lv) + (lv.transport ? " " + lv.transport : "")),
           el("div", { class: "small muted" }, meta.join(" · "))),
-        el("button", { class: "icon-btn", title: "Position", onclick: () => doAction({ type: "position", livreur_id: lv.id }) }, "📍"),
+        el("button", { class: "icon-btn", title: "Carte", onclick: (e) => { e.stopPropagation(); showMap(lv); } }, "📍"),
+        el("button", { class: "icon-btn", title: "Plus", onclick: (e) => { e.stopPropagation(); livreurSheet(lv); } }, "⋯"),
         el("button", { class: "switch" + (lv.on_duty ? " on" : ""), "aria-label": "En service",
-          onclick: () => doAction({ type: "duty", livreur_id: lv.id, on: !lv.on_duty }, lv.on_duty ? `Mettre ${lv.name} en pause ?` : null) })),
+          onclick: (e) => { e.stopPropagation(); doAction({ type: "duty", livreur_id: lv.id, on: !lv.on_duty }, lv.on_duty ? `Mettre ${lv.name} en pause ?` : null); } })),
       r ? el("div", { class: "badges" }, el("span", { class: "badge" }, `🚚 #${r.current.id} · ${r.current.district || ""}` + (r.arrival ? ` · ${r.arrival.at}` : "")),
             r.queue.length ? el("span", { class: "badge" }, `+${r.queue.length} à suivre`) : null) : null,
       lv.stock_to_confirm ? el("div", { class: "badges" }, el("span", { class: "badge warn" }, "Stock de début à confirmer")) : null));
@@ -459,7 +508,9 @@ function itemsGrid(items) {
 function viewStock() {
   const wait = sectionState("stock"); if (wait) return wait;
   const s = S.cache.stock;
-  const wrap = el("div", {});
+  const wrap = el("div", {}, el("div", { class: "tools" },
+    el("button", { class: "btn main", onclick: () => restockForm(false) }, "🔄 Recharger"),
+    el("button", { class: "btn", onclick: swipeForm }, "↔️ Transfert")));
   if (s.error) wrap.append(el("div", { class: "list" }, el("div", { class: "card badge warn" }, plain(s.error))));
   wrap.append(el("div", { class: "h2" }, "📦 Box", refreshBtn("stock")));
   wrap.append(el("div", { class: "list" }, s.boxes.map((b) => el("div", { class: "card" }, el("b", {}, b.name), el("div", { style: "margin-top:6px" }, itemsGrid(b.items))))));
@@ -485,7 +536,9 @@ function viewProducts() {
 function viewCash() {
   const wait = sectionState("cash"); if (wait) return wait;
   const s = S.cache.cash;
-  const wrap = el("div", {});
+  const wrap = el("div", {}, el("div", { class: "tools", style: "margin-bottom:10px" },
+    el("button", { class: "btn main", onclick: () => restockForm(true) }, "💶 Cash récupéré"),
+    el("button", { class: "btn", onclick: () => expenseForm() }, "🧾 Dépense")));
   wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, el("div", { class: "muted" }, "Cash à récupérer chez les livreurs"),
     el("div", { class: "big" }, eur(s.total)),
     s.ravitailleur !== null && s.ravitailleur !== undefined ? el("div", { class: "muted small" }, `Reste chez le ravitailleur : ${eur(s.ravitailleur)}`) : null)));
@@ -494,7 +547,6 @@ function viewCash() {
     el("div", { class: "row" }, el("b", { class: "grow" }, who(r)), el("b", {}, eur(r.cash))),
     el("div", { class: "small muted", style: "margin-top:4px" },
       `💵 ventes ${eur(r.especes)} · 💳 ${eur(r.virement)} · 🧾 dépenses ${eur(r.depenses)} · récupéré ${eur(r.recupere)}`)))));
-  wrap.append(el("div", { class: "list", style: "margin-top:10px" }, el("button", { class: "btn full", onclick: () => doAction({ type: "run", cmd: "caisse" }) }, "💶 Récupérer du cash (dans le chat)")));
   return wrap;
 }
 
@@ -511,9 +563,15 @@ function viewBilan() {
   if (!t.per.length) per.append(el("div", { class: "muted" }, "—"));
   t.per.forEach((r) => per.append(el("div", { class: "kv" }, el("span", {}, who(r)), el("b", {}, `${r.n} · ${eur(r.total)}`))));
   wrap.append(per);
+  const tool = (icon, label, about, fn) => el("button", { class: "cmd", onclick: fn }, el("span", { style: "font-size:20px" }, icon),
+    el("span", { class: "grow" }, label, el("small", {}, about)), el("span", { class: "muted" }, "›"));
   wrap.append(el("div", { class: "card" },
-    el("button", { class: "cmd", onclick: () => doAction({ type: "run", cmd: "journal" }) }, el("span", {}, "📒"), el("span", { class: "grow" }, "Journal détaillé (fichier)"), el("span", { class: "muted" }, "›")),
-    el("button", { class: "cmd", onclick: () => doAction({ type: "run", cmd: "recap" }) }, el("span", {}, "📊"), el("span", { class: "grow" }, "Récap dans le chat"), el("span", { class: "muted" }, "›"))));
+    tool("🌙", "Débrief de la journée", "courses, annulations, livreurs, franchisés, dépenses, cash", () => capture("debrief", "🌙 Débrief")),
+    tool("📊", "Totaux par livreur", "le récap de la nuit", () => capture("recap", "📊 Récap")),
+    tool("🧮", "Ajouter un récap de ventes", "ventes et dépenses saisies à la main", salesForm),
+    tool("🔁", "Renvoyer vers Google Sheets", "cette nuit ou une nuit de la semaine", synchroForm),
+    tool("📒", "Journal détaillé", "le fichier arrive dans le chat", () => doAction({ type: "run", cmd: "journal" })),
+    S.data.me.dispatch ? tool("🗄", "Remise à zéro de la semaine", "archives dans Drive, onglets vidés", resetFlow) : null));
   return wrap;
 }
 
@@ -552,17 +610,25 @@ function viewFeed() {
 
 function viewTeam() {
   const wait = sectionState("team"); if (wait) return wait;
+  const team = S.cache.team;
   const groups = {};
-  S.cache.team.users.forEach((u) => { (groups[u.role] = groups[u.role] || []).push(u); });
+  team.users.forEach((u) => { const g = u.status === "pending" ? "⏳ Inscriptions à valider" : u.role_label + "s"; (groups[g] = groups[g] || []).push(u); });
   const wrap = el("div", {});
-  Object.entries(groups).forEach(([role, users]) => {
-    wrap.append(el("div", { class: "h2" }, `${role}s · ${users.length}`));
-    wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, users.map((u) => el("div", { class: "kv" },
-      el("span", {}, (u.status === "banned" ? "⛔ " : u.status === "pending" ? "⏳ " : u.on_duty ? "🟢 " : "") + who(u),
-         u.real_name ? el("div", { class: "small muted" }, u.real_name + (u.username ? ` · @${u.username}` : "")) : null),
-      el("span", { class: "small muted" }, u.status === "pending" ? "à valider" : u.status === "banned" ? "banni" : ""))))));
+  Object.entries(groups).forEach(([title, users]) => {
+    wrap.append(el("div", { class: "h2" }, `${title} · ${users.length}`));
+    wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, users.map((u) => el("button", { class: "cmd", onclick: () => userSheet(u, team.manage) },
+      el("span", { class: "grow" }, (u.status === "banned" ? "⛔ " : u.on_duty ? "🟢 " : "") + (u.status === "pending" ? (u.real_name || "?") : who(u)),
+         el("small", {}, [u.status === "pending" ? u.role_label : u.real_name, u.username ? "@" + u.username : null].filter(Boolean).join(" · "))),
+      el("span", { class: "muted" }, "›"))))));
   });
-  wrap.append(el("div", { class: "list", style: "margin-top:10px" }, el("button", { class: "btn full", onclick: () => doAction({ type: "run", cmd: "users" }) }, "👥 Modifier une fiche (dans le chat)")));
+  if (team.manage && team.sheet_only.length) {
+    wrap.append(el("div", { class: "h2" }, "Livreurs des feuilles sans compte"));
+    wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, team.sheet_only.map((n) => el("button", { class: "cmd", onclick: () => {
+      const input = textInput({ value: n.prenom || "", maxlength: "30", placeholder: "« - » pour l'enlever" });
+      openSheet(el("h3", {}, `🙂 Prénom · ${n.name}`), input, el("button", { class: "btn main full", onclick: async () => {
+        const r = await call({ type: "user_prenom", name: n.name, value: input.value }); toast(r.message || ""); if (r.ok) { closeSheet(); loadSection("team"); } } }, "Enregistrer"));
+    } }, el("span", { class: "grow" }, who(n), el("small", {}, "prénom affiché à côté du nom")), el("span", { class: "muted" }, "›"))))));
+  }
   return wrap;
 }
 
@@ -658,6 +724,277 @@ async function doAction(body, question) {
   } catch (e) {
     haptic("error"); toast("Erreur : " + e.message);
   } finally { S.busy = false; }
+}
+
+
+// ------------------------------------------------------------------ formulaires : tout se fait ici
+function textInput(attrs) { return el("input", Object.assign({ autocomplete: "off" }, attrs || {})); }
+
+// Nouvelle commande : même lecture que dans le chat, puis envoi et choix du livreur.
+async function newOrder() {
+  const input = el("textarea", { rows: "7", placeholder: "12 rue de Rivoli 75004 Paris\n2 produit 60\n1 autre produit 10\n\nDigicode 45A32, 3e étage" });
+  const out = el("div", {});
+  const analyse = async () => {
+    out.replaceChildren(el("div", { class: "muted", style: "margin-top:10px" }, "Lecture…"));
+    const r = await call({ type: "order_analyse", text: input.value });
+    if (!r.ok) { out.replaceChildren(el("div", { class: "result" }, plain(r.message || "Erreur"))); return; }
+    out.replaceChildren(...r.cards.map((c) => {
+      const box = el("div", { class: "result" }, safeHtml(c.html));
+      if (c.ok) box.append(el("div", { class: "row-actions" },
+        el("button", { class: "btn main", onclick: () => sendOrder(c.draft_id) }, "✅ Envoyer"),
+        el("button", { class: "btn danger", onclick: async () => { await call({ type: "order_drop", draft_id: c.draft_id }); box.remove(); } }, "Retirer")));
+      return box;
+    }));
+  };
+  openSheet(el("h3", {}, "➕ Nouvelle commande"),
+    el("p", {}, "1re ligne : l'adresse avec le code postal. Puis une ligne par produit : quantité, produit, prix. Une ligne vide, puis le commentaire (seul le livreur le voit)."),
+    input, el("button", { class: "btn main full", onclick: analyse }, "Lire la commande"), out);
+  setTimeout(() => input.focus(), 250);
+}
+async function sendOrder(draftId) {
+  const r = await call({ type: "order_send", draft_id: draftId });
+  if (!r.ok) { toast(r.message || "Erreur"); return; }
+  toast(r.message);
+  await load(true);
+  if (r.options && r.options.length) pickForNew(r.course_id, r.options);
+  else closeSheet();
+}
+function pickForNew(courseId, options) {
+  openSheet(el("h3", {}, `#${courseId} — quel livreur ?`), el("p", {}, "🟢 libres d'abord, puis ceux déjà en livraison."),
+    options.map((o) => el("button", { class: "choice", onclick: async () => { const r = await call({ type: "order_pick", course_id: courseId, livreur_id: o.id }); toast(r.message || ""); closeSheet(); load(true); } },
+      el("span", {}, o.busy ? "🛵" : "🟢"),
+      el("span", { class: "grow" }, who(o), el("div", { class: "muted small" },
+        (o.busy ? `en livraison (${o.busy})` : "libre") + (o.m !== null && o.m !== undefined ? ` · ${(o.m / 1000).toFixed(1)} km` : "") +
+        (o.v && o.v.length ? " · " + o.v.map(([v, ok]) => (ok ? "✅" : "❌") + v).join(" ") : ""))),
+      el("span", { class: "muted" }, "›"))),
+    el("button", { class: "choice", onclick: async () => { const r = await call({ type: "order_pick", course_id: courseId, auto: true }); toast(r.message || ""); closeSheet(); load(true); } },
+      el("span", {}, "📡"), el("span", { class: "grow" }, "Au plus proche (diffusion)"), el("span", { class: "muted" }, "›")));
+}
+
+// Produits et prix d'une course.
+async function editProducts(c) {
+  await forms();
+  const r = await call({ type: "edit_lines", course_id: c.id });
+  if (!r.ok) { toast(r.message || "Erreur"); return; }
+  const rows = el("div", {});
+  const total = el("b", {});
+  const refresh = () => { let t = 0; rows.querySelectorAll(".line").forEach((l) => { t += parseFloat(l.querySelector(".px").value.replace(",", ".")) || 0; }); total.textContent = eur(t); };
+  const addLine = (l) => {
+    const line = el("div", { class: "line" },
+      textInput({ class: "pp", list: productList(), value: l ? l.p : "", placeholder: "Produit" }),
+      textInput({ class: "pq", type: "number", min: "1", value: l ? l.q : 1, inputmode: "numeric" }),
+      textInput({ class: "px", type: "number", min: "0", step: "10", value: l ? l.x : "", placeholder: "Prix €", inputmode: "decimal" }),
+      el("button", { class: "x", onclick: () => { line.remove(); refresh(); } }, "✕"));
+    line.addEventListener("input", refresh); rows.append(line);
+  };
+  r.lines.forEach(addLine); refresh();
+  openSheet(el("h3", {}, `✏️ Produits · #${c.id}`), el("p", {}, "Quantité, produit et prix de chaque ligne (multiples de 10 €). Le livreur et le franchisé sont prévenus."),
+    el("div", { class: "line muted small" }, el("span", {}, "Produit"), el("span", {}, "Qté"), el("span", {}, "Prix"), el("span", {})),
+    rows, el("button", { class: "btn full", onclick: () => addLine(null) }, "➕ Ajouter une ligne"),
+    el("div", { class: "kv", style: "margin-top:8px" }, el("span", {}, "Total"), total),
+    el("button", { class: "btn main full", onclick: async () => {
+      const lines = [...rows.querySelectorAll(".line")].map((l) => ({ p: l.querySelector(".pp").value, q: l.querySelector(".pq").value, x: (l.querySelector(".px").value || "0").replace(",", ".") }));
+      const res = await call({ type: "edit_apply", course_id: c.id, lines });
+      toast(res.message || ""); if (res.ok) { closeSheet(); load(true); }
+    } }, "Enregistrer"));
+}
+
+// Lignes « quantité + produit » réutilisées par rechargement et swipe.
+function itemLines() {
+  const rows = el("div", {});
+  const add = () => {
+    const line = el("div", { class: "line two" },
+      textInput({ class: "iq", type: "number", min: "1", placeholder: "Qté", inputmode: "numeric" }),
+      textInput({ class: "ip", list: productList(), placeholder: "Produit" }),
+      el("button", { class: "x", onclick: () => line.remove() }, "✕"));
+    rows.append(line);
+  };
+  add();
+  return { node: el("div", {}, rows, el("button", { class: "btn full", onclick: add }, "➕ Ajouter un produit")),
+           lines: () => [...rows.querySelectorAll(".line")].map((l) => ({ q: parseInt(l.querySelector(".iq").value, 10), p: l.querySelector(".ip").value.trim() })).filter((l) => l.q > 0 && l.p) };
+}
+async function twoStep(kind, title, build) {
+  const text = build(); if (text === null) return;
+  const extra = typeof text === "object" ? text : { text };
+  const r = await call(Object.assign({ type: kind + "_prepare" }, extra));
+  if (!r.ok) { if (r.html) showResult(title, r.html, false); else toast(r.message || "Erreur"); return; }
+  openSheet(el("h3", {}, title), el("div", { class: "result" }, safeHtml(r.html)),
+    el("button", { class: "btn main full", onclick: async () => {
+      const done = await call(Object.assign({ type: kind + "_commit" }, extra));
+      showResult(title, done.html || done.message, done.ok, () => { load(true); S.cache = {}; });
+    } }, "✅ Enregistrer"),
+    el("button", { class: "btn full", onclick: closeSheet }, "Annuler"));
+}
+
+// Rechargement (charger / reprendre / cash récupéré).
+async function restockForm(cashOnly) {
+  const f = await forms();
+  const ravi = select(f.ravitailleurs, f.ravitailleurs[0]);
+  const lv = select(f.livreurs, "", "Choisis le livreur");
+  const box = select(f.boxes, f.boxes[0]);
+  let mode = "+";
+  const toggle = el("div", { class: "toggle" });
+  const drawToggle = () => toggle.replaceChildren(
+    el("button", { class: mode === "+" ? "on" : "", onclick: () => { mode = "+"; drawToggle(); } }, "📦 Charger"),
+    el("button", { class: mode === "-" ? "on" : "", onclick: () => { mode = "-"; drawToggle(); } }, "↩️ Reprendre"));
+  drawToggle();
+  const items = itemLines();
+  const cash = textInput({ type: "number", min: "0", placeholder: "0", inputmode: "decimal" });
+  const title = cashOnly ? "💶 Cash récupéré" : "🔄 Rechargement";
+  openSheet(el("h3", {}, title), el("p", {}, cashOnly ? "Le cash que le ravitailleur récupère chez le livreur." : "Ce que le ravitailleur charge au livreur (ou lui reprend), et le cash récupéré."),
+    field("Ravitailleur", ravi), field("Livreur", lv),
+    cashOnly ? null : field("Box", box), cashOnly ? null : el("div", { class: "field" }, toggle),
+    cashOnly ? null : items.node, field("Cash récupéré (€)", cash),
+    el("button", { class: "btn main full", onclick: () => twoStep("ravi", title, () => {
+      if (!lv.value) { toast("Choisis le livreur."); return null; }
+      const lines = [lv.value];
+      const its = cashOnly ? [] : items.lines();
+      if (its.length) { lines.push(/^box/i.test(box.value) ? box.value : "Box " + box.value); its.forEach((i) => lines.push(`${mode === "-" ? "-" : ""}${i.q} ${i.p}`)); }
+      if (parseFloat(cash.value) > 0) lines.push("cash " + cash.value);
+      if (lines.length === 1) { toast(cashOnly ? "Indique le montant." : "Ajoute un produit ou du cash."); return null; }
+      return { ravi: ravi.value, text: lines.join("\n") };
+    }) }, "Voir le récap"));
+}
+
+// Transfert entre livreurs.
+async function swipeForm() {
+  const f = await forms();
+  const from = select(f.livreurs, "", "Celui qui donne"), to = select(f.livreurs, "", "Celui qui reçoit");
+  const all = el("input", { type: "checkbox", style: "width:auto" });
+  const items = itemLines();
+  const cash = textInput({ type: "number", min: "0", placeholder: "0", inputmode: "decimal" });
+  openSheet(el("h3", {}, "↔️ Transfert entre livreurs"), el("p", {}, "Les box ne bougent pas."),
+    field("De", from), field("Vers", to),
+    el("label", { class: "row field" }, all, el("span", {}, "Tout son stock (d'après le tableau)")),
+    items.node, field("Cash remis (€)", cash),
+    el("button", { class: "btn main full", onclick: () => twoStep("swipe", "↔️ Transfert", () => {
+      if (!from.value || !to.value || from.value === to.value) { toast("Choisis deux livreurs différents."); return null; }
+      const lines = [`${from.value} > ${to.value}`];
+      if (all.checked) lines.push("tout"); else items.lines().forEach((i) => lines.push(`${i.q} ${i.p}`));
+      if (parseFloat(cash.value) > 0) lines.push("cash " + cash.value);
+      if (lines.length === 1) { toast("Ajoute un produit, « tout » ou du cash."); return null; }
+      return lines.join("\n");
+    }) }, "Voir le récap"));
+}
+
+// Dépense d'un livreur.
+async function expenseForm(preset) {
+  const f = await forms();
+  const lv = select(f.livreurs, preset || "", "Choisis le livreur");
+  let kind = "charges";
+  const toggle = el("div", { class: "toggle" });
+  const draw = () => toggle.replaceChildren(
+    el("button", { class: kind === "charges" ? "on" : "", onclick: () => { kind = "charges"; draw(); } }, "🧾 Charges"),
+    el("button", { class: kind === "paye" ? "on" : "", onclick: () => { kind = "paye"; draw(); } }, "💸 Avance sur paye"));
+  draw();
+  const amount = textInput({ type: "number", min: "0", placeholder: "Montant €", inputmode: "decimal" });
+  const motif = textInput({ placeholder: "Motif (essence, taxi…)", maxlength: "80" });
+  openSheet(el("h3", {}, "🧾 Dépense d'un livreur"), field("Livreur", lv), el("div", { class: "field" }, toggle),
+    field("Montant (€)", amount), field("Motif (facultatif)", motif),
+    el("button", { class: "btn main full", onclick: async () => {
+      const r = await call({ type: "expense", livreur: lv.value, kind, amount: amount.value, motif: motif.value });
+      if (r.ok) showResult("🧾 Dépense", r.html, true, () => { S.cache = {}; load(true); }); else toast(r.message || "Erreur");
+    } }, "Enregistrer"));
+}
+
+// Récap de ventes (même format que /ventes).
+function salesForm() {
+  const input = el("textarea", { rows: "8", placeholder: "Livreur A\n12 rue de la Paix 75002 : 2 produit 60\ncharge = 20 essence\n\nLivreur B\n…" });
+  openSheet(el("h3", {}, "🧮 Récap de ventes"), el("p", {}, "Même écriture que /ventes : un bloc par livreur, une ligne par vente (adresse : quantité produit prix), charge = …, paye = …"),
+    input, el("button", { class: "btn main full", onclick: () => twoStep("sales", "🧮 Récap de ventes", () => input.value.trim() ? input.value : null) }, "Voir le récap"));
+}
+
+// Résultats lus dans le chat (débrief, synchro, récap, fin de service) : affichés ici.
+async function capture(type, title, arg) {
+  toast("Un instant…");
+  const r = await call({ type, arg: arg || "" });
+  showResult(title, r.html || r.message, r.ok, () => load(true));
+}
+function synchroForm() {
+  const choices = [["", "Cette nuit"], ["hier", "Hier"], ["lundi", "Lundi"], ["mardi", "Mardi"], ["mercredi", "Mercredi"],
+                   ["jeudi", "Jeudi"], ["vendredi", "Vendredi"], ["samedi", "Samedi"], ["dimanche", "Dimanche"]];
+  openSheet(el("h3", {}, "🔁 Renvoyer vers Google Sheets"), el("p", {}, "Sans danger : le tableau ignore ce qu'il a déjà. Semaine en cours seulement."),
+    choices.map(([arg, label]) => el("button", { class: "choice", onclick: () => capture("synchro", "🔁 Synchro", arg) }, el("span", { class: "grow" }, label), el("span", { class: "muted" }, "›"))));
+}
+async function resetFlow() {
+  toast("Vérification…");
+  const r = await call({ type: "reset_check" });
+  openSheet(el("h3", {}, "🗄 Remise à zéro de la semaine"), el("div", { class: "result" }, safeHtml(r.html || r.message || "")),
+    r.ok ? el("button", { class: "btn main full", style: "background:var(--red)", onclick: async () => {
+      if (!(await confirmBox("Archiver et vider les onglets de la semaine ?"))) return;
+      toast("Remise à zéro en cours (jusqu'à une minute)…");
+      const done = await call({ type: "reset_run" });
+      showResult("🗄 Remise à zéro", done.html || done.message, done.ok, () => load(true));
+    } }, "Remettre à zéro") : null,
+    el("button", { class: "btn full", onclick: closeSheet }, "Annuler"));
+}
+
+// Livreur : carte, message, fin de service.
+async function showMap(lv) {
+  const r = await call({ type: "position", livreur_id: lv.id });
+  if (!r.ok) { toast(r.message); return; }
+  toast(r.message);
+  if (tg && tg.openLink) tg.openLink(r.map); else window.open(r.map, "_blank");
+}
+function messageForm(target) {
+  const input = el("textarea", { rows: "3", placeholder: "Ton message…", maxlength: "1000" });
+  openSheet(el("h3", {}, `💬 Message à ${who(target)}`), el("p", {}, "Il le reçoit du bot, avec ton nom."), input,
+    el("button", { class: "btn main full", onclick: async () => { const r = await call({ type: "message", user_id: target.id, text: input.value }); toast(r.message || ""); if (r.ok) closeSheet(); } }, "Envoyer"));
+  setTimeout(() => input.focus(), 250);
+}
+async function closeLivreur(lv) {
+  if (!(await confirmBox(`Fin de service pour ${lv.name} ? Il passe hors service et reçoit le récap de sa nuit.`))) return;
+  capture("close_livreur", `🏁 Fin de service · ${lv.name}`, lv.name);
+}
+function livreurSheet(lv) {
+  openSheet(el("h3", {}, who(lv)), el("p", {}, lv.on_duty ? "En service" : "En pause"),
+    el("button", { class: "choice", onclick: () => showMap(lv) }, el("span", {}, "📍"), el("span", { class: "grow" }, "Voir sur la carte"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => messageForm(lv) }, el("span", {}, "💬"), el("span", { class: "grow" }, "Envoyer un message"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => restockForm(false).then(() => { const s = document.querySelectorAll("#sheet select")[1]; if (s) s.value = lv.name; }) }, el("span", {}, "🔄"), el("span", { class: "grow" }, "Recharger"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => expenseForm(lv.name) }, el("span", {}, "🧾"), el("span", { class: "grow" }, "Noter une dépense"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => doAction({ type: "duty", livreur_id: lv.id, on: !lv.on_duty }).then(closeSheet) }, el("span", {}, lv.on_duty ? "⏸" : "🟢"), el("span", { class: "grow" }, lv.on_duty ? "Mettre en pause" : "Mettre en service"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => closeLivreur(lv) }, el("span", {}, "🏁"), el("span", { class: "grow" }, "Fin de service (récap de sa nuit)"), el("span", { class: "muted" }, "›")));
+}
+
+// Équipe : fiche d'une personne (le dispatch modifie tout).
+function userSheet(u, manage) {
+  const act = async (type, extra, question) => {
+    if (question && !(await confirmBox(question))) return;
+    const r = await call(Object.assign({ type, user_id: u.id }, extra || {}));
+    toast(r.message || ""); if (r.ok) { closeSheet(); loadSection("team"); load(true); }
+  };
+  const ask = (title, value, type) => {
+    const input = textInput({ value: value || "", maxlength: "40" });
+    openSheet(el("h3", {}, title), input, el("button", { class: "btn main full", onclick: () => act(type, { value: input.value }) }, "Enregistrer"));
+    setTimeout(() => input.focus(), 250);
+  };
+  const items = [];
+  const item = (icon, label, fn) => items.push(el("button", { class: "choice", onclick: fn }, el("span", {}, icon), el("span", { class: "grow" }, label), el("span", { class: "muted" }, "›")));
+  if (u.status === "active" && !u.me) item("💬", "Envoyer un message", () => messageForm(u));
+  if (manage && !u.me && u.role !== "dispatch") {
+    if (u.status === "pending") {
+      item("✅", "Valider l'inscription", () => act("user_approve"));
+      item("❌", "Refuser", () => act("user_reject", {}, `Refuser ${u.real_name || u.name} ?`));
+    } else {
+      if (u.sheet_names.length) {
+        const s = select(u.sheet_names, u.name);
+        item("🏷", "Nom de feuille", () => openSheet(el("h3", {}, "🏷 Nom de feuille"), s, el("button", { class: "btn main full", onclick: () => act("user_sheet_name", { value: s.value }) }, "Enregistrer")));
+      } else item("✏️", "Renommer", () => ask("✏️ Nouveau nom", u.name, "user_rename"));
+      if (u.role === "livreur") item("🙂", "Prénom", () => {
+        const input = textInput({ value: u.prenom || "", maxlength: "30", placeholder: "« - » pour l'enlever" });
+        openSheet(el("h3", {}, "🙂 Prénom"), input, el("button", { class: "btn main full", onclick: async () => {
+          const r = await call({ type: "user_prenom", name: u.name, value: input.value }); toast(r.message || ""); if (r.ok) { closeSheet(); loadSection("team"); } } }, "Enregistrer"));
+      });
+      const roles = [["franchise", "Franchisé"], ["livreur", "Livreur"], ["ravitailleur", "Ravitailleur"]].filter(([r]) => r !== u.role);
+      item("🔄", "Changer de rôle", () => openSheet(el("h3", {}, "🔄 Nouveau rôle"), el("p", {}, "Un livreur qui change de rôle quitte le service ; ses courses repartent aux autres."),
+        roles.map(([r, l]) => el("button", { class: "choice", onclick: () => act("user_role", { value: r }, `${u.name} devient ${l} ?`) }, el("span", { class: "grow" }, l), el("span", { class: "muted" }, "›")))));
+      if (u.status === "active") item("⛔", "Bannir", () => act("user_ban", {}, `Bannir ${u.name} ? Il n'a plus aucun accès.`));
+      if (u.status === "banned") item("✅", "Réactiver", () => act("user_unban"));
+      item("🗑", "Supprimer le compte", () => act("user_delete", {}, `Supprimer le compte de ${u.name} ? Définitif (il pourra se réinscrire).`));
+    }
+  }
+  openSheet(el("h3", {}, who(u)), el("p", {}, [u.role_label, u.real_name, u.username ? "@" + u.username : null].filter(Boolean).join(" · ")),
+    items.length ? items : el("div", { class: "muted" }, "Rien à modifier ici."));
 }
 
 drawer();
