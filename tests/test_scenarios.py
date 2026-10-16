@@ -1379,6 +1379,29 @@ async def test_franchise_and_dispatch_notified_when_livreur_arrives(h):
     assert sum(1 for t in h.tg.texts(F1) if t.startswith("📍 Livreur 1 arrive")) == 1
     assert len(await db.list_events(course["id"], "arrival_notified")) == 1
 
+    # À l'adresse (moins de 80 m) : « sur place », une seule fois aussi.
+    c = await db.get_course(course["id"])
+    await h.location(L1, c["lat"] + 0.0003, c["lon"], edited=True, message_id=L1)     # ~33 m
+    await h.location(L1, c["lat"], c["lon"], edited=True, message_id=L1)
+    onsite = [t for t in h.tg.texts(F1) if t.startswith("🏁 Livreur 1 est sur place")]
+    assert len(onsite) == 1 and f"course #{course['id']}" in onsite[0] and "12 Rue de Rivoli" in onsite[0]
+    assert sum(1 for t in h.tg.texts(DISPATCH) if t.startswith(f"🏁 #{course['id']} — Livreur 1 est <b>sur place</b>")) == 1
+    assert len(await db.list_events(course["id"], "onsite_notified")) == 1
+
+
+async def test_onsite_without_approach_alert(h):
+    """Première position déjà à l'adresse : seulement « sur place », pas de « il arrive » ensuite."""
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    far = (48.8700, 2.3300)
+    await go_on_duty(h, L1, far)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    c = await db.get_course(course["id"])
+    await h.location(L1, c["lat"], c["lon"], edited=True, message_id=L1)
+    await h.location(L1, c["lat"] + 0.0002, c["lon"], edited=True, message_id=L1)
+    assert any(t.startswith("🏁 Livreur 1 est sur place") for t in h.tg.texts(F1))
+    assert not any(t.startswith("📍 Livreur 1 arrive") for t in h.tg.texts(F1))
+
 
 async def test_stock_alerts_last_units_and_empty(h, monkeypatch, test_config):
     """Commande de 2 US au livreur qui en a 2 : alerte « les 2 derniers » ; une fois livrée :

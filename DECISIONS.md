@@ -569,3 +569,8 @@ simple qui respecte le mur de confidentialité (§12).
      Rechargement). Produits : comptés chez le livreur (SOLDES ② prend toutes les lignes sauf Swipe), aucun box ne
      bouge (ORGA ③ ne compte que Box 1 à 3). Cash en colonne C : encore sur le livreur, donc retiré du « cash
      récupéré » (SOLDES ④ D35:D40 et `cashLivreurs_`). La clôture écrit ses lignes « Report clôture » avec ce box.
+
+143. **Alerte « sur place »** (demande de l'exploitant : être averti quand le livreur est à l'adresse). En plus de
+     « il arrive » (500 m ou 5 min), une alerte au franchisé et au dispatch quand le livreur est à moins de
+     `ARRIVAL_ONSITE_METERS` (80 m par défaut : en dessous, le GPS en ville n'est plus fiable) de l'adresse, une
+     fois par course (événement `onsite_notified`). Arrivé directement sur place, « il arrive » n'est plus envoyé.

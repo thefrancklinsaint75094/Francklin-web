@@ -1,7 +1,9 @@
-"""Alerte « le livreur arrive » : franchisé et dispatch sont prévenus une fois par course,
-quand le livreur est à moins de ARRIVAL_NOTIFY_METERS de l'adresse, ou à moins de
-ARRIVAL_NOTIFY_MINUTES d'après sa vitesse (mesurée entre ses deux dernières positions,
-sinon vitesse moyenne d'un deux-roues en ville)."""
+"""Alertes de position, une fois chacune par course, au franchisé et au dispatch :
+- « le livreur arrive » : à moins de ARRIVAL_NOTIFY_METERS de l'adresse, ou à moins de
+  ARRIVAL_NOTIFY_MINUTES d'après sa vitesse (mesurée entre ses deux dernières positions, sinon vitesse
+  moyenne d'un deux-roues en ville) ;
+- « le livreur est sur place » : à moins de ARRIVAL_ONSITE_METERS de l'adresse (80 m : la précision du GPS
+  en ville). Arrivé directement sur place, il n'y a que celle-ci."""
 from __future__ import annotations
 
 import logging
@@ -19,7 +21,9 @@ MAX_SPEED_MS = 20.0              # au-delà : saut de position, pas une vitesse
 MIN_SAMPLE_SECONDS = 5
 MAX_SAMPLE_SECONDS = 600
 
-_notified: set[tuple[int, str]] = set()   # (course, assigned_at) déjà annoncés (cache ; la base fait foi)
+_notified: set[tuple[str, int, str]] = set()   # (type, course, assigned_at) déjà annoncés (cache ; la base fait foi)
+ARRIVAL = "arrival_notified"
+ONSITE = "onsite_notified"
 
 
 def measured_speed(prev: dict | None, lat: float, lon: float, now: datetime) -> float | None:
@@ -50,15 +54,23 @@ def should_notify(distance_m: float, eta: int, radius_m: int, minutes: int) -> b
     return distance_m <= radius_m or eta <= minutes
 
 
-async def _already(course: dict) -> bool:
-    key = (course["id"], str(course.get("assigned_at")))
+async def _already(course: dict, kind: str = ARRIVAL) -> bool:
+    key = (kind, course["id"], str(course.get("assigned_at")))
     if key in _notified:
         return True
-    events = await db.list_events(course["id"], "arrival_notified")
+    events = await db.list_events(course["id"], kind)
     if any((e.get("payload") or {}).get("assigned_at") == course.get("assigned_at") for e in events):
         _notified.add(key)
         return True
     return False
+
+
+async def _mark(course: dict, livreur: dict, kind: str, dist: float, eta: int | None = None) -> None:
+    _notified.add((kind, course["id"], str(course.get("assigned_at"))))
+    payload = {"assigned_at": course.get("assigned_at"), "distance_m": int(dist)}
+    if eta is not None:
+        payload["eta_min"] = eta
+    await db.log_event(kind, course["id"], livreur["id"], payload)
 
 
 async def check(context, livreur: dict, lat: float, lon: float, prev: dict | None) -> None:
@@ -66,23 +78,35 @@ async def check(context, livreur: dict, lat: float, lon: float, prev: dict | Non
     qui vient d'entrer dans la zone d'arrivée. Ne lève jamais d'exception."""
     try:
         cfg = config.get()
-        if cfg.arrival_notify_meters <= 0 and cfg.arrival_notify_minutes <= 0:
+        if cfg.arrival_notify_meters <= 0 and cfg.arrival_notify_minutes <= 0 and cfg.arrival_onsite_meters <= 0:
             return
         courses = await db.list_assigned_for_livreur(livreur["id"])
         if not courses:
             return
         speed = measured_speed(prev, lat, lon, now_utc())
         for course in courses:
+            if course.get("lat") is None or course.get("lon") is None:
+                continue
             dist = haversine_m(lat, lon, course["lat"], course["lon"])
+            if 0 < cfg.arrival_onsite_meters and dist <= cfg.arrival_onsite_meters:
+                if await _already(course, ONSITE):
+                    continue
+                await _mark(course, livreur, ONSITE, dist)
+                if not await _already(course, ARRIVAL):        # plus de « il arrive » après « sur place »
+                    await _mark(course, livreur, ARRIVAL, dist, 0)
+                franchise = await db.get_user(course["franchise_id"])
+                if franchise and franchise.get("role") != "dispatch":
+                    await messaging.send(context.bot, franchise, texts.onsite_for_franchise(course, livreur))
+                await messaging.notify_dispatch(context.bot, texts.d_onsite(course, livreur))
+                continue
+            if cfg.arrival_notify_meters <= 0 and cfg.arrival_notify_minutes <= 0:
+                continue
             eta = eta_minutes(dist, speed, livreur.get("transport_mode"))
             if not should_notify(dist, eta, cfg.arrival_notify_meters, cfg.arrival_notify_minutes):
                 continue
             if await _already(course):
                 continue
-            _notified.add((course["id"], str(course.get("assigned_at"))))
-            await db.log_event("arrival_notified", course["id"], livreur["id"], {
-                "assigned_at": course.get("assigned_at"), "distance_m": int(dist), "eta_min": eta,
-            })
+            await _mark(course, livreur, ARRIVAL, dist, eta)
             label = format_distance(dist)
             franchise = await db.get_user(course["franchise_id"])
             if franchise:
