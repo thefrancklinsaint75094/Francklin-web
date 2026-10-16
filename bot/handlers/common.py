@@ -43,7 +43,7 @@ _ADMIN_COMMANDS = [("app", "📱 L'appli Dispatch"), ("menu", "Tout le menu, par
 COMMANDS = {
     "franchise": [("mescourses", "Mes courses de la nuit"), ("modele", "Modèle de commande")] + _ADMIN_COMMANDS,
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
-                ("macourse", "Revoir ma course en cours"), ("depense", "Noter une dépense"),
+                ("app", "📱 Mon appli Mes courses"), ("macourse", "Revoir ma course en cours"), ("depense", "Noter une dépense"),
                 ("macaisse", "Mon cash à remettre"), ("gouts", "Mes goûts (ce qu'il me reste)"),
                 ("close", "Fin de service : mon récap")],
     "dispatch": _ADMIN_COMMANDS + [("recap", "Totaux par livreur")],
@@ -124,14 +124,19 @@ async def set_commands(bot, user: dict) -> None:
 
 
 async def set_menu_button(bot, user: dict) -> None:
-    """Admins : le bouton à gauche du champ de saisie ouvre la mini-application « Dispatch »
-    (sinon, et pour les autres rôles, la liste des commandes)."""
+    """Admins : le bouton à gauche du champ de saisie ouvre la mini-application « Dispatch » ; livreurs :
+    leur appli « Mes courses » ; les autres rôles : la liste des commandes."""
     from telegram import MenuButtonCommands, MenuButtonWebApp, WebAppInfo
 
     url = config.get().webapp_url
     if not url:
         return
-    button = (MenuButtonWebApp("Dispatch", WebAppInfo(url)) if url and is_admin(user) else MenuButtonCommands())
+    if is_admin(user):
+        button = MenuButtonWebApp("Dispatch", WebAppInfo(url))
+    elif user.get("role") == "livreur" and user.get("status") == "active":
+        button = MenuButtonWebApp("Mes courses", WebAppInfo(f"{url}/livreur"))
+    else:
+        button = MenuButtonCommands()
     try:
         await bot.set_chat_menu_button(chat_id=user["telegram_id"], menu_button=button)
     except TelegramError as exc:

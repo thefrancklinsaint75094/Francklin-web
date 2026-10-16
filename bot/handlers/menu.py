@@ -88,10 +88,15 @@ async def open_app(update: Update, context) -> None:
     if not await common.require(update, user):
         return
     url = config.get().webapp_url
-    if not common.is_admin(user) or not url:
-        await messaging.reply(update, texts.NOT_FOR_YOU if not common.is_admin(user) else texts.APP_UNAVAILABLE)
+    livreur = user["role"] == "livreur"
+    if not (common.is_admin(user) or livreur) or not url:
+        await messaging.reply(update, texts.APP_UNAVAILABLE if url is None else texts.NOT_FOR_YOU)
         return
     await common.set_menu_button(context.bot, user)
+    if livreur:
+        await messaging.reply(update, texts.APP_OPEN_LIVREUR, InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📱 Ouvrir Mes courses", web_app=WebAppInfo(f"{url}/livreur"))]]))
+        return
     await messaging.reply(update, texts.APP_OPEN, InlineKeyboardMarkup(
         [[InlineKeyboardButton("📱 Ouvrir Dispatch", web_app=WebAppInfo(url))]]))
 

@@ -681,3 +681,13 @@ simple qui respecte le mur de confidentialité (§12).
      `user_card.rename` / `set_prenom`, `cloture.precheck` / `run`. Les résultats en lecture (débrief, fin de
      service, synchro, récap) passent par la commande du chat dont la réponse est capturée et affichée dans
      l'appli. Le catalogue (`/produits`, goûts) n'est pas dans l'appli : il demande l'accord de l'exploitant.
+
+162. **Appli des livreurs « Mes courses »** (l'exploitant : « le plus simpliste possible pour eux, mais exhaustif…
+     limite leur parler comme des enfants »). Page séparée (`/livreur`, `bot/web_livreur.py`), même serveur et
+     même signature Telegram. Choix : quatre onglets seulement, gros boutons en capitales, tutoiement et phrases
+     courtes, étapes numérotées pour la course en cours, une seule adresse à la fois, compteurs − / + au lieu de
+     taper (stock, modification), phrases toutes prêtes pour écrire au franchisé, prix de 10 en 10 €. Le
+     partage de la position en direct reste dans le chat (une mini-appli ne peut pas le faire en continu) :
+     l'appli explique comment, en 4 étapes. Découpages : `livreur.take_course`, `livreur.request_edit`,
+     `set_eta(course_id=…)`, `declare.confirm` ; les réponses du chat (délai, message relayé, fin de service)
+     sont capturées par `web.with_capture` et affichées dans l'appli.

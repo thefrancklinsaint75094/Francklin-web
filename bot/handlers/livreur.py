@@ -233,35 +233,52 @@ async def take(update: Update, context):
         return None
     course_id = common.arg(update, int)
     message = update.callback_query.message
+    ok, answer = await take_course(context, user, course_id, message)
+    if ok is None:
+        return None
+    return answer if ok else (answer, True)
+
+
+async def take_course(context, user: dict, course_id: int, message=None) -> tuple[bool | None, str]:
+    """« Je prends » : (pris ?, texte). None : course inconnue. Même verrou, mêmes règles (maximum de courses,
+    stock d'après le tableau) depuis le chat ou l'appli ; message : la proposition à changer en fiche."""
     async with _livreur_locks[user["id"]]:
         user = await db.get_user(user["id"])
         course = await db.get_course(course_id)
         if course is None:
-            return None
+            return None, ""
+        if message is None:                               # depuis l'appli : la proposition reçue dans le chat
+            bc = await db.get_broadcast(course_id, user["id"])
+            if bc and bc.get("telegram_message_id"):
+                from types import SimpleNamespace
+
+                message = SimpleNamespace(message_id=bc["telegram_message_id"])
         if course["status"] != "pending":
             if course.get("livreur_id") == user["id"]:
-                return "Elle est déjà à toi."
+                return True, "Elle est déjà à toi."
             text = (texts.proposal_withdrawn(course_id) if course["status"] in db.CANCELLED_STATUSES
                     else texts.proposal_taken(course_id))
-            await messaging.edit(context.bot, update.effective_chat.id, message.message_id, text)
-            return texts.TOO_LATE, True
+            if message is not None:
+                await messaging.edit(context.bot, user["telegram_id"], message.message_id, text)
+            return False, texts.TOO_LATE
         limit = config.get().max_courses_per_livreur      # 0 : il enchaîne autant de courses qu'il veut
         if limit and len(await db.list_assigned_for_livreur(user["id"])) >= limit:
-            return texts.ALREADY_HAS_COURSE, True
+            return False, texts.ALREADY_HAS_COURSE
         # Il lui manque un produit d'après le tableau : il ne la prend pas (un admin peut l'attribuer).
         short = await stock.missing_for(course, user)
         if short:
             await db.log_event("take_refused_stock", course_id, user["id"], {"missing": [p for p, _, _ in short]})
             await messaging.notify_dispatch(context.bot, texts.d_take_refused_stock(course, user, short),
                                             important=True)
-            return texts.take_refused_stock(short), True
+            return False, texts.take_refused_stock(short)
         won = await db.take_course(course_id, user["id"])
         if won is None:
-            await messaging.edit(context.bot, update.effective_chat.id, message.message_id,
-                                 texts.proposal_taken(course_id))
-            return texts.TOO_LATE, True
+            if message is not None:
+                await messaging.edit(context.bot, user["telegram_id"], message.message_id,
+                                     texts.proposal_taken(course_id))
+            return False, texts.TOO_LATE
     await lifecycle.after_assignment(context, won, user, message)
-    return "C'est pour toi 🚴"
+    return True, "C'est pour toi 🚴"
 
 
 @common.callback
@@ -331,10 +348,13 @@ def eta_minutes(text: str | None) -> int | None:
     return minutes if 0 < minutes <= ETA_MAX_MINUTES else None
 
 
-async def set_eta(update: Update, context, user: dict, minutes: int) -> bool:
+async def set_eta(update: Update, context, user: dict, minutes: int, course_id: int | None = None) -> bool:
     """Le livreur écrit son temps (« 47 ») : délai de sa course en cours — celle qui n'en a pas encore,
-    sinon la plus ancienne. Franchisé et dispatch prévenus. False s'il n'a aucune course en cours."""
+    sinon la plus ancienne (course_id : celle-là, depuis l'appli). Franchisé et dispatch prévenus. False s'il
+    n'a aucune course en cours."""
     courses = await db.list_assigned_for_livreur(user["id"])
+    if course_id is not None:
+        courses = [c for c in courses if c["id"] == course_id]
     if not courses:
         return False
     course = next((c for c in reversed(courses) if not c.get("eta_at")), None) or courses[0]
@@ -620,13 +640,29 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
 async def _edit_request(context, chat_id: int, user: dict, payload: dict, course: dict, fields: dict):
     """La modification du livreur part au franchisé, qui a le dernier mot (✅ / ❌). La commande ne change
     qu'à sa validation ; une course livrée entre-temps n'est écrite dans la feuille qu'après sa décision."""
+    await db.clear_state(user["id"])
+    franchise = await request_edit(context, user, course, fields)
+    if franchise is None:
+        await messaging.edit_markup(context.bot, chat_id, payload["msg"], None)
+        return texts.COURSE_FINISHED, True
+    name = franchise.get("display_name") or "le franchisé"
+    if payload.get("deliver"):
+        await messaging.edit(context.bot, chat_id, payload["msg"], texts.edit_sent_ask_payment(course, name),
+                             keyboards.payment_choice(course["id"]))
+    else:
+        await _back_to_card(context, chat_id, payload["msg"], course, user)
+        await messaging.send(context.bot, user, texts.edit_sent(course["id"], name))
+    return "Envoyée au franchisé ✅"
+
+
+async def request_edit(context, user: dict, course: dict, fields: dict) -> dict | None:
+    """Le livreur propose une nouvelle commande (produits, prix) ; le franchisé valide. Renvoie le franchisé
+    ({} s'il est introuvable), ou None si la course n'est plus en cours chez ce livreur."""
     pending = {**fields, "by": user["id"], "at": iso(now_utc())}
     updated = await db.update_course_if_status(course["id"], ["assigned"], {"pending_edit": pending},
                                                livreur_id=user["id"])
-    await db.clear_state(user["id"])
     if updated is None:
-        await messaging.edit_markup(context.bot, chat_id, payload["msg"], None)
-        return texts.COURSE_FINISHED, True
+        return None
     franchise = await db.get_user(course["franchise_id"]) or {}
     if franchise:
         await messaging.send(context.bot, franchise, texts.edit_request(course, user, pending),
@@ -639,14 +675,7 @@ async def _edit_request(context, chat_id: int, user: dict, payload: dict, course
         "before": {"products": course["products"], "price": float(course["price"])},
         "after": {"products": pending["products"], "price": float(pending["price"])},
     })
-    name = franchise.get("display_name") or "le franchisé"
-    if payload.get("deliver"):
-        await messaging.edit(context.bot, chat_id, payload["msg"], texts.edit_sent_ask_payment(course, name),
-                             keyboards.payment_choice(course["id"]))
-    else:
-        await _back_to_card(context, chat_id, payload["msg"], course, user)
-        await messaging.send(context.bot, user, texts.edit_sent(course["id"], name))
-    return "Envoyée au franchisé ✅"
+    return franchise
 
 
 async def _notify_modified(context, editor: dict, before: dict, updated: dict) -> None:

@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Mes courses</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --bg: var(--tg-theme-secondary-bg-color, #f2f2f7);
+  --card: var(--tg-theme-bg-color, #ffffff);
+  --text: var(--tg-theme-text-color, #111111);
+  --muted: var(--tg-theme-hint-color, #7d7d82);
+  --line: rgba(127, 127, 127, .18);
+  --soft: rgba(127, 127, 127, .12);
+  --green: #1f9d55; --blue: #2f7cf6; --orange: #e8890c; --red: #d93a30;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--tg-theme-secondary-bg-color, #000000);
+    --card: var(--tg-theme-bg-color, #1c1c1e);
+    --text: var(--tg-theme-text-color, #f4f4f4);
+    --muted: var(--tg-theme-hint-color, #9a9aa0);
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 17px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body { padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+.top { padding: 14px 16px 6px; display: flex; align-items: center; gap: 10px; }
+.top h1 { margin: 0; font-size: 24px; flex: 1; }
+.state { font-size: 14px; font-weight: 700; padding: 6px 12px; border-radius: 99px; color: #fff; background: var(--muted); white-space: nowrap; }
+.state.on { background: var(--green); }
+main { padding: 0 12px; display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--card); border-radius: 20px; padding: 18px 16px; }
+.card.green { border: 3px solid var(--green); }
+.card.orange { border: 3px solid var(--orange); }
+.card.blue { border: 3px solid var(--blue); }
+.label { font-size: 13px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.title { font-size: 22px; font-weight: 800; margin: 0 0 6px; }
+.huge { font-size: 30px; font-weight: 900; letter-spacing: -.5px; }
+.addr { font-size: 21px; font-weight: 800; line-height: 1.25; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+.step { display: flex; gap: 12px; margin-top: 18px; }
+.step .n { width: 34px; height: 34px; border-radius: 50%; background: var(--blue); color: #fff; font-weight: 900;
+  display: flex; align-items: center; justify-content: center; flex: none; font-size: 17px; }
+.step .b { flex: 1; min-width: 0; }
+.big { display: block; width: 100%; padding: 18px 12px; border-radius: 16px; font-size: 19px; font-weight: 900;
+  text-align: center; margin-top: 12px; letter-spacing: .2px; }
+.go { background: var(--green); color: #fff; }
+.blue-b { background: var(--blue); color: #fff; }
+.orange-b { background: var(--orange); color: #fff; }
+.red-b { background: var(--red); color: #fff; }
+.grey { background: var(--soft); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.two .big { margin-top: 10px; }
+.items { margin-top: 6px; }
+.items div { font-size: 20px; font-weight: 700; padding: 4px 0; }
+.money { display: flex; align-items: baseline; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 2px dashed var(--line); }
+.money b { font-size: 30px; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+.tile { background: var(--soft); border-radius: 16px; padding: 14px 6px; text-align: center; font-weight: 800; font-size: 15px; border: 3px solid transparent; }
+.tile .e { display: block; font-size: 32px; margin-bottom: 4px; }
+.tile.on { border-color: var(--green); background: rgba(31,157,85,.12); }
+.next div { font-size: 17px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.next div:last-child { border-bottom: 0; }
+.msg { padding: 8px 12px; border-radius: 14px; margin-top: 8px; max-width: 85%; font-size: 16px; }
+.msg.them { background: var(--soft); }
+.msg.me { background: var(--blue); color: #fff; margin-left: auto; }
+.msgs { display: flex; flex-direction: column; }
+.banner { background: rgba(232,137,12,.15); color: var(--orange); font-weight: 800; border-radius: 14px; padding: 12px; margin-top: 12px; }
+.empty { text-align: center; padding: 30px 10px; }
+.empty .e { font-size: 54px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+.kv { display: flex; justify-content: space-between; font-size: 18px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.kv:last-child { border-bottom: 0; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper button { width: 46px; height: 46px; border-radius: 14px; background: var(--soft); font-size: 24px; font-weight: 900; }
+.stepper b { min-width: 34px; text-align: center; font-size: 22px; }
+.chip { display: inline-block; padding: 10px 14px; border-radius: 99px; background: var(--soft); margin: 6px 6px 0 0; font-weight: 700; border: 2px solid transparent; }
+.chip.on { background: rgba(31,157,85,.15); border-color: var(--green); }
+input, textarea { width: 100%; font: inherit; font-size: 20px; color: var(--text); background: var(--soft); border: 2px solid var(--line);
+  border-radius: 14px; padding: 14px; outline: none; }
+.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(4, 1fr);
+  background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+.tabs button { padding: 10px 0 9px; font-size: 13px; font-weight: 700; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.tabs .i { font-size: 27px; line-height: 1; }
+.tabs button.on { color: var(--blue); }
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50; display: none; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--card); border-radius: 22px 22px 0 0;
+  max-height: 90vh; overflow: auto; padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+  transform: translateY(105%); transition: transform .2s, visibility .2s; visibility: hidden; }
+.sheet.open { transform: none; visibility: visible; }
+.sheet .grab { width: 44px; height: 6px; border-radius: 99px; background: var(--line); margin: 2px auto 12px; }
+.toast { position: fixed; left: 14px; right: 14px; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 60;
+  background: #222; color: #fff; padding: 16px; border-radius: 16px; font-size: 17px; font-weight: 700; text-align: center;
+  opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: .96; }
+.result { white-space: pre-wrap; font-size: 16px; background: var(--soft); border-radius: 14px; padding: 14px; }
+.help li { margin: 8px 0; }
+</style>
+</head>
+<body>
+<header class="top"><h1 id="hello">Salut 👋</h1><span class="state" id="state">…</span></header>
+<main id="view"><div class="empty"><div class="e">⏳</div>Chargement…</div></main>
+<nav class="tabs" id="tabs">
+  <button data-tab="courses" class="on"><span class="i">🚴</span>Mes courses</button>
+  <button data-tab="money"><span class="i">💶</span>Mon argent</button>
+  <button data-tab="stock"><span class="i">📦</span>Mon stock</button>
+  <button data-tab="plus"><span class="i">☰</span>Plus</button>
+</nav>
+<div class="sheet-bg" id="sheet-bg"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheet-body"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch (e) {} }
+const INIT = tg ? tg.initData : "";
+const S = { tab: "courses", d: null, cache: {}, busy: false, transport: null, fixing: null };
+const $ = (id) => document.getElementById(id);
+const nodes = (...k) => k.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false);
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") n.className = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+  }
+  for (const k of nodes(kids)) n.append(k.nodeType ? k : String(k));
+  return n;
+}
+const eur = (v) => (Math.round((v || 0) * 100) / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 }) + " €";
+const plain = (s) => String(s || "").replace(/<[^>]+>/g, "").replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+const vibrate = (t) => { try { tg && tg.HapticFeedback.notificationOccurred(t); } catch (e) {} };
+const tap = () => { try { tg && tg.HapticFeedback.impactOccurred("medium"); } catch (e) {} };
+function toast(m) { const t = $("toast"); t.textContent = plain(m); t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3000); }
+const ask = (q) => new Promise((ok) => tg && tg.showConfirm ? tg.showConfirm(q, ok) : ok(window.confirm(q)));
+function open(url) { if (tg && tg.openLink) tg.openLink(url); else window.open(url, "_blank"); }
+
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Init-Data": INIT }, body: JSON.stringify(body || {}) });
+  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  return r.json();
+}
+async function act(body, question) {
+  if (S.busy) return null;
+  if (question && !(await ask(question))) return null;
+  S.busy = true; tap();
+  try {
+    const r = await api("/api/me/action", body);
+    vibrate(r.ok ? "success" : "error");
+    if (r.message) toast(r.message);
+    await load(); return r;
+  } catch (e) { vibrate("error"); toast("Problème de connexion, réessaie."); return null; }
+  finally { S.busy = false; }
+}
+async function load() {
+  try { S.d = await api("/api/me/board"); }
+  catch (e) { $("view").replaceChildren(el("div", { class: "card empty" }, el("div", { class: "e" }, "📶"), "Pas de connexion. Réessaie dans un instant.")); return; }
+  const me = S.d.me;
+  $("hello").textContent = `Salut ${me.prenom || me.name} 👋`;
+  $("state").textContent = me.on_duty ? "🟢 En service" : "⏸ En pause";
+  $("state").className = "state" + (me.on_duty ? " on" : "");
+  if (!$("sheet").classList.contains("open") && !S.fixing && !document.activeElement.matches("input, textarea")) render();
+}
+async function section(name) {
+  S.cache[name] = { loading: true }; if (S.tab === name) render();
+  try { S.cache[name] = await api("/api/me/section", { name }); } catch (e) { S.cache[name] = { ok: false, error: "Pas de connexion." }; }
+  if (S.tab === name) render();
+}
+
+function render() {
+  if (!S.d) return;
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === S.tab));
+  $("view").replaceChildren(...nodes(({ courses: viewCourses, money: viewMoney, stock: viewStock, plus: viewPlus })[S.tab]()));
+}
+
+// ------------------------------------------------------------------ MES COURSES
+const MODES = [["transport", "🚶", "À pied / métro"], ["deux_roues", "🛵", "Scooter / vélo"], ["voiture", "🚗", "Voiture"]];
+function transportTiles(onPick) {
+  const current = S.transport || S.d.me.transport;
+  return el("div", { class: "tiles" }, MODES.map(([v, e, l]) => el("button", { class: "tile" + (current === v ? " on" : ""), onclick: () => { tap(); S.transport = v; onPick(v); } },
+    el("span", { class: "e" }, e), l)));
+}
+function viewCourses() {
+  const d = S.d, me = d.me, out = [];
+  if (!me.on_duty) {
+    out.push(el("div", { class: "card green" },
+      el("div", { class: "title" }, "Tu n'as pas encore commencé"),
+      el("div", { class: "muted" }, "1. Choisis comment tu te déplaces ce soir."),
+      transportTiles(() => render()),
+      el("div", { class: "muted", style: "margin-top:14px" }, "2. Appuie sur le gros bouton vert."),
+      el("button", { class: "big go", onclick: () => act({ type: "start", transport: S.transport || me.transport }) }, "▶️ JE COMMENCE")));
+  } else if (!me.position_ok) {
+    out.push(positionCard());
+  }
+  if (d.declaration) out.push(declarationCard(d.declaration));
+  d.proposals.forEach((p) => out.push(el("div", { class: "card blue" },
+    el("div", { class: "label" }, "🆕 Nouvelle course pour toi"),
+    el("div", { class: "addr" }, p.district || ""),
+    p.km !== null ? el("div", { class: "muted" }, `à ${p.km} km de toi`) : null,
+    el("div", { class: "items" }, el("div", {}, "🍾 " + (p.products || ""))),
+    p.requested_time ? el("div", { class: "muted" }, "🕐 " + p.requested_time) : null,
+    el("div", { class: "money" }, el("span", {}, "À encaisser"), el("b", {}, eur(p.price))),
+    el("button", { class: "big go", onclick: () => act({ type: "take", course_id: p.id }) }, "✋ JE LA PRENDS"))));
+  if (d.current) out.push(currentCard(d.current));
+  if (d.next.length) out.push(el("div", { class: "card" }, el("div", { class: "label" }, "📋 Ensuite (dans l'ordre)"),
+    el("div", { class: "next" }, d.next.map((n, i) => el("div", {}, `${i + 2}. ${n.district || ""} · ${eur(n.price)}`))),
+    el("div", { class: "muted small", style: "margin-top:6px" }, "Finis d'abord ta course en cours.")));
+  if (me.on_duty && !d.current && !d.proposals.length && !d.declaration) out.push(el("div", { class: "card empty" },
+    el("div", { class: "e" }, "😴"), el("div", { class: "title" }, "Pas de course pour l'instant"),
+    el("div", { class: "muted" }, d.blocked ? "Confirme d'abord ton stock (en haut)." : "Reste en service. Ton téléphone sonne dès qu'il y en a une.")));
+  return out;
+}
+
+function positionCard() {
+  return el("div", { class: "card orange" },
+    el("div", { class: "title" }, "📍 Partage ta position"),
+    el("div", { class: "muted" }, "Sans ta position, je ne peux pas te donner de course."),
+    el("ol", { class: "help" },
+      el("li", {}, "Appuie sur le bouton ci-dessous : l'appli se ferme."),
+      el("li", {}, "Dans la discussion, appuie sur 📎 (le trombone)."),
+      el("li", {}, "Choisis « Position », puis « Partager ma position en direct »."),
+      el("li", {}, "Choisis « 8 heures ». C'est tout !")),
+    el("button", { class: "big orange-b", onclick: () => tg ? tg.close() : null }, "OK, JE LE FAIS"));
+}
+
+function declarationCard(decl) {
+  const start = decl.kind === "start";
+  if (S.fixing === decl.id || !decl.expected) return stockEditor(decl);
+  const items = Object.entries(decl.expected);
+  return el("div", { class: "card orange" },
+    el("div", { class: "label" }, start ? "📦 Avant de commencer" : "📦 Fin de soirée"),
+    el("div", { class: "title" }, "Qu'est-ce que tu as sur toi ?"),
+    el("div", { class: "muted" }, "Le tableau dit que tu as :"),
+    el("div", { class: "items" }, items.length ? items.map(([p, q]) => el("div", {}, `${q} × ${p}`)) : el("div", {}, "rien")),
+    el("div", { class: "title", style: "margin-top:12px" }, "C'est juste ?"),
+    el("div", { class: "two" },
+      el("button", { class: "big go", onclick: () => act({ type: "declare_ok", id: decl.id }) }, "✅ OUI"),
+      el("button", { class: "big grey", onclick: () => { S.fixing = decl.id; render(); } }, "✏️ NON")),
+    start ? el("div", { class: "muted small", style: "margin-top:10px" }, "Tant que tu n'as pas répondu, tu ne reçois pas de course.") : null);
+}
+
+function stockEditor(decl) {
+  const lines = Object.entries(decl.expected || {}).map(([p, q]) => ({ p, q: Number(q) || 0 }));
+  const box = el("div", {});
+  const draw = () => box.replaceChildren(...lines.map((l) => el("div", { class: "row", style: "padding:8px 0; border-bottom:1px solid var(--line)" },
+    el("span", { class: "grow", style: "font-size:19px; font-weight:700" }, l.p),
+    el("div", { class: "stepper" }, el("button", { onclick: () => { l.q = Math.max(0, l.q - 1); tap(); draw(); } }, "−"), el("b", {}, l.q),
+      el("button", { onclick: () => { l.q += 1; tap(); draw(); } }, "+")))));
+  draw();
+  const other = el("input", { placeholder: "Un autre produit ? écris son nom" });
+  return el("div", { class: "card orange" },
+    el("div", { class: "title" }, "Compte ce que tu as sur toi"),
+    el("div", { class: "muted" }, "Appuie sur − ou + pour avoir le bon nombre."),
+    box,
+    el("div", { style: "margin-top:12px" }, other),
+    el("button", { class: "big grey", onclick: () => { if (other.value.trim()) { lines.push({ p: other.value.trim(), q: 1 }); other.value = ""; draw(); } } }, "➕ AJOUTER CE PRODUIT"),
+    el("button", { class: "big go", onclick: async () => { const r = await act({ type: "declare_fix", id: decl.id, items: lines.filter((l) => l.q > 0) }); if (r && r.ok) S.fixing = null; render(); } }, "✅ C'EST BON, J'ENVOIE"),
+    decl.expected ? el("button", { class: "big grey", onclick: () => { S.fixing = null; render(); } }, "Retour") : null);
+}
+
+function currentCard(c) {
+  const etaBlock = c.eta_at
+    ? el("div", {}, el("div", { class: "addr" }, `Tu arrives vers ${c.eta_at}`), el("div", { class: "muted" }, c.eta_in > 0 ? `dans ${c.eta_in} min` : "c'est l'heure"),
+        el("button", { class: "big grey", onclick: etaSheet }, "Changer mon temps"))
+    : el("div", {}, el("div", { class: "muted" }, "Le franchisé attend ta réponse."), el("button", { class: "big blue-b", onclick: etaSheet }, "⏱ J'ÉCRIS MON TEMPS"));
+  function etaSheet() {
+    const input = el("input", { type: "number", inputmode: "numeric", min: "1", max: "300", placeholder: "Par exemple 25" });
+    openSheet(el("div", { class: "title" }, "Dans combien de minutes tu arrives ?"), input,
+      el("button", { class: "big go", onclick: async () => { const r = await act({ type: "eta", course_id: c.id, minutes: input.value }); if (r && r.ok) closeSheet(); } }, "✅ OK"));
+    setTimeout(() => input.focus(), 300);
+  }
+  return el("div", { class: "card green" },
+    el("div", { class: "label" }, `🚴 Ta course maintenant · #${c.id}`),
+    c.pending_edit ? el("div", { class: "banner" }, "⏳ Le franchisé doit valider ta modification.") : null,
+    el("div", { class: "step" }, el("span", { class: "n" }, "1"), el("div", { class: "b" },
+      el("div", { class: "label" }, "Où ?"), el("div", { class: "addr" }, c.address || ""),
+      c.detail ? el("div", { style: "margin-top:6px; font-size:18px" }, "🔑 " + c.detail) : null,
+      c.requested_time ? el("div", { class: "muted", style: "margin-top:4px" }, "🕐 Le client veut : " + c.requested_time) : null,
+      c.nav.maps ? el("div", { class: "two" }, el("button", { class: "big blue-b", onclick: () => open(c.nav.maps) }, "🗺 Y ALLER"),
+        el("button", { class: "big grey", onclick: () => open(c.nav.waze) }, "Waze")) : null)),
+    el("div", { class: "step" }, el("span", { class: "n" }, "2"), el("div", { class: "b" }, el("div", { class: "label" }, "Ton temps"), etaBlock)),
+    el("div", { class: "step" }, el("span", { class: "n" }, "3"), el("div", { class: "b" },
+      el("div", { class: "label" }, "À donner au client"),
+      el("div", { class: "items" }, c.lines.length ? c.lines.map((l) => el("div", {}, `${l.q} × ${l.p}`)) : el("div", {}, c.products || "")),
+      el("div", { class: "money" }, el("span", {}, "💶 À encaisser"), el("b", {}, eur(c.price))))),
+    el("div", { class: "step" }, el("span", { class: "n" }, "4"), el("div", { class: "b" },
+      el("div", { class: "label" }, "Quand c'est fait"),
+      el("button", { class: "big go", onclick: () => deliverSheet(c) }, "✅ C'EST LIVRÉ"))),
+    messagesBlock(c),
+    el("div", { class: "two", style: "margin-top:8px" },
+      el("button", { class: "big grey", style: "font-size:15px", onclick: () => editSheet(c) }, "✏️ Le client a pris autre chose"),
+      el("button", { class: "big grey", style: "font-size:15px; color:var(--red)", onclick: () => act({ type: "cancel", course_id: c.id }, "Tu ne peux vraiment pas faire cette course ? Elle sera donnée à un autre livreur.") }, "❌ Je ne peux pas la faire")),
+    !S.d.me.soon_free ? el("button", { class: "big grey", style: "font-size:15px", onclick: () => act({ type: "soon_free" }) }, "🏁 J'ai presque fini : propose-moi la suivante") : null);
+}
+
+function messagesBlock(c) {
+  return el("div", { style: "margin-top:18px" },
+    el("div", { class: "label" }, `💬 Messages avec ${c.franchise}`),
+    c.messages.length ? el("div", { class: "msgs" }, c.messages.map((m) => el("div", { class: "msg " + (m.mine ? "me" : "them") }, m.text))) : null,
+    el("button", { class: "big grey", onclick: () => {
+      const input = el("textarea", { rows: "3", placeholder: "Ton message (par exemple : je suis en bas)" });
+      const quick = ["Je suis en bas", "J'arrive dans 5 min", "Le client ne répond pas", "Je ne trouve pas l'adresse"];
+      openSheet(el("div", { class: "title" }, `Écrire à ${c.franchise}`),
+        el("div", {}, quick.map((q) => el("button", { class: "chip", onclick: () => { input.value = q; } }, q))),
+        el("div", { style: "margin-top:10px" }, input),
+        el("button", { class: "big go", onclick: async () => { const r = await act({ type: "message", course_id: c.id, text: input.value }); if (r && r.ok) closeSheet(); } }, "📨 ENVOYER"));
+    } }, "💬 ÉCRIRE AU FRANCHISÉ"));
+}
+
+function deliverSheet(c) {
+  openSheet(el("div", { class: "title" }, "Le client a payé comment ?"), el("div", { class: "muted" }, `Montant : ${eur(c.price)}`),
+    el("button", { class: "big go", onclick: async () => { closeSheet(); await act({ type: "deliver", course_id: c.id, payment: "e" }); } }, "💵 EN ESPÈCES"),
+    el("button", { class: "big blue-b", onclick: async () => { closeSheet(); await act({ type: "deliver", course_id: c.id, payment: "v" }); } }, "💳 PAR CARTE / VIREMENT"),
+    el("button", { class: "big grey", onclick: closeSheet }, "Retour"));
+}
+
+function editSheet(c) {
+  const lines = c.lines.map((l) => ({ p: l.p, q: l.q, x: l.x }));
+  const box = el("div", {});
+  const total = el("b", {});
+  const draw = () => {
+    total.textContent = eur(lines.reduce((t, l) => t + (Number(l.x) || 0), 0));
+    box.replaceChildren(...lines.map((l) => el("div", { style: "padding:10px 0; border-bottom:1px solid var(--line)" },
+      el("div", { class: "row" }, el("span", { class: "grow", style: "font-size:19px; font-weight:800" }, l.p),
+        el("div", { class: "stepper" }, el("button", { onclick: () => { l.q = Math.max(0, l.q - 1); draw(); } }, "−"), el("b", {}, l.q), el("button", { onclick: () => { l.q += 1; draw(); } }, "+"))),
+      el("div", { class: "row", style: "margin-top:6px" }, el("span", { class: "muted grow" }, "Prix de la ligne"),
+        el("div", { class: "stepper" }, el("button", { onclick: () => { l.x = Math.max(0, (Number(l.x) || 0) - 10); draw(); } }, "−"), el("b", {}, eur(l.x)), el("button", { onclick: () => { l.x = (Number(l.x) || 0) + 10; draw(); } }, "+"))))));
+  };
+  draw();
+  const other = el("input", { placeholder: "Un autre produit ? écris son nom" });
+  openSheet(el("div", { class: "title" }, "Qu'est-ce que le client a pris ?"),
+    el("div", { class: "muted" }, "Change les quantités et les prix. Le franchisé doit valider."), box,
+    el("div", { style: "margin-top:12px" }, other),
+    el("button", { class: "big grey", onclick: () => { if (other.value.trim()) { lines.push({ p: other.value.trim(), q: 1, x: 10 }); other.value = ""; draw(); } } }, "➕ AJOUTER CE PRODUIT"),
+    el("div", { class: "money" }, el("span", {}, "Nouveau total"), total),
+    el("button", { class: "big go", onclick: async () => { const r = await act({ type: "edit", course_id: c.id, lines: lines.filter((l) => l.q > 0) }); if (r && r.ok) closeSheet(); } }, "📨 ENVOYER AU FRANCHISÉ"),
+    el("button", { class: "big grey", onclick: closeSheet }, "Annuler"));
+}
+
+// ------------------------------------------------------------------ MON ARGENT
+function viewMoney() {
+  const s = S.cache.money, n = S.d.night, out = [];
+  if (!s || s.loading) out.push(el("div", { class: "card empty" }, el("div", { class: "e" }, "⏳"), "Je calcule…"));
+  else if (!s.ok) out.push(el("div", { class: "card empty" }, el("div", { class: "e" }, "😕"), plain(s.error), el("button", { class: "big grey", onclick: () => section("money") }, "Réessayer")));
+  else out.push(el("div", { class: "card green" },
+    el("div", { class: "label" }, "💶 Tu dois remettre"), el("div", { class: "huge" }, eur(s.cash)),
+    el("div", { class: "kv", style: "margin-top:10px" }, el("span", {}, "Ventes en espèces"), el("b", {}, eur(s.especes))),
+    el("div", { class: "kv" }, el("span", {}, "− Tes dépenses"), el("b", {}, eur(s.depenses))),
+    el("div", { class: "kv" }, el("span", {}, "− Déjà récupéré"), el("b", {}, eur(s.recupere))),
+    el("div", { class: "muted small", style: "margin-top:6px" }, "Pour toute la semaine. Les ventes par carte ne comptent pas.")));
+  out.push(el("div", { class: "card" }, el("div", { class: "label" }, "🌙 Ce soir"),
+    el("div", { class: "title" }, `${n.n} course${n.n > 1 ? "s" : ""} livrée${n.n > 1 ? "s" : ""} · ${eur(n.total)}`),
+    n.list.map((c) => el("div", { class: "kv" }, el("span", {}, `${c.at || ""} · ${c.district || ""}`), el("b", {}, eur(c.price) + (c.payment === "especes" ? " 💵" : " 💳"))))));
+  out.push(el("button", { class: "big orange-b", onclick: expenseSheet }, "🧾 J'AI PAYÉ UNE DÉPENSE"));
+  return out;
+}
+function expenseSheet() {
+  let motif = "", kind = "charges";
+  const amount = el("input", { type: "number", inputmode: "decimal", placeholder: "Combien ? (en €)" });
+  const motifs = el("div", { class: "tiles" });
+  const kinds = el("div", { class: "two" });
+  const draw = () => {
+    motifs.replaceChildren(...[["⛽", "Essence"], ["🚕", "Taxi"], ["🍔", "Repas"], ["🅿️", "Parking"], ["🚇", "Transport"], ["❓", "Autre"]].map(([e, l]) =>
+      el("button", { class: "tile" + (motif === l ? " on" : ""), onclick: () => { motif = l; tap(); draw(); } }, el("span", { class: "e" }, e), l)));
+    kinds.replaceChildren(
+      el("button", { class: "tile" + (kind === "charges" ? " on" : ""), onclick: () => { kind = "charges"; draw(); } }, el("span", { class: "e" }, "🧾"), "Pour le travail"),
+      el("button", { class: "tile" + (kind === "paye" ? " on" : ""), onclick: () => { kind = "paye"; draw(); } }, el("span", { class: "e" }, "💸"), "Avance sur ma paye"));
+  };
+  draw();
+  openSheet(el("div", { class: "title" }, "🧾 Une dépense"), el("div", { class: "label" }, "1. C'était quoi ?"), motifs,
+    el("div", { class: "label", style: "margin-top:14px" }, "2. C'est pour"), kinds,
+    el("div", { class: "label", style: "margin-top:14px" }, "3. Combien ?"), amount,
+    el("button", { class: "big go", onclick: async () => { const r = await act({ type: "expense", kind, amount: amount.value, motif }); if (r && r.ok) { closeSheet(); section("money"); } } }, "✅ ENREGISTRER"));
+}
+
+// ------------------------------------------------------------------ MON STOCK
+function viewStock() {
+  const s = S.cache.stock, out = [];
+  if (!s || s.loading) return [el("div", { class: "card empty" }, el("div", { class: "e" }, "⏳"), "Je regarde…")];
+  if (!s.ok) out.push(el("div", { class: "card empty" }, el("div", { class: "e" }, "😕"), plain(s.error), el("button", { class: "big grey", onclick: () => section("stock") }, "Réessayer")));
+  else {
+    const items = Object.entries(s.items);
+    out.push(el("div", { class: "card" }, el("div", { class: "label" }, "📦 Ce que tu as sur toi (d'après le tableau)"),
+      items.length ? items.map(([p, q]) => el("div", { class: "kv" }, el("span", {}, p), el("b", {}, q))) : el("div", { class: "title" }, "Rien"),
+      el("div", { class: "muted small", style: "margin-top:8px" }, "Pas juste ? Préviens le dispatch ou le ravitailleur.")));
+  }
+  if (s && s.flavors && s.flavors.length) out.push(el("div", { class: "card" }, el("div", { class: "label" }, "🍬 Mes goûts : touche ceux que tu as encore"),
+    s.flavors.map((f) => el("div", { style: "margin-top:10px" }, el("div", { style: "font-weight:800" }, f.product),
+      f.variants.map((v) => el("button", { class: "chip" + (v.on ? " on" : ""), onclick: async () => {
+        v.on = !v.on; tap(); render(); await api("/api/me/action", { type: "flavor", product: f.product, variant: v.name, on: v.on });
+      } }, (v.on ? "✅ " : "") + v.name))))));
+  return out;
+}
+
+// ------------------------------------------------------------------ PLUS
+function viewPlus() {
+  const me = S.d.me;
+  return [
+    el("div", { class: "card" },
+      me.on_duty ? el("button", { class: "big orange-b", onclick: () => act({ type: "pause" }, "Faire une pause ? Tu ne recevras plus de course.") }, "⏸ FAIRE UNE PAUSE")
+                 : el("button", { class: "big go", onclick: () => { S.tab = "courses"; render(); } }, "▶️ REPRENDRE"),
+      el("button", { class: "big red-b", onclick: endNight }, "🏁 J'AI FINI MA SOIRÉE")),
+    el("div", { class: "card" }, el("div", { class: "label" }, "🚗 Comment tu te déplaces"), transportTiles((v) => act({ type: "transport", value: v }))),
+    positionCard(),
+    el("div", { class: "card" }, el("div", { class: "title" }, "❓ Comment ça marche"),
+      el("ol", { class: "help" },
+        el("li", {}, "Appuie sur ▶️ JE COMMENCE et partage ta position."),
+        el("li", {}, "Une course arrive : appuie sur ✋ JE LA PRENDS."),
+        el("li", {}, "Appuie sur 🗺 Y ALLER pour le GPS."),
+        el("li", {}, "Écris ton temps (⏱) : le franchisé est prévenu."),
+        el("li", {}, "Donne la commande, encaisse, puis ✅ C'EST LIVRÉ."),
+        el("li", {}, "À la fin : 🏁 J'AI FINI MA SOIRÉE.")))];
+}
+async function endNight() {
+  const r = await act({ type: "close" }, "Tu as fini ta soirée ? Tu passes hors service.");
+  if (r && r.ok) openSheet(el("div", { class: "title" }, "🌙 Bonne nuit !"), el("div", { class: "result" }, plain(r.html)),
+    el("button", { class: "big go", onclick: closeSheet }, "OK"));
+}
+
+// ------------------------------------------------------------------ fenêtre du bas, onglets
+function openSheet(...kids) {
+  $("sheet-body").replaceChildren(...nodes(kids)); $("sheet-bg").style.display = "block";
+  requestAnimationFrame(() => $("sheet").classList.add("open")); if (tg) tg.BackButton.show();
+}
+function closeSheet() { $("sheet").classList.remove("open"); $("sheet-bg").style.display = "none"; if (tg) tg.BackButton.hide(); render(); }
+$("sheet-bg").addEventListener("click", closeSheet);
+if (tg) tg.BackButton.onClick(closeSheet);
+$("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  tap(); S.tab = b.dataset.tab; window.scrollTo(0, 0);
+  if (b.dataset.tab === "money" || b.dataset.tab === "stock") section(b.dataset.tab);
+  render();
+});
+load();
+setInterval(() => { if (!document.hidden) load(); }, 8000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+</script>
+</body>
+</html>

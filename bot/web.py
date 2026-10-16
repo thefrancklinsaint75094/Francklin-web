@@ -521,12 +521,11 @@ def _fake_update(context, admin: dict, text: str, chat):
     return Update(update_id=0, message=msg)
 
 
-async def _capture(context, admin: dict, cmd: str, arg: str = "") -> list[str]:
-    """Lance une commande du chat et renvoie ses réponses au lieu de les envoyer (débrief, fin de service
-    d'un livreur, synchro, récap) : l'appli les affiche. Les avis aux autres partent normalement."""
+async def with_capture(context, user: dict, text: str, call) -> list[str]:
+    """Appelle call(update) avec un faux message « text » de cette personne : les réponses du bot qui lui
+    étaient destinées sont renvoyées (l'appli les affiche) au lieu de partir dans le chat. Les avis aux
+    autres (livreurs, franchisés, dispatch) partent normalement."""
     from telegram import Chat
-
-    from bot.handlers import menu
 
     sink: list[str] = []
 
@@ -535,12 +534,18 @@ async def _capture(context, admin: dict, cmd: str, arg: str = "") -> list[str]:
             sink.append(text)
             return None
 
+    await call(_fake_update(context, user, text, CaptureChat(id=user["telegram_id"], type="private")))
+    return sink
+
+
+async def _capture(context, admin: dict, cmd: str, arg: str = "") -> list[str]:
+    """Commande du chat dont la réponse s'affiche dans l'appli (débrief, fin de service, synchro, récap)."""
+    from bot.handlers import menu
+
     handler = menu._runners().get(cmd)
     if handler is None:
         return []
-    await handler(_fake_update(context, admin, f"/{cmd} {arg}".strip(), CaptureChat(id=admin["telegram_id"],
-                                                                                    type="private")), context)
-    return sink
+    return await with_capture(context, admin, f"/{cmd} {arg}".strip(), lambda update: handler(update, context))
 
 
 async def _run_command(context, admin: dict, cmd: str) -> dict:
@@ -660,9 +665,12 @@ async def _action(request: web.Request) -> web.Response:
 
 
 def build(ptb_app) -> web.Application:
+    from bot import web_livreur
+
     app = web.Application(client_max_size=64 * 1024)
     app[PTB] = ptb_app
     app.router.add_get("/", _index)
+    web_livreur.routes(app)
     app.router.add_get("/health", _health)
     app.router.add_post("/api/board", _board)
     app.router.add_post("/api/feed", _feed)

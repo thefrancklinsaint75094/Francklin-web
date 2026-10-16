@@ -3655,3 +3655,80 @@ async def test_webapp_does_everything(h, monkeypatch, test_config):
         assert (await act(F1, type="reset_check"))["message"] == texts.DISPATCH_ONLY
         r = await act(DISPATCH, type="reset_check")
         assert r["ok"] is False and r["html"]                        # tableau illisible : pas de remise à zéro
+
+
+async def test_livreur_app_full_night(h, test_config):
+    """Appli des livreurs : commencer, nouvelle course → JE LA PRENDS, son temps, message au franchisé,
+    « le client a pris autre chose », C'EST LIVRÉ (espèces), dépense, goûts, stock du début à confirmer,
+    fin de soirée. Mêmes effets que dans le chat ; réservée aux livreurs."""
+    import dataclasses
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import config, web
+
+    await db.create_product("DIV", "div", [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    await h.location(L1, *BASTILLE)                       # position partagée dans le chat
+
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        async def act(tg_id, **body):
+            r = await client.post("/api/me/action", json=body, headers={"X-Init-Data": _init_data(tg_id)})
+            return await r.json()
+
+        async def board(tg_id):
+            return await (await client.post("/api/me/board", headers={"X-Init-Data": _init_data(tg_id)})).json()
+
+        assert (await client.get("/livreur")).status == 200
+        assert (await client.post("/api/me/board", headers={"X-Init-Data": _init_data(F1)})).status == 403
+
+        assert (await act(L1, type="pause"))["ok"] and (await db.get_user(l1["id"]))["on_duty"] is False
+        b = await board(L1)
+        assert b["me"]["on_duty"] is False and b["me"]["position_ok"] is True
+        r = await act(L1, type="start", transport="deux_roues")
+        assert r["ok"] and (await db.get_user(l1["id"]))["on_duty"] is True
+        assert (await db.get_user(l1["id"]))["transport_mode"] == "deux_roues"
+
+        course = await order(h, F1, "rivoli")
+        b = await board(L1)
+        assert [p["id"] for p in b["proposals"]] == [course["id"]]
+        r = await act(L1, type="take", course_id=course["id"])
+        assert r["ok"] and (await db.get_course(course["id"]))["livreur_id"] == l1["id"]
+        assert h.tg.find(L1, f"Course #{course['id']} — c'est pour toi")       # la proposition devient la fiche
+
+        b = await board(L1)
+        cur = b["current"]
+        assert cur["id"] == course["id"] and cur["nav"]["maps"].startswith("https://www.google.com/maps/dir/")
+        assert cur["price"] == 60 and cur["lines"]
+        assert (await act(L1, type="eta", course_id=course["id"], minutes="abc"))["ok"] is False
+        r = await act(L1, type="eta", course_id=course["id"], minutes="25")
+        assert r["ok"] and (await db.get_course(course["id"]))["eta_minutes"] == 25
+        assert any("25 min" in t for t in h.tg.texts(F1))
+
+        r = await act(L1, type="message", course_id=course["id"], text="Je suis en bas")
+        assert r["ok"] and any("Je suis en bas" in t for t in h.tg.texts(F1))
+        assert (await board(L1))["current"]["messages"][-1] == {"mine": True, "text": "Je suis en bas",
+                                                                 "at": (await board(L1))["current"]["messages"][-1]["at"]}
+
+        r = await act(L1, type="edit", course_id=course["id"], lines=[{"p": "vodka", "q": 3, "x": 90}])
+        assert r["ok"] and (await db.get_course(course["id"]))["pending_edit"]["price"] == 90
+        assert any("Tu valides" in t for t in h.tg.texts(F1))
+
+        assert (await act(L2, type="deliver", course_id=course["id"], payment="e"))["ok"] is False   # pas la sienne
+        r = await act(L1, type="deliver", course_id=course["id"], payment="e")
+        assert r["ok"] and (await db.get_course(course["id"]))["status"] == "delivered"
+        assert (await board(L1))["night"]["n"] == 1
+
+        r = await act(L1, type="expense", kind="charges", amount="12", motif="Essence")
+        assert r["ok"] and (await db._t("expenses").select("*").execute()).data[0]["livreur_id"] == l1["id"]
+
+        # Stock de fin de soirée demandé à la fin : confirmé depuis l'appli.
+        config.set_config(dataclasses.replace(test_config, stock_declaration=True))
+        r = await act(L1, type="close")
+        assert r["ok"] and r["html"] and (await db.get_user(l1["id"]))["on_duty"] is False
+        decl = (await board(L1))["declaration"]
+        assert decl and decl["kind"] == "end"
+        assert (await act(L1, type="declare_fix", id=decl["id"], items=[{"p": "inconnu", "q": 2}]))["ok"] is False
+        r = await act(L1, type="declare_fix", id=decl["id"], items=[{"p": "DIV", "q": 2}])
+        assert r["ok"] and (await db.get_declaration(decl["id"]))["status"] == "confirmed"
+        assert (await board(L1))["declaration"] is None
