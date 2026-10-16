@@ -386,9 +386,12 @@ function viewHome() {
 
 function routeCard(r) {
   const c = r.current, a = r.arrival;
-  const late = a && a.source === "livreur" && a.in === 0;
+  const lateTraffic = a && a.source === "trafic" && a.announced && a.in - a.announced.in >= 10;
+  const late = (a && a.source === "livreur" && a.in === 0) || lateTraffic;
+  const what = !a ? "" : a.source === "trafic" ? " · 🚦 trafic" : a.source === "estimation" ? " (estimé)" : "";
   const eta = a ? el("div", { class: "eta" + (late ? " late" : "") }, el("b", {}, a.at),
-      el("span", {}, a.in === 0 ? (a.source === "livreur" ? "heure dépassée" : "sur place") : `dans ${a.in} min` + (a.source === "estimation" ? " (estimé)" : "")))
+      el("span", {}, a.in === 0 ? (a.source === "livreur" ? "heure dépassée" : "sur place") : `dans ${a.in} min${what}`),
+      a.announced && a.source === "trafic" ? el("span", { style: "display:block" }, `annoncé ${a.announced.at}`) : null)
     : el("div", { class: "eta" }, el("b", {}, "—"), el("span", {}, "pas de délai"));
   return el("div", { class: "card route tap", onclick: () => { S.seg = "assigned"; go("courses"); S.open = c.id; render(); } },
     el("div", { class: "row" }, el("span", { class: "lv" }, (r.transport || "🛵") + " " + who(r.livreur)),

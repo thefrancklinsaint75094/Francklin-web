@@ -2245,3 +2245,8 @@ def course_time_changed(course: dict, by: dict | None = None) -> str:
 
 def admin_message(admin: dict, text: str) -> str:
     return f"💬 <b>{esc(admin.get('display_name') or 'Dispatch')}</b> : {esc(text)}"
+
+
+def d_late_traffic(course: dict, livreur: dict, announced: str, traffic_at: str) -> str:
+    return (f"🚦 #{course['id']} — {esc(livreur.get('display_name') or '?')} sera en retard : annoncé vers {announced}, "
+            f"d'après le trafic plutôt vers {traffic_at} — {esc(course.get('district') or '')}")

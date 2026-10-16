@@ -173,8 +173,16 @@ def _routes(assigned: list[dict], livreurs: list[dict], positions: dict, users: 
         courses.sort(key=lambda c: (c.get("assigned_at") or "", c["id"]))
         lv = users.get(lv_id) or {}
         current = courses[0]
+        from bot.services import traffic
+
         eta = parse_ts(current.get("eta_at")) if current.get("eta_at") else None
-        arrival = {"at": hhmm(eta), "in": max(0, int((eta - now).total_seconds() // 60)), "source": "livreur"} if eta else None
+        announced = {"at": hhmm(eta), "in": max(0, int((eta - now).total_seconds() // 60))} if eta else None
+        live = traffic.live(current["id"])
+        if live:                                       # trafic en temps réel (TomTom) : la référence
+            arrival = {"at": hhmm(live["at"]), "in": max(0, int((live["at"] - now).total_seconds() // 60)),
+                       "source": "trafic", "delay": live["delay"], "announced": announced}
+        else:
+            arrival = {**announced, "source": "livreur"} if announced else None
         pos = positions.get(lv_id)
         dist = None
         if pos and current.get("lat") is not None:
