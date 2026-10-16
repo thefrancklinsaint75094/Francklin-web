@@ -7,7 +7,7 @@ from __future__ import annotations
 from telegram import Update
 
 from bot import config, messaging, texts
-from bot.handlers import address, cash, common, declare, franchise, livreur, onboarding, restock, restock_text, sales, swipe
+from bot.handlers import address, cash, user_card, common, declare, franchise, livreur, onboarding, restock, restock_text, sales, swipe
 
 
 async def on_message(update: Update, context) -> None:
@@ -33,6 +33,10 @@ async def on_message(update: Update, context) -> None:
     # Livreur : les gros boutons du menu en bas de l'écran passent avant tout le reste.
     if user["role"] == "livreur" and livreur.menu_action(update.message.text):
         await livreur.on_menu(update, context, user, livreur.menu_action(update.message.text))
+        return
+    # Fiche utilisateur : nouveau nom / prénom écrit par un admin.
+    if state == user_card.STATE and common.is_admin(user) and update.message.text:
+        await user_card.on_message(update, context, user, payload)
         return
     # Nouvelle adresse d'une course (📍 Adresse) : franchisé ou admin.
     if state == address.STATE and update.message.text:

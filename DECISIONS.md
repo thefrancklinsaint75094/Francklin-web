@@ -604,3 +604,10 @@ simple qui respecte le mur de confidentialité (§12).
      géocodée et contrôlée comme à la commande (zone), aperçu, ✅. Livreur prévenu par un vrai message + fiche
      éditée ; propositions ouvertes éditées (même bouton « Je prends ») ; événement `address_changed`. Les
      alertes d'arrivée retiennent l'adresse : une adresse changée les relance.
+
+149. **Fiche utilisateur dans /users** (l'exploitant : « quand on clique sur utilisateur, on devrait pouvoir les
+     modifier à notre guise »). La liste détaillée reste, chaque personne devient un bouton vers sa fiche
+     (`handlers/user_card.py`) : nom, prénom, rôle, service, position, bannir / réactiver / supprimer (ces trois
+     réutilisent les écrans de confirmation existants). Changer de rôle suit l'inscription : premier nom de
+     feuille libre sinon « Rôle N », courses d'un livreur relâchées, commandes et menu renvoyés. Un admin ne
+     modifie pas sa propre fiche (évite de se retirer ses droits).

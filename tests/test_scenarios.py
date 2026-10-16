@@ -3146,3 +3146,57 @@ async def test_close_livreur_end_of_service(h, monkeypatch):
 
     await h.text(DISPATCH, "/close")                                # sans nom : débrief de la journée
     assert h.tg.last(DISPATCH).text.startswith("🔒 <b>Journée close")
+
+
+async def test_user_card_edit_from_users(h):
+    """/users : chaque personne est un bouton ; sa fiche change nom, prénom, service, rôle."""
+    f1, f2, (l1, l2) = await setup_network(h)
+    await h.text(DISPATCH, "/users")
+    listing = h.tg.last(DISPATCH)
+    assert "touche une personne" in listing.text
+    await h.press_data(DISPATCH, listing, f"uc:{f2['id']}")
+    card = h.tg.messages[(DISPATCH, listing.message_id)]
+    assert card.text.startswith("👤 <b>Franchisé 2</b>") and "Nom à l'inscription : Nassim" in card.text
+
+    # Nom du franchisé
+    await h.press_data(DISPATCH, card, f"uc_edit:{f2['id']}:name")
+    assert "Nouveau nom pour Franchisé 2" in h.tg.last(DISPATCH).text
+    await h.text(DISPATCH, "Le Kiosque")
+    assert (await db.get_user(f2["id"]))["display_name"] == "Le Kiosque"
+    assert h.tg.last(DISPATCH).text.startswith("👤 <b>Le Kiosque</b>")
+
+    # Prénom du livreur, puis service / pause
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"uc:{l1['id']}")
+    card = h.tg.last(DISPATCH)
+    assert "Prénom : —" in card.text and "⏸ en pause" in card.text
+    await h.press_data(DISPATCH, card, f"uc_edit:{l1['id']}:prenom")
+    await h.text(DISPATCH, "Karim")
+    assert "Prénom : Karim" in h.tg.last(DISPATCH).text
+    card = h.tg.last(DISPATCH)
+    await h.press_data(DISPATCH, card, f"uc_duty:{l1['id']}:on")
+    assert (await db.get_user(l1["id"]))["on_duty"] is True
+    assert "🟢 en service" in h.tg.messages[(DISPATCH, card.message_id)].text
+    assert "service" in h.tg.texts(L1)[-1]
+    await h.press_data(DISPATCH, card, f"uc_duty:{l1['id']}:off")
+    assert (await db.get_user(l1["id"]))["on_duty"] is False
+
+    # Rôle : le livreur 2 devient ravitailleur (prévenu, nom de feuille proposé)
+    await h.press_data(DISPATCH, card, f"uc:{l2['id']}")
+    await h.press_data(DISPATCH, card, f"uc_role:{l2['id']}")
+    assert "Rôle de Livreur 2" in h.tg.messages[(DISPATCH, card.message_id)].text
+    await h.press_data(DISPATCH, card, f"uc_role_set:{l2['id']}:ravitailleur")
+    l2 = await db.get_user(l2["id"])
+    assert l2["role"] == "ravitailleur" and l2["display_name"].startswith("Ravitailleur")
+    assert any("Ton rôle a changé" in t for t in h.tg.texts(L2))
+    assert "Rôle : Ravitailleur" in h.tg.messages[(DISPATCH, card.message_id)].text
+
+    # Sa propre fiche n'existe pas (dispatch exclu) ; un franchisé admin ne peut pas se modifier lui-même
+    await h.text(F1, "/users")
+    await h.press_data(F1, h.tg.last(F1), f"uc:{f1['id']}")
+    mine = h.tg.last(F1)
+    assert [b["callback_data"] for row in mine.markup["inline_keyboard"] for b in row] == ["uc_list"]
+    await h.press_data(F1, mine, f"uc_edit:{f1['id']}:name")
+    assert h.tg.answers()[-1].get("text") == texts.USER_SELF
+
+    await h.press_data(F1, mine, "uc_list")
+    assert "touche une personne" in h.tg.messages[(F1, mine.message_id)].text
