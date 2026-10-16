@@ -3802,3 +3802,21 @@ async def test_ravitailleur_app(h, monkeypatch):
         assert sent
         flavors = await (await post("/api/ravi/flavors", R1)).json()
         assert flavors["ok"]
+
+
+async def test_franchises_share_every_address(h):
+    """Entre franchisés on s'entraide : chacun voit toutes les courses, adresse comprise, et peut agir dessus."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import web
+
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    course = await order(h, F2, "oberkampf")
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        board = await (await client.post("/api/board", headers={"X-Init-Data": _init_data(F1)})).json()
+        seen = next(c for c in board["pending"] + board["assigned"] if c["id"] == course["id"])
+        assert seen["address"] == course["address"] and seen["mine"] is False
+        assert seen["franchise"]["name"] == "Franchisé 2"
+        r = await (await client.post("/api/action", json={"type": "time", "course_id": course["id"], "value": "vers minuit"},
+                                     headers={"X-Init-Data": _init_data(F1)})).json()
+        assert r["ok"] and (await db.get_course(course["id"]))["requested_time"] == "vers minuit"

@@ -697,3 +697,8 @@ simple qui respecte le mur de confidentialité (§12).
      passe par `restock_text.prepare/commit` et `swipe.prepare/commit` : une seule logique de lecture et
      d'enregistrement. Le stock du box est indiqué à côté de chaque produit mais ne limite pas le chargement
      (le tableau peut être en retard sur la réalité).
+
+164. **Adresses partagées entre franchisés** (l'exploitant : « ils doivent accéder même aux adresses qu'eux n'ont
+     pas envoyées… entre franchisés on s'entraide »). C'était déjà le cas dans l'appli Dispatch (toutes les
+     courses, tous les détails, mêmes actions) ; ajout d'un repère ⭐ sur ses propres commandes et d'un filtre
+     « Toutes / Les miennes » (par défaut : toutes) pour s'y retrouver.
