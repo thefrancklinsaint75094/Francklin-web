@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Ravitaillement</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --bg: var(--tg-theme-secondary-bg-color, #f2f2f7);
+  --card: var(--tg-theme-bg-color, #ffffff);
+  --text: var(--tg-theme-text-color, #111111);
+  --muted: var(--tg-theme-hint-color, #7d7d82);
+  --line: rgba(127, 127, 127, .18);
+  --soft: rgba(127, 127, 127, .12);
+  --green: #1f9d55; --blue: #2f7cf6; --orange: #e8890c; --red: #d93a30;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--tg-theme-secondary-bg-color, #000000);
+    --card: var(--tg-theme-bg-color, #1c1c1e);
+    --text: var(--tg-theme-text-color, #f4f4f4);
+    --muted: var(--tg-theme-hint-color, #9a9aa0);
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 17px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body { padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+.top { padding: 14px 16px 6px; display: flex; align-items: center; gap: 10px; }
+.top h1 { margin: 0; font-size: 24px; flex: 1; }
+.state { font-size: 14px; font-weight: 700; padding: 6px 12px; border-radius: 99px; color: #fff; background: var(--muted); white-space: nowrap; }
+.state.on { background: var(--green); }
+main { padding: 0 12px; display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--card); border-radius: 20px; padding: 18px 16px; }
+.card.green { border: 3px solid var(--green); }
+.card.orange { border: 3px solid var(--orange); }
+.card.blue { border: 3px solid var(--blue); }
+.label { font-size: 13px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.title { font-size: 22px; font-weight: 800; margin: 0 0 6px; }
+.huge { font-size: 30px; font-weight: 900; letter-spacing: -.5px; }
+.addr { font-size: 21px; font-weight: 800; line-height: 1.25; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+.step { display: flex; gap: 12px; margin-top: 18px; }
+.step .n { width: 34px; height: 34px; border-radius: 50%; background: var(--blue); color: #fff; font-weight: 900;
+  display: flex; align-items: center; justify-content: center; flex: none; font-size: 17px; }
+.step .b { flex: 1; min-width: 0; }
+.big { display: block; width: 100%; padding: 18px 12px; border-radius: 16px; font-size: 19px; font-weight: 900;
+  text-align: center; margin-top: 12px; letter-spacing: .2px; }
+.go { background: var(--green); color: #fff; }
+.blue-b { background: var(--blue); color: #fff; }
+.orange-b { background: var(--orange); color: #fff; }
+.red-b { background: var(--red); color: #fff; }
+.grey { background: var(--soft); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.two .big { margin-top: 10px; }
+.items { margin-top: 6px; }
+.items div { font-size: 20px; font-weight: 700; padding: 4px 0; }
+.money { display: flex; align-items: baseline; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 2px dashed var(--line); }
+.money b { font-size: 30px; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+.tile { background: var(--soft); border-radius: 16px; padding: 14px 6px; text-align: center; font-weight: 800; font-size: 15px; border: 3px solid transparent; }
+.tile .e { display: block; font-size: 32px; margin-bottom: 4px; }
+.tile.on { border-color: var(--green); background: rgba(31,157,85,.12); }
+.next div { font-size: 17px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.next div:last-child { border-bottom: 0; }
+.msg { padding: 8px 12px; border-radius: 14px; margin-top: 8px; max-width: 85%; font-size: 16px; }
+.msg.them { background: var(--soft); }
+.msg.me { background: var(--blue); color: #fff; margin-left: auto; }
+.msgs { display: flex; flex-direction: column; }
+.banner { background: rgba(232,137,12,.15); color: var(--orange); font-weight: 800; border-radius: 14px; padding: 12px; margin-top: 12px; }
+.empty { text-align: center; padding: 30px 10px; }
+.empty .e { font-size: 54px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+.kv { display: flex; justify-content: space-between; font-size: 18px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.kv:last-child { border-bottom: 0; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper button { width: 46px; height: 46px; border-radius: 14px; background: var(--soft); font-size: 24px; font-weight: 900; }
+.stepper b { min-width: 34px; text-align: center; font-size: 22px; }
+.chip { display: inline-block; padding: 10px 14px; border-radius: 99px; background: var(--soft); margin: 6px 6px 0 0; font-weight: 700; border: 2px solid transparent; }
+.chip.on { background: rgba(31,157,85,.15); border-color: var(--green); }
+input, textarea { width: 100%; font: inherit; font-size: 20px; color: var(--text); background: var(--soft); border: 2px solid var(--line);
+  border-radius: 14px; padding: 14px; outline: none; }
+.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(4, 1fr);
+  background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+.tabs button { padding: 10px 0 9px; font-size: 13px; font-weight: 700; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.tabs .i { font-size: 27px; line-height: 1; }
+.tabs button.on { color: var(--blue); }
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50; display: none; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--card); border-radius: 22px 22px 0 0;
+  max-height: 90vh; overflow: auto; padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+  transform: translateY(105%); transition: transform .2s, visibility .2s; visibility: hidden; }
+.sheet.open { transform: none; visibility: visible; }
+.sheet .grab { width: 44px; height: 6px; border-radius: 99px; background: var(--line); margin: 2px auto 12px; }
+.toast { position: fixed; left: 14px; right: 14px; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 60;
+  background: #222; color: #fff; padding: 16px; border-radius: 16px; font-size: 17px; font-weight: 700; text-align: center;
+  opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: .96; }
+.result { white-space: pre-wrap; font-size: 16px; background: var(--soft); border-radius: 14px; padding: 14px; }
+.help li { margin: 8px 0; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.btns .big { margin-top: 0; padding: 15px 8px; font-size: 16px; }
+.have { font-size: 16px; margin-top: 6px; }
+.cash-due { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-size: 16px; }
+.cash-due b { font-size: 22px; }
+.prod { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.prod:last-child { border-bottom: 0; }
+.prod .nm { flex: 1; min-width: 0; font-size: 18px; font-weight: 800; }
+.prod .nm small { display: block; font-size: 13px; color: var(--muted); font-weight: 600; }
+.warn { background: rgba(217,58,48,.12); color: var(--red); font-weight: 700; border-radius: 14px; padding: 12px; }
+.refresh { margin-left: auto; font-size: 14px; font-weight: 800; color: var(--blue); }
+</style>
+</head>
+<body>
+<header class="top"><h1 id="hello">Salut 👋</h1><button class="refresh" id="refresh">↻ Actualiser</button></header>
+<main id="view"><div class="card empty"><div class="e">⏳</div>Je lis les tableaux…</div></main>
+<nav class="tabs" id="tabs">
+  <button data-tab="livreurs" class="on"><span class="i">🛵</span>Livreurs</button>
+  <button data-tab="box"><span class="i">📦</span>Les box</button>
+  <button data-tab="cash"><span class="i">💶</span>Le cash</button>
+  <button data-tab="plus"><span class="i">☰</span>Plus</button>
+</nav>
+<div class="sheet-bg" id="sheet-bg"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheet-body"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch (e) {} }
+const INIT = tg ? tg.initData : "";
+const S = { tab: "livreurs", d: null, flavors: null, busy: false };
+const $ = (id) => document.getElementById(id);
+const nodes = (...k) => k.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false);
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") n.className = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+  }
+  for (const k of nodes(kids)) n.append(k.nodeType ? k : String(k));
+  return n;
+}
+const eur = (v) => (Math.round((v || 0) * 100) / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 }) + " €";
+const plain = (s) => String(s || "").replace(/<[^>]+>/g, "").replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+const who = (l) => l.prenom ? `${l.name} (${l.prenom})` : l.name;
+const vibrate = (t) => { try { tg && tg.HapticFeedback.notificationOccurred(t); } catch (e) {} };
+const tap = () => { try { tg && tg.HapticFeedback.impactOccurred("medium"); } catch (e) {} };
+function toast(m) { const t = $("toast"); t.textContent = plain(m); t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3000); }
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Init-Data": INIT }, body: JSON.stringify(body || {}) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+async function load() {
+  try { S.d = await api("/api/ravi/board"); }
+  catch (e) { if (!S.d) $("view").replaceChildren(el("div", { class: "card empty" }, el("div", { class: "e" }, "📶"), plain(e.message) || "Pas de connexion.")); return; }
+  $("hello").textContent = `Salut ${S.d.me.prenom || S.d.me.name} 👋`;
+  if (!$("sheet").classList.contains("open")) render();
+}
+function render() {
+  if (!S.d) return;
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === S.tab));
+  $("view").replaceChildren(...nodes(({ livreurs: viewLivreurs, box: viewBox, cash: viewCash, plus: viewPlus })[S.tab]()));
+}
+const itemsText = (items) => { const e = Object.entries(items || {}); return e.length ? e.map(([p, q]) => `${q} × ${p}`).join(" · ") : "rien"; };
+const errors = () => S.d.errors.length ? el("div", { class: "warn" }, "⚠️ " + S.d.errors.map(plain).join(" · ")) : null;
+
+// ------------------------------------------------------------------ LIVREURS
+function viewLivreurs() {
+  if (!S.d.livreurs.length) return [errors(), el("div", { class: "card empty" }, el("div", { class: "e" }, "🛵"), "Aucun livreur.")];
+  return [errors(), S.d.livreurs.map((lv) => el("div", { class: "card" + (lv.on_duty ? " green" : "") },
+    el("div", { class: "row" }, el("div", { class: "title grow", style: "margin:0" }, who(lv)), el("span", { class: "muted small" }, lv.on_duty ? "🟢 en service" : "⏸ pas en service")),
+    el("div", { class: "have" }, el("span", { class: "muted" }, "Il a sur lui : "), itemsText(lv.items)),
+    lv.cash ? el("div", { class: "cash-due" }, el("span", {}, "💶 Cash à récupérer"), el("b", {}, eur(lv.cash))) : null,
+    el("div", { class: "btns" },
+      el("button", { class: "big go", onclick: () => loadSheet(lv) }, "📦 CHARGER"),
+      el("button", { class: "big grey", onclick: () => unloadSheet(lv) }, "↩️ REPRENDRE"),
+      el("button", { class: "big orange-b", onclick: () => cashSheet(lv) }, "💶 CASH"),
+      el("button", { class: "big grey", onclick: () => swipeSheet(lv) }, "↔️ DONNER À…"))))];
+}
+
+// Compteurs − / + pour une liste de produits ; max : quantité disponible (facultatif).
+function counters(list) {
+  const qty = {};
+  const box = el("div", {});
+  const draw = () => box.replaceChildren(...list.map((it) => el("div", { class: "prod" },
+    el("div", { class: "nm" }, it.p, it.hint ? el("small", {}, it.hint) : null),
+    el("div", { class: "stepper" },
+      el("button", { onclick: () => { qty[it.p] = Math.max(0, (qty[it.p] || 0) - 1); tap(); draw(); } }, "−"),
+      el("b", {}, qty[it.p] || 0),
+      el("button", { onclick: () => { if (it.max !== undefined && (qty[it.p] || 0) >= it.max) return; qty[it.p] = (qty[it.p] || 0) + 1; tap(); draw(); } }, "+")))));
+  draw();
+  return { node: box, items: () => Object.entries(qty).filter(([, q]) => q > 0).map(([p, q]) => ({ p, q })) };
+}
+function boxTiles(onPick, selected) {
+  return el("div", { class: "tiles" }, S.d.box_names.map((b) => el("button", { class: "tile" + (selected === b ? " on" : ""), onclick: () => { tap(); onPick(b); } }, el("span", { class: "e" }, "📦"), b)));
+}
+async function twoSteps(body, title) {
+  if (S.busy) return; S.busy = true; tap();
+  try {
+    const r = await api("/api/ravi/action", Object.assign({ type: "prepare" }, body));
+    if (!r.ok) { vibrate("error"); toast(r.message || plain(r.html)); return; }
+    openSheet(el("div", { class: "title" }, title), el("div", { class: "result" }, plain(r.html)),
+      el("button", { class: "big go", onclick: async () => {
+        const done = await api("/api/ravi/action", Object.assign({ type: "commit" }, body));
+        vibrate(done.ok ? "success" : "error");
+        openSheet(el("div", { class: "title" }, done.ok ? "✅ C'est enregistré" : "⚠️ Problème"), el("div", { class: "result" }, plain(done.html || done.message)),
+          el("button", { class: "big go", onclick: () => { closeSheet(); load(); } }, "OK"));
+      } }, "✅ ENREGISTRER"),
+      el("button", { class: "big grey", onclick: closeSheet }, "Annuler"));
+  } catch (e) { vibrate("error"); toast("Problème de connexion, réessaie."); }
+  finally { S.busy = false; }
+}
+
+function loadSheet(lv, box) {
+  if (!box) {
+    openSheet(el("div", { class: "title" }, `📦 Charger ${who(lv)}`), el("div", { class: "label" }, "1. De quel box ?"),
+      boxTiles((b) => loadSheet(lv, b)));
+    return;
+  }
+  const inBox = (S.d.boxes.find((b) => b.name === box) || { items: {} }).items;
+  const first = Object.keys(inBox);
+  const list = first.map((p) => ({ p, hint: `dans le box : ${inBox[p]}` }))     // indicatif : le tableau peut être en retard
+    .concat(S.d.products.filter((p) => !first.includes(p)).map((p) => ({ p })));
+  const c = counters(list);
+  const cash = el("input", { type: "number", inputmode: "decimal", placeholder: "0" });
+  openSheet(el("div", { class: "title" }, `📦 Charger ${who(lv)}`), el("div", { class: "muted" }, `Depuis ${box}`),
+    el("div", { class: "label", style: "margin-top:12px" }, "2. Combien de chaque produit ?"), c.node,
+    el("div", { class: "label", style: "margin-top:14px" }, "3. Tu as aussi récupéré du cash ? (sinon laisse vide)"), cash,
+    el("button", { class: "big blue-b", onclick: () => twoSteps({ mode: "load", livreur: lv.name, box, items: c.items(), cash: cash.value }, `📦 ${who(lv)}`) }, "VOIR LE RÉCAP"));
+}
+function unloadSheet(lv, box) {
+  const items = Object.entries(lv.items || {});
+  if (!items.length) { toast("D'après le tableau, il n'a rien sur lui."); return; }
+  if (!box) {
+    openSheet(el("div", { class: "title" }, `↩️ Reprendre à ${who(lv)}`), el("div", { class: "label" }, "1. Ça retourne dans quel box ?"),
+      boxTiles((b) => unloadSheet(lv, b)));
+    return;
+  }
+  const c = counters(items.map(([p, q]) => ({ p, hint: `il en a : ${q}`, max: Number(q) || undefined })));
+  openSheet(el("div", { class: "title" }, `↩️ Reprendre à ${who(lv)}`), el("div", { class: "muted" }, `Retour dans ${box}`),
+    el("div", { class: "label", style: "margin-top:12px" }, "2. Combien tu reprends ?"), c.node,
+    el("button", { class: "big blue-b", onclick: () => twoSteps({ mode: "unload", livreur: lv.name, box, items: c.items() }, `↩️ ${who(lv)}`) }, "VOIR LE RÉCAP"));
+}
+function cashSheet(lv) {
+  const input = el("input", { type: "number", inputmode: "decimal", placeholder: "Combien ? (en €)", value: lv.cash > 0 ? lv.cash : "" });
+  openSheet(el("div", { class: "title" }, `💶 Cash de ${who(lv)}`),
+    lv.cash ? el("div", { class: "muted" }, `D'après le tableau, il doit remettre ${eur(lv.cash)}.`) : null,
+    el("div", { class: "label", style: "margin-top:12px" }, "Combien tu as récupéré ?"), input,
+    el("button", { class: "big blue-b", onclick: () => twoSteps({ mode: "cash", livreur: lv.name, cash: input.value }, `💶 ${who(lv)}`) }, "VOIR LE RÉCAP"));
+  setTimeout(() => input.focus(), 300);
+}
+function swipeSheet(lv, to) {
+  if (!to) {
+    openSheet(el("div", { class: "title" }, `↔️ ${who(lv)} donne à…`), el("div", { class: "label" }, "1. À quel livreur ?"),
+      el("div", { class: "tiles" }, S.d.livreurs.filter((o) => o.name !== lv.name).map((o) => el("button", { class: "tile", onclick: () => { tap(); swipeSheet(lv, o); } }, el("span", { class: "e" }, "🛵"), who(o)))));
+    return;
+  }
+  const items = Object.entries(lv.items || {});
+  const c = counters(items.map(([p, q]) => ({ p, hint: `il en a : ${q}`, max: Number(q) || undefined })));
+  let all = false;
+  const allBtn = el("button", { class: "big grey" }, "TOUT SON STOCK");
+  allBtn.addEventListener("click", () => { all = !all; allBtn.className = "big " + (all ? "go" : "grey"); allBtn.textContent = all ? "✅ TOUT SON STOCK" : "TOUT SON STOCK"; });
+  const cash = el("input", { type: "number", inputmode: "decimal", placeholder: "0" });
+  openSheet(el("div", { class: "title" }, `↔️ ${who(lv)} → ${who(to)}`), el("div", { class: "muted" }, "Les box ne bougent pas."),
+    el("div", { class: "label", style: "margin-top:12px" }, "2. Quoi ?"), allBtn, items.length ? c.node : el("div", { class: "muted" }, "Rien dans le tableau."),
+    el("div", { class: "label", style: "margin-top:14px" }, "3. Du cash aussi ? (sinon laisse vide)"), cash,
+    el("button", { class: "big blue-b", onclick: () => twoSteps({ mode: "swipe", livreur: lv.name, to: to.name, all, items: c.items(), cash: cash.value }, "↔️ Transfert") }, "VOIR LE RÉCAP"));
+}
+
+// ------------------------------------------------------------------ BOX, CASH, PLUS
+function viewBox() {
+  if (!S.d.boxes.length) return [errors(), el("div", { class: "card empty" }, el("div", { class: "e" }, "📦"), "Stock des box illisible pour l'instant.")];
+  return [errors(), S.d.boxes.map((b) => el("div", { class: "card" }, el("div", { class: "title" }, "📦 " + b.name),
+    Object.keys(b.items).length ? Object.entries(b.items).map(([p, q]) => el("div", { class: "kv" }, el("span", {}, p), el("b", {}, q))) : el("div", { class: "muted" }, "vide")))];
+}
+function viewCash() {
+  const list = S.d.livreurs.filter((l) => l.cash).sort((a, b) => b.cash - a.cash);
+  const total = list.reduce((t, l) => t + l.cash, 0);
+  return [errors(),
+    el("div", { class: "card green" }, el("div", { class: "label" }, "💶 À récupérer chez les livreurs"), el("div", { class: "huge" }, eur(total)),
+      S.d.ravitailleur_cash !== null && S.d.ravitailleur_cash !== undefined ? el("div", { class: "muted", style: "margin-top:6px" }, `💼 Chez le ravitailleur : ${eur(S.d.ravitailleur_cash)}`) : null),
+    list.length ? list.map((lv) => el("div", { class: "card" }, el("div", { class: "row" }, el("div", { class: "title grow", style: "margin:0" }, who(lv)), el("b", { style: "font-size:22px" }, eur(lv.cash))),
+      el("button", { class: "big orange-b", onclick: () => cashSheet(lv) }, "💶 RÉCUPÉRER"))) : el("div", { class: "card empty" }, el("div", { class: "e" }, "🎉"), "Personne ne doit de cash.")];
+}
+function viewPlus() {
+  const f = S.flavors;
+  return [
+    el("div", { class: "card" }, el("div", { class: "title" }, "🍬 Les goûts chez les livreurs"),
+      !f ? el("div", { class: "muted" }, "Je regarde…") : f.livreurs.length ? f.livreurs.map((l) => el("div", { style: "padding:8px 0; border-bottom:1px solid var(--line)" },
+        el("div", { style: "font-weight:800" }, who(l)), Object.entries(l.flavors).map(([p, v]) => el("div", { class: "muted" }, `${p} : ${v.join(", ")}`)))) : el("div", { class: "muted" }, "Aucun goût noté.")),
+    el("div", { class: "card" }, el("div", { class: "title" }, "❓ Comment ça marche"),
+      el("ol", { class: "help" },
+        el("li", {}, "Onglet 🛵 Livreurs : touche le livreur."),
+        el("li", {}, "📦 CHARGER : choisis le box, puis + pour chaque produit."),
+        el("li", {}, "↩️ REPRENDRE : ce que tu lui reprends retourne dans un box."),
+        el("li", {}, "💶 CASH : le cash que tu lui récupères."),
+        el("li", {}, "↔️ DONNER À… : d'un livreur à un autre."),
+        el("li", {}, "Regarde le récap, puis ✅ ENREGISTRER. Le livreur et le tableau sont mis à jour.")))];
+}
+
+// ------------------------------------------------------------------ fenêtre, onglets
+function openSheet(...kids) {
+  $("sheet-body").replaceChildren(...nodes(kids)); $("sheet-bg").style.display = "block";
+  requestAnimationFrame(() => $("sheet").classList.add("open")); if (tg) tg.BackButton.show();
+}
+function closeSheet() { $("sheet").classList.remove("open"); $("sheet-bg").style.display = "none"; if (tg) tg.BackButton.hide(); render(); }
+$("sheet-bg").addEventListener("click", closeSheet);
+if (tg) tg.BackButton.onClick(closeSheet);
+$("refresh").addEventListener("click", () => { tap(); toast("J'actualise…"); load(); });
+$("tabs").addEventListener("click", async (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  tap(); S.tab = b.dataset.tab; window.scrollTo(0, 0); render();
+  if (S.tab === "plus") { try { S.flavors = await api("/api/ravi/flavors"); } catch (err) { S.flavors = { livreurs: [] }; } render(); }
+});
+load();
+setInterval(() => { if (!document.hidden && !$("sheet").classList.contains("open")) load(); }, 60000);
+</script>
+</body>
+</html>

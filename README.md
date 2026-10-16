@@ -565,6 +565,21 @@ Chaque bouton passe par exactement le même code que dans le chat (`livreur.take
 `request_edit`, `lifecycle.deliver`, `relay.relay_text`, `declare.confirm`, `cash.save_expense`…). Le chat
 reste utilisable.
 
+### 📱 L'appli des ravitailleurs « Ravitaillement »
+
+Le bouton **« Ravitaillement »** à gauche du champ de message (ou `/app`). Même esprit que l'appli des livreurs :
+gros boutons, compteurs − / +, rien à taper sauf un montant. Quatre onglets : 🛵 Livreurs · 📦 Les box ·
+💶 Le cash · ☰ Plus.
+
+- **🛵 Livreurs** (en service d'abord) : ce que chacun a sur lui, le cash à récupérer, et quatre boutons :
+  **📦 CHARGER** (le box, puis + par produit — le stock du box est indiqué — et le cash récupéré au passage),
+  **↩️ REPRENDRE** (ce qu'il a, vers quel box), **💶 CASH** (prérempli avec ce qu'il doit), **↔️ DONNER À…**
+  (vers un autre livreur, produit par produit ou tout son stock).
+- Chaque fois : **VOIR LE RÉCAP** puis **✅ ENREGISTRER** — exactement comme `/ravi` et `/swipe` (livreur et
+  dispatch prévenus, tableau Rechargement rempli, colonne Ravitailleur = son nom).
+- **📦 Les box**, **💶 Le cash** (total, par livreur, ce qui reste chez le ravitailleur), **☰ Plus** (goûts chez
+  les livreurs, mode d'emploi).
+
 ### Le menu du livreur (gros boutons, rien à taper)
 
 Dès sa validation, le livreur a un menu de gros boutons en bas de l'écran (clavier Telegram) :

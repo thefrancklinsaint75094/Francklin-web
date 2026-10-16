@@ -691,3 +691,9 @@ simple qui respecte le mur de confidentialité (§12).
      l'appli explique comment, en 4 étapes. Découpages : `livreur.take_course`, `livreur.request_edit`,
      `set_eta(course_id=…)`, `declare.confirm` ; les réponses du chat (délai, message relayé, fin de service)
      sont capturées par `web.with_capture` et affichées dans l'appli.
+
+163. **Appli des ravitailleurs « Ravitaillement »** (« fais la même chose pour les ravitailleurs »). Page `/ravi`,
+     `bot/web_ravi.py`. Le formulaire (livreur, box, compteurs, cash) est réécrit en texte /ravi ou /swipe et
+     passe par `restock_text.prepare/commit` et `swipe.prepare/commit` : une seule logique de lecture et
+     d'enregistrement. Le stock du box est indiqué à côté de chaque produit mais ne limite pas le chargement
+     (le tableau peut être en retard sur la réalité).
