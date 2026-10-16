@@ -19,6 +19,7 @@ async def on_message(update: Update, context) -> None:
             await messaging.reply(update, "Envoie /start pour activer le dispatch.")
         else:
             await messaging.reply(update, texts.START_TO_REGISTER)
+            await onboarding.newcomer(update, context, "message")
         return
     if user["status"] == "banned":
         return
