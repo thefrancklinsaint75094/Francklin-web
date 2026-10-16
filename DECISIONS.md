@@ -598,3 +598,9 @@ simple qui respecte le mur de confidentialité (§12).
      précis »). Les boutons 5 min à 1 h de la 146 sont remplacés par la saisie libre (`47`, `47 min`, `1h10`, de
      1 à 300 min), reconnue sans état de conversation : un livreur qui n'est dans aucune autre saisie et qui a une
      course en cours. Le premier temps va à la course sans délai, un nouveau temps corrige (« Nouveau délai »).
+
+148. **Changer l'adresse d'une course** (l'exploitant : « contraignant de supprimer la commande pour en faire une
+     autre »). Bouton 📍 Adresse (franchisé de la course, admins), course en attente ou prise : nouvelle adresse
+     géocodée et contrôlée comme à la commande (zone), aperçu, ✅. Livreur prévenu par un vrai message + fiche
+     éditée ; propositions ouvertes éditées (même bouton « Je prends ») ; événement `address_changed`. Les
+     alertes d'arrivée retiennent l'adresse : une adresse changée les relance.

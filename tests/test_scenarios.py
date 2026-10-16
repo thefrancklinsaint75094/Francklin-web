@@ -355,7 +355,7 @@ async def test_dispo_broadcast_take_and_deliver(h):
     assert h.tg.messages[(L2, prop2.message_id)].text == texts.proposal_taken(course["id"])
     fmsg = h.tg.find(F1, f"Course #{course['id']} — prise par Livreur 1")
     assert "lv3001" not in fmsg.text
-    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["force_deliver", "order_edit", "relay_start",
+    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["force_deliver", "order_edit", "addr", "relay_start",
                                                           "course_withdraw"]
     assert f"🚴 <b>Course #{course['id']} prise</b> par Livreur 1\nPour Franchisé 1 · 📍 12 Rue de Rivoli 75004 Paris · 60 €" in [
         x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
@@ -1297,7 +1297,7 @@ async def test_franchise_has_full_admin_powers(h):
 
     # Le franchisé l'attribue lui-même, sans attendre « Je prends ».
     fmsg = h.tg.find(F1, f"Course #{course['id']}")
-    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["assign", "order_edit", "course_withdraw"]
+    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["assign", "order_edit", "addr", "course_withdraw"]
     await h.press(F1, fmsg, "assign:")
     picker = h.tg.last(F1)
     assert "À quel livreur attribuer" in picker.text and "🟢 Livreur 1" in picker.buttons[0][0]
@@ -2659,6 +2659,58 @@ async def test_livreur_announces_eta(h):
     n = len(h.tg.inbox(F1))
     await h.text(L1, "20")
     assert len(h.tg.inbox(F1)) == n and (await db.get_course(course["id"]))["eta_minutes"] == 70
+
+
+async def test_change_course_address(h):
+    """📍 Adresse : le franchisé corrige l'adresse d'une course prise ; le livreur reçoit la nouvelle adresse
+    (message + fiche), le dispatch est prévenu, l'alerte « sur place » repart. Course en attente : les
+    propositions ouvertes sont corrigées. Erreurs : adresse introuvable, hors zone, pas sa course."""
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    card = h.tg.messages[(F1, (await db.get_course(course["id"]))["franchise_message_id"])]
+    assert f"addr:{course['id']}" in [d for _, d in card.buttons]
+
+    await h.press_data(L2, card, f"addr:{course['id']}")             # un autre livreur : non
+    assert h.tg.answers()[-1].get("text") == texts.COURSE_FINISHED
+    await h.press_data(F1, card, f"addr:{course['id']}")
+    assert h.tg.last(F1).text.startswith(f"📍 <b>Course #{course['id']} — nouvelle adresse</b>")
+    await h.text(F1, "99 rue qui n'existe pas")
+    assert "Je n'arrive pas à localiser" in h.tg.last(F1).text
+    await h.text(F1, "3 rue de la République, Lyon")
+    assert "hors zone" in h.tg.last(F1).text
+    await h.text(F1, "8 rue Oberkampf, 75011 Paris\ncode 7788, 3e étage")
+    preview = h.tg.last(F1)
+    assert "<b>Nouvelle : 8 Rue Oberkampf 75011 Paris</b>" in preview.text and "🔑 code 7788, 3e étage" in preview.text
+    await h.press_data(F1, preview, "addr_ok")
+    c = await db.get_course(course["id"])
+    assert (c["address"], c["district"], c["address_detail"], c["status"], c["livreur_id"]) == (
+        "8 Rue Oberkampf 75011 Paris", "Paris 11e", "code 7788, 3e étage", "assigned", l1["id"])
+    alert = h.tg.find(L1, f"⚠️📍 <b>Nouvelle adresse — course #{course['id']}</b>").text
+    assert "8 Rue Oberkampf 75011 Paris" in alert and "au lieu de : 12 Rue de Rivoli" in alert
+    assert "8 Rue Oberkampf" in h.tg.messages[(L1, c["livreur_message_id"])].text      # fiche à jour
+    assert any(t.startswith(f"📍 #{course['id']} — nouvelle adresse (par Franchisé 1)") for t in h.tg.texts(DISPATCH))
+    await h.press_data(F1, preview, "addr_ok")                       # second appui : expiré
+    assert h.tg.answers()[-1]["text"] == texts.ADDRESS_EXPIRED
+
+    # Déjà « sur place » à l'ancienne adresse : l'alerte repart pour la nouvelle.
+    await h.location(L1, c["lat"], c["lon"], edited=True, message_id=L1)
+    assert any(t.startswith("🏁 Livreur 1 est sur place") for t in h.tg.texts(F1))
+
+    # Course en attente : le dispatch change l'adresse depuis /encours ; la proposition est corrigée.
+    await go_on_duty(h, L2, REPUBLIQUE)
+    course2 = await order(h, F2, "rivoli")
+    proposal = next((m for m in h.tg.inbox(L2) if f"#{course2['id']}" in m.text), None)
+    assert proposal is not None and "Paris 4e" in proposal.text
+    await h.press_data(DISPATCH, h.tg.last(F2), f"addr:{course2['id']}")
+    await h.text(DISPATCH, "8 rue Oberkampf, 75011 Paris")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), "addr_ok")
+    c2 = await db.get_course(course2["id"])
+    assert c2["district"] == "Paris 11e" and c2["status"] == "pending"
+    assert any(f"#{course2['id']} a été changée par Dispatch" in t for t in h.tg.texts(F2))
+    fixed = h.tg.messages[(L2, proposal.message_id)]                 # proposition corrigée, bouton gardé
+    assert "Paris 11e" in fixed.text and fixed.buttons[0][1] == f"course_take:{course2['id']}"
 
 
 def _decl_id(msg) -> int:

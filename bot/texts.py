@@ -2045,3 +2045,48 @@ def d_newcomer(full_name: str | None, username: str | None, what: str) -> str:
     step = "vient d'ouvrir le bot (/start), choix du rôle en cours" if what == "/start" else "message reçu sans inscription"
     return f"👋 Nouvelle personne sur le bot : {who} — {step}."
 
+
+# ================================================================ changement d'adresse d'une course
+
+ADDRESS_CANCELLED = "Adresse inchangée."
+ADDRESS_EXPIRED = "Changement d'adresse expiré : touche à nouveau 📍 Adresse."
+
+
+def address_ask(course: dict) -> str:
+    return (f"📍 <b>Course #{course['id']} — nouvelle adresse</b>\n"
+            f"Adresse actuelle : {esc(course['address'])}\n\n"
+            "Écris la bonne adresse (numéro, rue, ville).\n"
+            "Sur une 2e ligne si besoin : digicode, étage, interphone…")
+
+
+def address_preview(course: dict, new: dict) -> str:
+    lines = [f"📍 <b>Course #{course['id']}</b>", f"Avant : {esc(course['address'])}",
+             f"<b>Nouvelle : {esc(new['address'])}</b> ({esc(new['district'])})"]
+    if new.get("address_detail"):
+        lines.append(f"🔑 {esc(new['address_detail'])}")
+    lines += ["", "C'est la bonne adresse ?"]
+    return "\n".join(lines)
+
+
+def address_done(course: dict) -> str:
+    who = "Le livreur est prévenu." if course["status"] == "assigned" else "Les livreurs voient la nouvelle adresse."
+    return f"✅ Course #{course['id']} — adresse changée : {esc(course['address'])}\n{who}"
+
+
+def address_for_livreur(course: dict, old: str) -> str:
+    lines = [f"⚠️📍 <b>Nouvelle adresse — course #{course['id']}</b>", f"<b>{esc(course['address'])}</b>"]
+    if course.get("address_detail"):
+        lines.append(f"🔑 {esc(course['address_detail'])}")
+    lines.append(f"(au lieu de : {esc(old)})")
+    return "\n".join(lines)
+
+
+def address_for_franchise(course: dict, old: str, by: dict) -> str:
+    return (f"📍 L'adresse de ta course #{course['id']} a été changée par {esc(by.get('display_name') or '?')} :\n"
+            f"<b>{esc(course['address'])}</b> (au lieu de {esc(old)})")
+
+
+def d_address_changed(course: dict, old: str, by: dict) -> str:
+    return (f"📍 #{course['id']} — nouvelle adresse (par {esc(by.get('display_name') or '?')}) : "
+            f"<b>{esc(course['address'])}</b> (au lieu de {esc(old)})")
+

@@ -21,7 +21,7 @@ MAX_SPEED_MS = 20.0              # au-delà : saut de position, pas une vitesse
 MIN_SAMPLE_SECONDS = 5
 MAX_SAMPLE_SECONDS = 600
 
-_notified: set[tuple[str, int, str]] = set()   # (type, course, assigned_at) déjà annoncés (cache ; la base fait foi)
+_notified: set[tuple] = set()   # (type, course, assigned_at, adresse) déjà annoncés (cache ; la base fait foi)
 ARRIVAL = "arrival_notified"
 ONSITE = "onsite_notified"
 
@@ -54,20 +54,26 @@ def should_notify(distance_m: float, eta: int, radius_m: int, minutes: int) -> b
     return distance_m <= radius_m or eta <= minutes
 
 
+def _same(payload: dict, course: dict) -> bool:
+    """Même attribution et même adresse (une adresse changée relance les alertes)."""
+    return (payload.get("assigned_at") == course.get("assigned_at")
+            and payload.get("address", course.get("address")) == course.get("address"))
+
+
 async def _already(course: dict, kind: str = ARRIVAL) -> bool:
-    key = (kind, course["id"], str(course.get("assigned_at")))
+    key = (kind, course["id"], str(course.get("assigned_at")), course.get("address"))
     if key in _notified:
         return True
     events = await db.list_events(course["id"], kind)
-    if any((e.get("payload") or {}).get("assigned_at") == course.get("assigned_at") for e in events):
+    if any(_same(e.get("payload") or {}, course) for e in events):
         _notified.add(key)
         return True
     return False
 
 
 async def _mark(course: dict, livreur: dict, kind: str, dist: float, eta: int | None = None) -> None:
-    _notified.add((kind, course["id"], str(course.get("assigned_at"))))
-    payload = {"assigned_at": course.get("assigned_at"), "distance_m": int(dist)}
+    _notified.add((kind, course["id"], str(course.get("assigned_at")), course.get("address")))
+    payload = {"assigned_at": course.get("assigned_at"), "address": course.get("address"), "distance_m": int(dist)}
     if eta is not None:
         payload["eta_min"] = eta
     await db.log_event(kind, course["id"], livreur["id"], payload)
