@@ -19,6 +19,7 @@ create table users (
   conversation_state text,                          -- null | 'awaiting_role' | 'awaiting_name' | 'correcting' | 'relaying'
   state_payload   jsonb,                             -- ex : {"draft_id": "..."} ou {"course_id": 142}
   state_expires_at timestamptz,
+  notify_level    text not null default 'essentiel' check (notify_level in ('essentiel','tout')),  -- messages reçus
   created_at      timestamptz not null default now()
 );
 
@@ -221,3 +222,14 @@ create table stock_declarations (
 );
 create unique index stock_declarations_once on stock_declarations (livreur_id, kind, night);
 alter table stock_declarations enable row level security;
+
+-- Fil d'activité de la mini-application : tous les avis du dispatch.
+create table feed (
+  id          bigserial primary key,
+  created_at  timestamptz not null default now(),
+  text        text not null,
+  team        boolean not null default true,         -- visible des franchisés (sinon dispatch seul)
+  important   boolean not null default false
+);
+create index feed_created_at on feed (created_at desc);
+alter table feed enable row level security;

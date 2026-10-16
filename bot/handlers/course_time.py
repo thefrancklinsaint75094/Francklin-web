@@ -59,10 +59,15 @@ async def on_message(update: Update, context, user: dict, payload: dict) -> None
         await messaging.reply(update, texts.COURSE_TIME_INVALID, keyboards.course_time_cancel())
         return
     await db.clear_state(user["id"])
+    course = await apply(context, user, course, value)
+    await messaging.reply(update, texts.course_time_done(course))
+
+
+async def apply(context, user: dict, course: dict, value: str | None) -> dict:
+    """Nouvelle heure souhaitée (None : enlevée) ; livreur, propositions, franchisé et dispatch à jour."""
     old = course.get("requested_time")
     course = await db.update_course(course["id"], {"requested_time": value}) or {**course, "requested_time": value}
     await db.log_event("requested_time_changed", course["id"], user["id"], {"from": old, "to": value})
-    await messaging.reply(update, texts.course_time_done(course))
 
     franchise = await db.get_user(course["franchise_id"])
     livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
@@ -79,3 +84,4 @@ async def on_message(update: Update, context, user: dict, payload: dict) -> None
         context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"], course["franchise_id"]],
         text=texts.course_time_changed(course, user))
     await lifecycle.refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)
+    return course

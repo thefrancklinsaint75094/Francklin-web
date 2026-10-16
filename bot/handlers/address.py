@@ -50,28 +50,35 @@ async def on_message(update: Update, context, user: dict, payload: dict) -> None
         await db.clear_state(user["id"])
         await messaging.reply(update, texts.COURSE_FINISHED)
         return
-    first, _, rest = (update.message.text or "").strip().partition("\n")
+    new, error = await lookup(update.message.text or "")
+    if new is None:
+        await messaging.reply(update, error or texts.address_ask(course),
+                              None if error == texts.GENERIC_ERROR else keyboards.address_cancel())
+        return
+    sent = await messaging.reply(update, texts.address_preview(course, new), keyboards.address_confirm())
+    await _save(user, {"course_id": course["id"], "new": new, "msg": sent.message_id if sent else None})
+
+
+async def lookup(text: str) -> tuple[dict | None, str | None]:
+    """Texte écrit (adresse, 2e ligne facultative : digicode, étage…) → (champs de la course, None), ou
+    (None, explication) : introuvable, hors zone, service indisponible ; (None, None) : trop court."""
+    first, _, rest = (text or "").strip().partition("\n")
     address, detail = first.strip(), " ".join(rest.split())[:MAX_DETAIL] or None
     if len(address) < 5:
-        await messaging.reply(update, texts.address_ask(course), keyboards.address_cancel())
-        return
+        return None, None
     try:
         geo = await geocoding.geocode(address)
     except geocoding.GeocodingUnavailable:
-        await messaging.reply(update, texts.GENERIC_ERROR)
-        return
+        return None, texts.GENERIC_ERROR
     if geo is None:
-        await messaging.reply(update, texts.geocode_not_found(address), keyboards.address_cancel())
-        return
+        return None, texts.geocode_not_found(address)
     if not geocoding.in_zone(geo.postcode, config.get().departements_autorises):
-        await messaging.reply(update, texts.out_of_zone(f"{geo.city} {geo.postcode}".strip()), keyboards.address_cancel())
-        return
+        return None, texts.out_of_zone(f"{geo.city} {geo.postcode}".strip())
     new = {"address": geo.label, "postal_code": geo.postcode, "district": geocoding.district(geo.postcode, geo.city),
            "lat": geo.lat, "lon": geo.lon}
     if detail:
         new["address_detail"] = detail
-    sent = await messaging.reply(update, texts.address_preview(course, new), keyboards.address_confirm())
-    await _save(user, {"course_id": course["id"], "new": new, "msg": sent.message_id if sent else None})
+    return new, None
 
 
 @common.callback
@@ -95,10 +102,16 @@ async def action(update: Update, context):
     if not _can_edit(user, course):
         await messaging.edit_markup(context.bot, chat_id, msg_id, None)
         return texts.COURSE_FINISHED, True
-    old = course["address"]
-    course = await db.update_course(course["id"], payload["new"]) or {**course, **payload["new"]}
-    await db.log_event("address_changed", course["id"], user["id"], {"from": old, "to": course["address"]})
+    course = await apply(context, user, course, payload["new"])
     await messaging.edit(context.bot, chat_id, msg_id, texts.address_done(course))
+    return "Adresse changée ✅"
+
+
+async def apply(context, user: dict, course: dict, new: dict) -> dict:
+    """Nouvelle adresse appliquée ; livreur, propositions ouvertes, franchisé et dispatch prévenus."""
+    old = course["address"]
+    course = await db.update_course(course["id"], new) or {**course, **new}
+    await db.log_event("address_changed", course["id"], user["id"], {"from": old, "to": course["address"]})
 
     franchise = await db.get_user(course["franchise_id"])
     livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
@@ -116,7 +129,7 @@ async def action(update: Update, context):
         context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"], course["franchise_id"]],
         text=texts.d_address_changed(course, old, user))
     await lifecycle.refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)
-    return "Adresse changée ✅"
+    return course
 
 
 async def _refresh_proposals(context, course: dict) -> None:

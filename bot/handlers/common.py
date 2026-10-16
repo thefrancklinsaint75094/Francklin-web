@@ -10,7 +10,7 @@ from collections import defaultdict
 from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.error import TelegramError
 
-from bot import db, messaging, texts
+from bot import config, db, messaging, texts
 from bot.timeutil import now_utc, parse_ts
 
 log = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def is_dispatch(user: dict | None) -> bool:
 
 # Le ☰ ne garde que l'essentiel ; tout le reste est dans /menu (handlers/menu.py), et chaque commande
 # marche toujours en la tapant.
-_ADMIN_COMMANDS = [("menu", "Tout le menu, par chapitre"), ("encours", "Ce soir : en attente, en cours, livrées"),
+_ADMIN_COMMANDS = [("app", "📱 L'appli Dispatch"), ("menu", "Tout le menu, par chapitre"), ("encours", "Ce soir : en attente, en cours, livrées"),
                    ("livreurs", "Mettre un livreur en service / pause"), ("users", "Fiches des utilisateurs")]
 
 COMMANDS = {
@@ -120,6 +120,22 @@ async def set_commands(bot, user: dict) -> None:
                                   scope=BotCommandScopeChat(chat_id=user["telegram_id"]))
     except TelegramError as exc:
         log.warning("set_my_commands impossible : %s", exc)
+    await set_menu_button(bot, user)
+
+
+async def set_menu_button(bot, user: dict) -> None:
+    """Admins : le bouton à gauche du champ de saisie ouvre la mini-application « Dispatch »
+    (sinon, et pour les autres rôles, la liste des commandes)."""
+    from telegram import MenuButtonCommands, MenuButtonWebApp, WebAppInfo
+
+    url = config.get().webapp_url
+    if not url:
+        return
+    button = (MenuButtonWebApp("Dispatch", WebAppInfo(url)) if url and is_admin(user) else MenuButtonCommands())
+    try:
+        await bot.set_chat_menu_button(chat_id=user["telegram_id"], menu_button=button)
+    except TelegramError as exc:
+        log.info("Bouton de menu impossible : %s", exc)
 
 
 async def refresh_all_commands(bot) -> None:

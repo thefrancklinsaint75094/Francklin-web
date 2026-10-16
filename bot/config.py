@@ -49,6 +49,15 @@ def _names(name: str, default: str) -> tuple[str, ...]:
     return tuple(n.strip() for n in value.split(",") if n.strip() and n.strip() != "-")
 
 
+def _webapp_url() -> str | None:
+    """WEBAPP_URL, sinon le domaine public Railway (RAILWAY_PUBLIC_DOMAIN)."""
+    url = _raw("WEBAPP_URL")
+    if url:
+        return url.rstrip("/")
+    domain = _raw("RAILWAY_PUBLIC_DOMAIN")
+    return f"https://{domain}" if domain else None
+
+
 def _mode() -> str:
     """EXTRACTION_MODE : « regles » (lecture par règles, sans IA) ou « ia ».
     Sans valeur : « ia » si une clé Anthropic est fournie, sinon « regles »."""
@@ -74,6 +83,9 @@ class Config:
     broadcast_wave_seconds: int = 120
     max_courses_per_livreur: int = 0           # courses en même temps par livreur (0 : sans limite)
     notify_franchises: bool = True             # tous les franchisés reçoivent les avis du dispatch
+    quiet_notifications: bool = True           # niveau par personne (users.notify_level) ; sinon tout en messages
+    webapp_url: str | None = None              # adresse publique de la mini-application (vide : pas d'appli)
+    web_port: int | None = None                # port du serveur web (Railway : PORT)
     position_stale_minutes: int = 30
     soon_free_radius_meters: int = 400
     draft_expiry_minutes: int = 15
@@ -126,6 +138,9 @@ class Config:
             broadcast_wave_seconds=_int("BROADCAST_WAVE_SECONDS", 120),
             max_courses_per_livreur=_int("MAX_COURSES_PER_LIVREUR", 0),
             notify_franchises=(_raw("NOTIFY_FRANCHISES") or "1").lower() not in ("0", "non", "false", "off"),
+            quiet_notifications=(_raw("QUIET_NOTIFICATIONS") or "1").lower() not in ("0", "non", "false", "off"),
+            webapp_url=_webapp_url(),
+            web_port=int(_raw("PORT")) if (_raw("PORT") or "").isdigit() else None,
             position_stale_minutes=_int("POSITION_STALE_MINUTES", 30),
             soon_free_radius_meters=_int("SOON_FREE_RADIUS_METERS", 400),
             draft_expiry_minutes=_int("DRAFT_EXPIRY_MINUTES", 15),

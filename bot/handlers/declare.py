@@ -141,4 +141,5 @@ async def remind(context) -> None:
         if livreur is None or livreur["status"] != "active":
             continue
         await _prompt(context.bot, livreur, decl, reminder=True)
-        await messaging.notify_dispatch(context.bot, texts.d_declare_missing(livreur, decl["kind"], REMIND_MINUTES))
+        await messaging.notify_dispatch(context.bot, texts.d_declare_missing(livreur, decl["kind"], REMIND_MINUTES),
+                                        important=True)

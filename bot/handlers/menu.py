@@ -78,6 +78,24 @@ async def menu(update: Update, context) -> None:
     await messaging.reply(update, texts.MENU_HOME, keyboards.menu_chapters())
 
 
+async def open_app(update: Update, context) -> None:
+    """/app : bouton qui ouvre la mini-application (le même que le bouton « Dispatch » du menu)."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+
+    from bot import config
+
+    user = await common.actor(update)
+    if not await common.require(update, user):
+        return
+    url = config.get().webapp_url
+    if not common.is_admin(user) or not url:
+        await messaging.reply(update, texts.NOT_FOR_YOU if not common.is_admin(user) else texts.APP_UNAVAILABLE)
+        return
+    await common.set_menu_button(context.bot, user)
+    await messaging.reply(update, texts.APP_OPEN, InlineKeyboardMarkup(
+        [[InlineKeyboardButton("📱 Ouvrir Dispatch", web_app=WebAppInfo(url))]]))
+
+
 @common.callback
 async def action(update: Update, context):
     """mn : chapitres · mn:<chapitre> : ses boutons · mn_run:<commande> : lance la commande."""
