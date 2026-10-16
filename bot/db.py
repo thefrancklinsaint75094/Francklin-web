@@ -531,6 +531,10 @@ async def events_after(type_: str, after_id: int, limit: int = 20) -> list[dict]
     return res.data
 
 
+async def last_event(type_: str) -> dict | None:
+    return _first(await _t("events").select("*").eq("type", type_).order("id", desc=True).limit(1).execute())
+
+
 async def last_event_id(type_: str) -> int:
     res = await _t("events").select("id").eq("type", type_).order("id", desc=True).limit(1).execute()
     return res.data[0]["id"] if res.data else 0

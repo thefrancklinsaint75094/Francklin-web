@@ -953,6 +953,26 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     await h.text(DISPATCH, "/synchro")
     assert "Google Sheets à jour" in h.tg.last(DISPATCH).text and len(sent) == 1
 
+    # Nuit passée de la semaine : /synchro hier, ou le bouton du jour sous le résultat.
+    await db.update_course(course["id"], {"delivered_at": iso(now_utc() - timedelta(days=1))})
+    sent.clear()
+    await h.text(DISPATCH, "/synchro")
+    assert "Aucune course livrée" in h.tg.last(DISPATCH).text and not sent
+    yesterday = h.tg.last(DISPATCH).buttons[0][1]
+    assert yesterday.startswith("sy:")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), yesterday)
+    assert "de la nuit du" in h.tg.last(DISPATCH).text and len(sent) == 1
+    sent.clear()
+    await h.text(DISPATCH, "/synchro hier")
+    assert len(sent) == 1
+    await h.text(DISPATCH, "/synchro n'importe quoi")
+    assert h.tg.last(DISPATCH).text == texts.SYNCHRO_HELP
+    # Après un /reset, la semaine d'avant n'est plus renvoyable (elle écraserait l'onglet du même jour).
+    await db.log_event("cloture")
+    sent.clear()
+    await h.text(DISPATCH, "/synchro hier")
+    assert "pas dans la semaine en cours" in h.tg.last(DISPATCH).text and not sent
+
 
 async def test_payment_mode_at_delivery(h, monkeypatch):
     from bot.services import sheets
@@ -1343,10 +1363,20 @@ async def test_franchise_has_full_admin_powers(h):
     await h.text(F1, "/journal")
     assert "📋 Journal nuit du" in h.tg.find(F1, "📋 Journal").text
     assert len([p for m, p in h.tg.calls if m == "sendDocument" and int(p["chat_id"]) == F1]) == 1
-    await h.text(F1, "/bannir")
-    assert "Franchisé 1" not in " ".join(b for b, _ in h.tg.last(F1).buttons)
-    await h.press_data(F1, h.tg.last(F1), f"ban:{f1['id']}")
-    assert h.tg.answers()[-1]["text"] == texts.CANNOT_BAN_SELF
+    # Accès des personnes et remise à zéro : réservés au dispatch.
+    for cmd in ("/bannir", "/reactiver", "/supprimer", "/prenom", "/synchro", "/reset"):
+        await h.text(F1, cmd)
+        assert h.tg.last(F1).text == texts.DISPATCH_ONLY, cmd
+    n = len(h.tg.inbox(F1))
+    await h.press_data(F1, h.tg.last(F1), f"ban:{l1['id']}")
+    assert len(h.tg.inbox(F1)) == n and (await db.get_user(l1["id"]))["status"] == "active"
+    await h.text(F1, "/users")
+    assert not any(d.startswith(("approve:", "reject:")) for _, d in h.tg.last(F1).buttons)
+    await h.press_data(F1, h.tg.last(F1), f"uc:{l1['id']}")
+    card = h.tg.last(F1)
+    assert [d.split(":")[0] for _, d in card.buttons] == ["uc_duty", "loc", "uc_list"]
+    await h.press_data(F1, card, f"uc_role:{l1['id']}")
+    assert h.tg.answers()[-1].get("text") == texts.DISPATCH_ONLY
 
     # Pause par un admin : le livreur est prévenu.
     await h.text(DISPATCH, "/livreurs")
@@ -1814,12 +1844,16 @@ async def test_weekly_cloture(h, monkeypatch):
     assert h.tg.messages[(DISPATCH, check.message_id)].text == texts.CLOTURE_CANCELLED
     assert [c[0] for c in calls] == ["stock_livreurs", "cash_livreurs"]
 
-    # Un franchisé (pleins pouvoirs) clôture ; le bot oublie les mouvements de l'ancienne semaine.
-    stock_service.add_inflight(l1["id"], "course:1", {"US": -1})
+    # Réservé au dispatch : un franchisé ne remet pas la semaine à zéro.
     await h.text(F1, "/cloture")
-    check = h.tg.last(F1)
-    await h.press_data(F1, check, "cl_go")
-    done = h.tg.messages[(F1, check.message_id)]
+    assert h.tg.last(F1).text == texts.DISPATCH_ONLY
+
+    # Le dispatch clôture ; le bot oublie les mouvements de l'ancienne semaine.
+    stock_service.add_inflight(l1["id"], "course:1", {"US": -1})
+    await h.text(DISPATCH, "/cloture")
+    check = h.tg.last(DISPATCH)
+    await h.press_data(DISPATCH, check, "cl_go")
+    done = h.tg.messages[(DISPATCH, check.message_id)]
     action, payload, timeout = calls[-1]
     assert action == "cloture" and payload["onglet"] in sheets.JOURS and payload["libelle"].startswith("Reset du ")
     assert timeout == cloture_h.TIMEOUT
@@ -1827,7 +1861,7 @@ async def test_weekly_cloture(h, monkeypatch):
     assert "• Box 1 : 28 DIV · 112 US" in done.text and "• Box 2 : vide" in done.text
     assert "• Livreur 1 : 4 DIV · 4 US" in done.text
     assert stock_service.inflight_deltas(l1["id"]) == {}
-    assert "✅ <b>Semaine remise à zéro</b>" in h.tg.last(DISPATCH).text and "(par Franchisé 1)" in h.tg.last(DISPATCH).text
+    assert "✅ <b>Semaine remise à zéro</b>" in done.text
     assert (await db._t("events").select("*").eq("type", "cloture").execute()).data
 
     # Deuxième appui (ou deuxième admin) juste après : refusé.

@@ -605,3 +605,39 @@ function key_(v) {
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
+
+// Colonnes de calcul masquées : protection « avertissement seulement » (le script et le bot écrivent
+// toujours ; une personne qui modifie reçoit un avertissement). Choisis « protegerCalculs » puis ▶ Exécuter
+// après avoir masqué de nouvelles colonnes de calcul ; sans effet sur ce qui est déjà protégé.
+const PROTECT_LABEL = 'Calculs automatiques (colonnes masquées) — ne pas modifier';
+
+function protegerCalculs() {
+  const files = [spreadsheet_()];
+  if (RECHARGE_SPREADSHEET_ID) files.push(SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID));
+  if (COMPTA_SPREADSHEET_ID) files.push(SpreadsheetApp.openById(COMPTA_SPREADSHEET_ID));
+  let added = 0;
+  files.forEach(function (ss) {
+    ss.getSheets().forEach(function (sheet) {
+      if (sheet.isSheetHidden()) return;
+      const done = {};
+      sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(function (p) {
+        if (p.getDescription() === PROTECT_LABEL) done[p.getRange().getA1Notation()] = true;
+      });
+      const last = sheet.getMaxColumns();
+      let c = 1;
+      while (c <= last) {
+        if (!sheet.isColumnHiddenByUser(c)) { c++; continue; }
+        const start = c;
+        while (c <= last && sheet.isColumnHiddenByUser(c)) c++;
+        const range = sheet.getRange(1, start, sheet.getMaxRows(), c - start);
+        const a1 = range.getA1Notation();
+        const whole = sheet.getRange(1, start).getA1Notation().replace(/\d+/, '') + ':' +
+          sheet.getRange(1, c - 1).getA1Notation().replace(/\d+/, '');
+        if (done[a1] || done[whole]) continue;
+        range.protect().setDescription(PROTECT_LABEL).setWarningOnly(true);
+        added++;
+      }
+    });
+  });
+  return added + ' protection(s) ajoutée(s)';
+}

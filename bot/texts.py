@@ -128,7 +128,9 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
     "☰ <b>/menu</b> — tout le reste, par chapitre : 🚚 Courses · 🛵 Livreurs · 👥 Utilisateurs · 📦 Stock · "
-    "💶 Argent · 📊 Bilans."
+    "💶 Argent · 📊 Bilans.\n"
+    "🔒 Réservé au dispatch : valider, bannir, réactiver ou supprimer quelqu'un, changer un rôle ou un nom, "
+    "/synchro et la remise à zéro de la semaine."
 )
 
 
@@ -169,6 +171,7 @@ LIVREUR_TEXT_HINT = ("Course livrée ? Écris <b>OK</b> (ou « OK CB » si payé
                      "ou <b>Modif</b> si le client a pris autre chose.\n"
                      "Pour parler à un franchisé, utilise le bouton 💬 Contacter sur ta course.")
 NOT_FOR_YOU = "Cette commande n'est pas disponible pour toi."
+DISPATCH_ONLY = "🔒 Réservé au dispatch."
 CANCELLED_OP = "OK, rien n'a changé."
 
 
@@ -1160,9 +1163,11 @@ def d_sheet_errors(events: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def sheets_synced(total: int, added: int, restocks: int = 0, expenses: int = 0, sold: int = 0) -> str:
+def sheets_synced(total: int, added: int, restocks: int = 0, expenses: int = 0, sold: int = 0,
+                  label: str | None = None) -> str:
+    night = f"la nuit du {esc(label)}" if label else "cette nuit"
     if total == 0 and restocks == 0 and expenses == 0 and sold == 0:
-        return "📗 Aucune course livrée ni rechargement cette nuit : rien à envoyer."
+        return f"📗 Aucune course livrée ni rechargement {night} : rien à envoyer."
     what = [plural(total, "course")] if total else []
     if restocks:
         what.append(plural(restocks, "rechargement"))
@@ -1170,8 +1175,18 @@ def sheets_synced(total: int, added: int, restocks: int = 0, expenses: int = 0, 
         what.append(plural(expenses, "dépense"))
     if sold:
         what.append(plural(sold, "vente saisie") if sold == 1 else f"{sold} ventes saisies")
+    of = f"de la nuit du {esc(label)}" if label else "de la nuit"
     return (f"📗 Google Sheets à jour : {added} ajout{'s' if added > 1 else ''} sur "
-            f"{', '.join(what[:-1]) + ' et ' + what[-1] if len(what) > 1 else what[0]} de la nuit.")
+            f"{', '.join(what[:-1]) + ' et ' + what[-1] if len(what) > 1 else what[0]} {of}.")
+
+
+SYNCHRO_HELP = ("📗 /synchro renvoie la nuit en cours. Une autre nuit de la semaine : /synchro hier, "
+                "/synchro lundi ou /synchro 14/10.")
+
+
+def synchro_out_of_week(label: str) -> str:
+    return (f"⛔ La nuit du {esc(label)} n'est pas dans la semaine en cours (depuis le dernier /reset) : "
+            "la renvoyer écraserait l'onglet du même jour. Renvoie-la à la main si besoin.")
 
 
 def sheets_failed(error: str) -> str:

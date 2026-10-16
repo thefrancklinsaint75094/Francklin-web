@@ -490,23 +490,30 @@ def address_confirm() -> M:
 ROLE_ICON = {"franchise": "🏪", "livreur": "🛵", "ravitailleur": "📦"}
 
 
-def users_overview(active: list[dict], pending: list[dict]) -> M:
+def users_overview(active: list[dict], pending: list[dict], manage: bool = True) -> M:
     """/users : un bouton par personne (deux par ligne), puis les inscriptions à valider."""
     people = []
     for u in active:
         mark = "⛔ " if u["status"] == "banned" else ROLE_ICON.get(u["role"], "") + " "
         people.append(B(f"{mark}{u.get('display_name') or ROLE_LABEL[u['role']]}"[:40], callback_data=f"uc:{u['id']}"))
     rows = [people[i:i + 2] for i in range(0, len(people), 2)]
-    pend = pending_users(pending)
+    pend = pending_users(pending) if manage else None
     if pend:
         rows += pend.inline_keyboard
     return M(rows) if rows else None
 
 
-def user_card(user: dict, can_act: bool, sheet_names: bool) -> M:
+def user_card(user: dict, can_act: bool, sheet_names: bool, manage: bool = True) -> M:
+    """manage : le dispatch (noms, rôle, accès) ; un franchisé n'a que service / pause et position."""
     uid = user["id"]
     rows = [[B("↩️ Liste", callback_data="uc_list")]]
     if not can_act:
+        return M(rows)
+    if not manage:
+        if user["role"] == "livreur" and user["status"] == "active":
+            duty = B("⏸ Mettre en pause", callback_data=f"uc_duty:{uid}:off") if user.get("on_duty") else \
+                B("🟢 Mettre en service", callback_data=f"uc_duty:{uid}:on")
+            rows.insert(0, [duty, B("📍 Position", callback_data=f"loc:{uid}")])
         return M(rows)
     name = B("🏷 Nom de feuille", callback_data=f"sname:{uid}") if sheet_names else \
         B("✏️ Nom", callback_data=f"uc_edit:{uid}:name")
@@ -556,3 +563,13 @@ def menu_chapter(items) -> M:
 
 def course_time_cancel() -> M:
     return M([[B("❌ Annuler", callback_data="ct_x")]])
+
+
+_JOUR_COURT = ("Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim")
+
+
+def synchro_nights(nights, current) -> M | None:
+    """Sous le résultat de /synchro : renvoyer une autre nuit de la semaine."""
+    buttons = [B(f"📗 {'Cette nuit' if n == current else f'{_JOUR_COURT[n.weekday()]} {n.day}'}",
+                 callback_data=f"sy:{n.isoformat()}") for n in nights]
+    return M([buttons[i:i + 4] for i in range(0, len(buttons), 4)]) if buttons else None

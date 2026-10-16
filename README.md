@@ -417,7 +417,7 @@ chaque message 💬 échangé entre un franchisé et un livreur (« 💬 #12 —
 
 ### Pouvoirs des admins (dispatch et franchisés)
 
-Le dispatch **et les franchisés** ont les pleins pouvoirs :
+Le dispatch **et les franchisés** ont les pouvoirs d'admin (sauf ce qui est 🔒 réservé au dispatch, plus bas) :
 
 - `/livreurs` : mettre un livreur **🟢 en service** ou **⏸ en pause**. Mis en service ainsi, il reçoit les courses
   même sans position partagée (« distance inconnue ») ;
@@ -426,6 +426,33 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
 - sur son message de course, le franchisé a aussi **✏️ Modifier** et **📦 Livrée** ;
 - toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/stock`,
   `/caisse`, `/depense`, `/synchro`, `/close`, `/reset`, `/bannir`, `/reactiver`, `/supprimer`, `/produits`.
+
+### 🔒 Réservé au dispatch
+
+Les franchisés gardent leurs commandes, les livreurs (attribuer, changer de livreur, service / pause), `/encours`
+(toutes les courses), le stock, l'argent et les bilans. Seul le dispatch peut :
+
+- **valider ou refuser** une inscription, **bannir**, **réactiver**, **supprimer** quelqu'un, **changer son rôle**,
+  son **nom** ou son **nom de feuille** et les **prénoms** (`/prenom`) : sur la fiche d'un livreur, un franchisé n'a
+  que 🟢 service / ⏸ pause et 📍 position ;
+- **`/synchro`** et **`/reset`** (remise à zéro de la semaine).
+
+Un franchisé qui tape l'une de ces commandes reçoit « 🔒 Réservé au dispatch. » ; elles n'apparaissent pas dans son
+`/menu`.
+
+### /synchro d'une nuit passée
+
+`/synchro` renvoie la nuit en cours ; `/synchro hier`, `/synchro lundi` ou `/synchro 14/10` renvoient une nuit
+passée, et des boutons sous le résultat proposent les autres nuits. Seulement la semaine en cours (depuis le
+dernier `/reset`, six jours au plus) : chaque nuit va dans l'onglet de son jour, une nuit plus ancienne écraserait
+celle du même jour. Sans danger : la feuille ignore ce qu'elle a déjà.
+
+### Colonnes de calcul protégées
+
+Les colonnes de calcul masquées ont une protection « avertissement seulement » : Dispatch O:V et Rechargement U:X
+des 7 onglets de jour, Compta RAVI!F et COMPTA!Y:BG. Une personne qui modifie reçoit un avertissement ; le script et
+le bot écrivent normalement. Après avoir masqué de nouvelles colonnes de calcul : dans le script, fonction
+**protegerCalculs**, ▶ Exécuter.
 
 ### La fiche course (franchisé et admins)
 

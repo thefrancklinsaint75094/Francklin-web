@@ -198,6 +198,7 @@ def register_handlers(app: Application) -> None:
         (r"^ct:", course_time.start),
         (r"^ct_x$", course_time.cancel),
         (r"^cc:", dispatch.course_card),
+        (r"^sy:", dispatch.synchro_pick),
         (r"^uc(:|_list$|_edit:|_role:|_role_set:|_duty:)", user_card.action),
         (r"^uc_x:", user_card.cancel_edit),
         (r"^mn(:|_run:|$)", menu.action),

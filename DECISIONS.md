@@ -625,3 +625,17 @@ simple qui respecte le mur de confidentialité (§12).
      `after_assignment` (fiche, délai demandé, franchisé et dispatch prévenus) ; « Rediffuser » devient une option
      de cette liste. **🕐 Heure** souhaitée modifiable (`requested_time`, texte libre, « - » l'enlève), appliquée
      sans aperçu car sans risque. Pas de migration.
+
+152. **Droits des franchisés** (inventaire, point 5 ; l'exploitant n'a pas tranché, les deux choix recommandés
+     sont appliqués). `common.is_dispatch` : accès des personnes (valider, bannir, réactiver, supprimer, rôle, noms,
+     prénoms), `/synchro` et `/reset` réservés au dispatch. Les franchisés gardent le reste, `/encours` complet
+     compris (choix de l'exploitant). Boutons masqués pour eux (fiche, /users, /menu) et refus « 🔒 Réservé au
+     dispatch » si la commande est tapée.
+
+153. **/synchro d'une nuit passée** (point 4). Une nuit va dans l'onglet de son jour : seules les nuits de la
+     semaine en cours sont acceptées (fin après le dernier événement `cloture`, six jours au plus), sinon elle
+     écraserait la nuit du même jour.
+
+154. **Colonnes de calcul protégées** (point 4). Protection Google Sheets « avertissement seulement » sur les colonnes
+     masquées des onglets visibles (pas de blocage : le script tourne sous le compte du propriétaire et
+     l'exploitant garde la main). Posées une fois par l'API ; `protegerCalculs` (script) les repose sans doublon.

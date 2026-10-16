@@ -43,6 +43,9 @@ async def cloture(update: Update, context) -> None:
     if not common.is_admin(user):
         await messaging.reply(update, texts.NOT_FOR_YOU)
         return
+    if not common.is_dispatch(user):
+        await messaging.reply(update, texts.DISPATCH_ONLY)
+        return
     if not sheets.enabled():
         await messaging.reply(update, texts.SHEETS_DISABLED)
         return
@@ -55,7 +58,7 @@ async def action(update: Update, context):
     """cl_go : clôturer · cl_x : annuler."""
     global _last_done
     user = await common.actor(update)
-    if not common.is_admin(user):
+    if not common.is_dispatch(user):
         return None
     data = update.callback_query.data or ""
     chat_id = update.effective_chat.id

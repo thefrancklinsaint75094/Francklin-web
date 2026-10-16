@@ -34,7 +34,7 @@ def _sort_key(u: dict):
     return (int(digits) if digits else 10_000, name)
 
 
-async def list_view() -> tuple[str, object]:
+async def list_view(viewer: dict | None = None) -> tuple[str, object]:
     """Texte et boutons de /users : la liste détaillée par rôle, une personne = un bouton vers sa fiche,
     inscriptions en attente à valider en bas."""
     everyone = [u for u in await db.list_users() if u["role"] != "dispatch"]
@@ -71,7 +71,7 @@ async def list_view() -> tuple[str, object]:
         pending.append(line)
     active = of("franchise") + of("livreur") + of("ravitailleur")
     return (texts.users_list(franchises, livreurs, pending, ravitailleurs),
-            keyboards.users_overview(active, pending_users))
+            keyboards.users_overview(active, pending_users, manage=viewer is None or common.is_dispatch(viewer)))
 
 
 async def _activity(user: dict) -> dict:
@@ -88,7 +88,7 @@ async def _activity(user: dict) -> dict:
 async def _card(user: dict, viewer: dict) -> tuple[str, object]:
     return (texts.user_card(user, names.prenom(user.get("display_name")), await _activity(user)),
             keyboards.user_card(user, can_act=user["id"] != viewer["id"],
-                                sheet_names=bool(names.names_for(user["role"]))))
+                                sheet_names=bool(names.names_for(user["role"])), manage=common.is_dispatch(viewer)))
 
 
 async def show(context, chat_id: int, message_id: int | None, user: dict, viewer: dict) -> None:
@@ -106,7 +106,7 @@ async def action(update: Update, context):
     chat_id, msg_id = update.effective_chat.id, update.callback_query.message.message_id
     data = update.callback_query.data or ""
     if data == "uc_list":
-        text, markup = await list_view()
+        text, markup = await list_view(admin)
         await messaging.edit(context.bot, chat_id, msg_id, text, markup)
         return None
     act, _, rest = data.partition(":")
@@ -120,6 +120,8 @@ async def action(update: Update, context):
         return None
     if user["id"] == admin["id"]:
         return texts.USER_SELF, True
+    if act in ("uc_edit", "uc_role", "uc_role_set") and not common.is_dispatch(admin):
+        return texts.DISPATCH_ONLY, True
     if act == "uc_edit" and arg in ("name", "prenom"):
         if arg == "prenom" and user["role"] != "livreur":
             return texts.ALREADY_HANDLED, True
