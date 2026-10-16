@@ -85,6 +85,7 @@ class Config:
     boxes: tuple[str, ...] = ("Box 1", "Box 2", "Box 3")
     arrival_notify_meters: int = 500
     arrival_notify_minutes: int = 5
+    arrival_onsite_meters: int = 80            # alerte « sur place » sous cette distance de l'adresse (0 : jamais)
     stock_alerts: bool = True
     livreur_names: tuple[str, ...] = ()        # noms des livreurs dans les feuilles (vide : « Livreur 1 »…)
     ravitailleur_names: tuple[str, ...] = ()
@@ -134,6 +135,7 @@ class Config:
             boxes=boxes or ("Box 1",),
             arrival_notify_meters=_int("ARRIVAL_NOTIFY_METERS", 500),
             arrival_notify_minutes=_int("ARRIVAL_NOTIFY_MINUTES", 5),
+            arrival_onsite_meters=_int("ARRIVAL_ONSITE_METERS", 80),
             stock_alerts=(_raw("STOCK_ALERTS") or "1").lower() not in ("0", "non", "false", "off"),
             livreur_names=_names("LIVREUR_NAMES", "Livreur A,Livreur B,Livreur C,Livreur D,Livreur R,Livreur X"),
             ravitailleur_names=_names("RAVITAILLEUR_NAMES", "Ravitailleur 1,Ravitailleur 2"),

@@ -99,6 +99,7 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `BOXES` | non | `Box 1,Box 2,Box 3` | box proposés au ravitailleur (noms du tableau Rechargement) |
 | `ARRIVAL_NOTIFY_METERS` | non | `500` | alerte « le livreur arrive » sous cette distance (0 = désactivé) |
 | `ARRIVAL_NOTIFY_MINUTES` | non | `5` | … ou sous ce nombre de minutes estimées (0 = désactivé) |
+| `ARRIVAL_ONSITE_METERS` | non | `80` | alerte « le livreur est sur place » sous cette distance (0 = désactivé) |
 | `LIVREUR_NAMES` | non | `Livreur A,Livreur B,Livreur C,Livreur D,Livreur R,Livreur X` | noms des livreurs dans les feuilles (`-` : « Livreur 1 », « Livreur 2 »…) |
 | `RAVITAILLEUR_NAMES` | non | `Ravitailleur 1,Ravitailleur 2` | idem pour les ravitailleurs |
 | `STOCK_ALERTS` | non | `1` | alertes de stock du livreur (lu dans SOLDES du tableau Rechargement) ; `0` pour couper |
@@ -171,6 +172,10 @@ course** : « 📍 Livreur 1 arrive — course #142 : à ~300 m (≈ 2 min) », 
 `ARRIVAL_NOTIFY_METERS` (500 m) de l'adresse **ou** à moins de `ARRIVAL_NOTIFY_MINUTES` (5 min). Le temps est
 estimé avec la vitesse réelle du livreur entre ses deux dernières positions (sinon 15 km/h). Il faut que le
 livreur partage sa position **en direct**.
+
+Puis, à moins de `ARRIVAL_ONSITE_METERS` (80 m, la précision du GPS en ville) de l'adresse, une seconde alerte,
+elle aussi une fois par course : « 🏁 Livreur 1 est sur place — course #142 ». Un livreur dont la première
+position est déjà à l'adresse ne reçoit que celle-ci.
 
 ### Rechargement en texte (`/ravi`)
 

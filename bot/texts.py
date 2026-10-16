@@ -834,6 +834,16 @@ def d_arrival(course: dict, livreur: dict, distance_label: str, minutes: int) ->
             f"à {distance_label} (≈ {minutes} min) — {esc(course['district'])}")
 
 
+def onsite_for_franchise(course: dict, livreur: dict) -> str:
+    return (f"🏁 {esc(livreur.get('display_name') or 'Le livreur')} est sur place — course #{course['id']}\n"
+            f"{course_summary(course)}")
+
+
+def d_onsite(course: dict, livreur: dict) -> str:
+    return (f"🏁 #{course['id']} — {esc(livreur.get('display_name') or '?')} est <b>sur place</b> — "
+            f"📍 {esc(course.get('address') or course.get('district') or '')}")
+
+
 def ago(minutes: float) -> str:
     """0 → « à l'instant » ; 7 → « il y a 7 min » ; 95 → « il y a 1 h 35 »."""
     m = int(minutes)
