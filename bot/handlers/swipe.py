@@ -54,6 +54,17 @@ async def on_message(update: Update, context, user: dict) -> None:
 
 
 async def _process(update: Update, user: dict, text: str) -> None:
+    errors, blocks, warnings = await prepare(text)
+    if errors or not blocks:
+        await _save(user, STATE_INPUT, {})
+        await messaging.reply(update, texts.swipe_errors(errors) if errors else texts.SWIPE_HELP)
+        return
+    sent = await messaging.reply(update, texts.swipe_preview(blocks, warnings), keyboards.swipe_confirm())
+    await _save(user, STATE_CONFIRM, {"blocks": blocks, "msg": sent.message_id if sent else None})
+
+
+async def prepare(text: str) -> tuple[list[str], list[dict], list[str]]:
+    """Texte d'un swipe → (erreurs, blocs, avertissements). Rien n'est enregistré."""
     livreurs = await db.list_users(role="livreur", status="active")
     parsed = sw.parse(list(enumerate(text.splitlines(), 1)), await sheets.load_catalog(),
                       list(config.get().livreur_names), livreurs)
@@ -73,15 +84,10 @@ async def _process(update: Update, user: dict, text: str) -> None:
                     b.items = sw.everything(have)
             elif have is not None:
                 warnings += [texts.swipe_short(b.src, p, want, got) for p, want, got in sw.shortages(b.items, have)]
-    if errors or not parsed.blocks:
-        await _save(user, STATE_INPUT, {})
-        await messaging.reply(update, texts.swipe_errors(errors) if errors else texts.SWIPE_HELP)
-        return
     blocks = [{"src": b.src, "dst": b.dst, "src_id": b.src_user["id"] if b.src_user else None,
                "dst_id": b.dst_user["id"] if b.dst_user else None, "items": b.items, "all": b.all, "cash": b.cash}
               for b in parsed.blocks]
-    sent = await messaging.reply(update, texts.swipe_preview(blocks, warnings), keyboards.swipe_confirm())
-    await _save(user, STATE_CONFIRM, {"blocks": blocks, "msg": sent.message_id if sent else None})
+    return errors, blocks, warnings
 
 
 @common.callback
@@ -99,6 +105,13 @@ async def action(update: Update, context):
     if update.callback_query.data == "sw_x":
         await messaging.edit(context.bot, chat_id, msg_id, texts.SWIPE_CANCELLED)
         return None
+    await messaging.edit(context.bot, chat_id, msg_id, await commit(context, user, payload["blocks"]))
+    return "Enregistré ✅"
+
+
+async def commit(context, user: dict, blocks: list[dict]) -> str:
+    """Enregistre les transferts ; livreurs et dispatch prévenus. Texte du résultat."""
+    payload = {"blocks": blocks}
     for b in payload["blocks"]:
         row = await db.create_restock({"livreur_id": b["src_id"], "livreur_name": b["src"], "by_user_id": user["id"],
                                        "to_livreur_id": b["dst_id"], "to_livreur_name": b["dst"],
@@ -110,9 +123,7 @@ async def action(update: Update, context):
             livreur = await db.get_user(uid) if uid else None
             if livreur:
                 await messaging.send(context.bot, livreur, text)
-    await messaging.edit(context.bot, chat_id, msg_id, texts.swipe_done(payload["blocks"]))
     await messaging.notify_dispatch(
         context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
-        text=f"{texts.swipe_done(payload['blocks'], short=True)}"
-                                                     f"\n\n(par {texts.esc(user['display_name'])})")
-    return "Enregistré ✅"
+        text=f"{texts.swipe_done(payload['blocks'], short=True)}\n\n(par {texts.esc(user['display_name'])})")
+    return texts.swipe_done(payload["blocks"])

@@ -68,19 +68,25 @@ async def on_message(update: Update, context, user: dict, payload: dict) -> None
     await _process(update, user, payload, update.message.text or "", skip_first=False)
 
 
-async def _process(update: Update, user: dict, payload: dict, text: str, skip_first: bool) -> None:
+async def prepare(text: str, skip_first: bool = False) -> tuple[list[str], list[dict], list[str]]:
+    """Texte d'un rechargement → (erreurs, blocs, avertissements). Rien n'est enregistré."""
     lines = list(enumerate(text.splitlines(), 1))[1 if skip_first else 0:]
     livreurs = await db.list_users(role="livreur", status="active")
     cfg = config.get()
     parsed = restock_text.parse(lines, await sheets.load_catalog(), list(cfg.livreur_names), livreurs, cfg.boxes)
-    base = {"ravi": payload.get("ravi"), "ravi_id": payload.get("ravi_id")}
-    if parsed.errors or not parsed.blocks:
-        await _save(user, STATE_INPUT, base)
-        await messaging.reply(update, texts.ravi_errors(parsed.errors) if parsed.errors else texts.ravi_help(base["ravi"]))
-        return
     blocks = [{"livreur": b.livreur, "user_id": b.user["id"] if b.user else None, "box": b.box,
                "load": b.load, "unload": b.unload, "cash": b.cash} for b in parsed.blocks]
-    await _next(update, None, user, {**base, "blocks": blocks, "warnings": parsed.warnings})
+    return parsed.errors, blocks, parsed.warnings
+
+
+async def _process(update: Update, user: dict, payload: dict, text: str, skip_first: bool) -> None:
+    errors, blocks, warnings = await prepare(text, skip_first)
+    base = {"ravi": payload.get("ravi"), "ravi_id": payload.get("ravi_id")}
+    if errors or not blocks:
+        await _save(user, STATE_INPUT, base)
+        await messaging.reply(update, texts.ravi_errors(errors) if errors else texts.ravi_help(base["ravi"]))
+        return
+    await _next(update, None, user, {**base, "blocks": blocks, "warnings": warnings})
 
 
 async def _ravitailleurs(users: list[dict] | None = None) -> list[str]:
@@ -202,6 +208,12 @@ async def action(update: Update, context):
     if update.callback_query.data == "rv_x":
         await messaging.edit(context.bot, chat_id, msg_id, texts.RAVI_CANCELLED)
         return None
+    await messaging.edit(context.bot, chat_id, msg_id, await commit(context, user, payload))
+    return "Enregistré ✅"
+
+
+async def commit(context, user: dict, payload: dict) -> str:
+    """Enregistre les blocs (rechargements en base, livreurs et dispatch prévenus, tableau rempli)."""
     by_id = payload.get("ravi_id") or user["id"]
     by = {"display_name": payload["ravi"]}
     saved = []
@@ -220,5 +232,4 @@ async def action(update: Update, context):
             stock.push_restock_later(row)
         for item in block["load"]:                 # goûts chargés : cochés chez le livreur
             await db.add_livreur_variants(block["livreur"], item["p"], item.get("v") or [])
-    await messaging.edit(context.bot, chat_id, msg_id, texts.ravi_done(payload["ravi"], payload["blocks"], len(saved)))
-    return "Enregistré ✅"
+    return texts.ravi_done(payload["ravi"], payload["blocks"], len(saved))

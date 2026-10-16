@@ -2235,3 +2235,7 @@ def course_time_changed(course: dict, by: dict | None = None) -> str:
     when = f"<b>{esc(course['requested_time'])}</b>" if course.get("requested_time") else "plus d'heure précise"
     who = f" (par {esc(by.get('display_name') or '?')})" if by else ""
     return f"🕐 Course #{course['id']} — heure souhaitée : {when}{who}"
+
+
+def admin_message(admin: dict, text: str) -> str:
+    return f"💬 <b>{esc(admin.get('display_name') or 'Dispatch')}</b> : {esc(text)}"

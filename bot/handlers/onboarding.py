@@ -137,6 +137,18 @@ async def approve(update: Update, context):
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] != "pending":
         return texts.ALREADY_HANDLED
+    user = await approve_user(context, user)
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         texts.registration_approved(user))
+    if names.names_for(user["role"]):
+        from bot.handlers import dispatch
+
+        await dispatch.send_name_picker(update, user)
+    return "Validé"
+
+
+async def approve_user(context, user: dict) -> dict:
+    """Inscription validée : nom (premier nom de feuille libre, sinon « Livreur 3 »), commandes, bienvenue."""
     fields = {"status": "active", "conversation_state": None, "state_payload": None, "state_expires_at": None}
     if not user.get("display_name"):
         # Livreur / ravitailleur : premier nom libre de la feuille (« Livreur A »…), sinon « Livreur 3 ».
@@ -146,14 +158,8 @@ async def approve(update: Update, context):
     user = await db.update_user(user["id"], fields)
     await common.set_commands(context.bot, user)
     await messaging.send(context.bot, user, texts.welcome(user["role"]), _menu(user))
-    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
-                         texts.registration_approved(user))
     await db.log_event("user_approved", user_id=user["id"], payload={"display_name": user["display_name"]})
-    if names.names_for(user["role"]):
-        from bot.handlers import dispatch
-
-        await dispatch.send_name_picker(update, user)
-    return "Validé"
+    return user
 
 
 @common.callback
@@ -163,10 +169,14 @@ async def reject(update: Update, context):
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] != "pending":
         return texts.ALREADY_HANDLED
-    await db.delete_user(user["id"])
-    await messaging.send(context.bot, user, texts.REJECTED)
+    await reject_user(context, user)
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.registration_rejected(user))
+    return "Refusé"
+
+
+async def reject_user(context, user: dict) -> None:
+    await db.delete_user(user["id"])
+    await messaging.send(context.bot, user, texts.REJECTED)
     await db.log_event("user_rejected", payload={"telegram_id": user["telegram_id"], "real_name": user.get("real_name"),
                                                   "role": user["role"]})
-    return "Refusé"

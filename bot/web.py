@@ -248,8 +248,8 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
         pos = (await db.get_positions([livreur["id"]])).get(livreur["id"]) if livreur else None
         if not pos:
             return {"ok": False, "message": "Pas de position connue pour ce livreur."}
-        await dispatch._send_position(context, admin["telegram_id"], livreur, pos)
-        return {"ok": True, "message": "Position envoyée dans le chat.", "close": True}
+        return {"ok": True, "map": f"https://www.google.com/maps/search/?api=1&query={pos['lat']},{pos['lon']}",
+                "message": f"Position il y a {minutes_since(parse_ts(pos['updated_at']))} min"}
     if kind == "open_chat":
         if course is None or course["status"] not in ("pending", "assigned"):
             return {"ok": False, "message": texts.COURSE_FINISHED}
@@ -260,6 +260,35 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
         return {"ok": True, "message": "Fiche envoyée dans le chat.", "close": True}
     if kind == "run":
         return await _run_command(context, admin, str(body.get("cmd") or ""))
+    if kind in ORDER_ACTIONS:
+        return await _order(context, admin, kind, body, course)
+    if kind in ("edit_lines", "edit_apply"):
+        return await _edit(context, admin, kind, body, course)
+    if kind in TEXT_FORMS:
+        return await _text_form(context, admin, kind, body)
+    if kind == "expense":
+        return await _expense(context, admin, body)
+    if kind in USER_ACTIONS:
+        return await _user(context, admin, kind, body)
+    if kind in ("debrief", "close_livreur", "synchro", "recap"):
+        cmd = {"debrief": "close", "close_livreur": "close", "synchro": "synchro", "recap": "recap"}[kind]
+        out = await _capture(context, admin, cmd, str(body.get("arg") or "") if kind != "debrief" else "")
+        return {"ok": bool(out), "html": "\n\n".join(out) or texts.GENERIC_ERROR}
+    if kind in ("reset_check", "reset_run"):
+        from bot.handlers import cloture
+
+        if not common.is_dispatch(admin):
+            return {"ok": False, "message": texts.DISPATCH_ONLY}
+        ok, text = await (cloture.precheck() if kind == "reset_check" else cloture.run(admin))
+        return {"ok": ok, "html": text}
+    if kind == "message":
+        target = await db.get_user(str(body.get("user_id")))
+        text = " ".join(str(body.get("text") or "").split())[:1000]
+        if not target or target["status"] != "active" or not text:
+            return {"ok": False, "message": "Message vide ou destinataire inconnu."}
+        await messaging.send(context.bot, target, texts.admin_message(admin, text))
+        await db.log_event("admin_message", user_id=admin["id"], payload={"to": target["id"]})
+        return {"ok": True, "message": f"Message envoyé à {target.get('display_name')}."}
     if kind == "notify_level":
         level = "tout" if body.get("value") == "tout" else "essentiel"
         await db.update_user(admin["id"], {"notify_level": level})
@@ -268,9 +297,255 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
     return {"ok": False, "message": "Action inconnue."}
 
 
+ORDER_ACTIONS = ("order_analyse", "order_send", "order_drop", "order_pick")
+TEXT_FORMS = ("ravi_prepare", "ravi_commit", "swipe_prepare", "swipe_commit", "sales_prepare", "sales_commit")
+USER_ACTIONS = ("user_rename", "user_prenom", "user_role", "user_sheet_name", "user_ban", "user_unban",
+                "user_delete", "user_approve", "user_reject")
+
+
+async def _order(context, admin: dict, kind: str, body: dict, course: dict | None) -> dict:
+    """Nouvelle commande : analyse (fiches à confirmer), envoi, choix du livreur — comme dans le chat."""
+    from bot.handlers import franchise
+    from bot.services import broadcast
+
+    if not common.can_order(admin):
+        return {"ok": False, "message": texts.NOT_FOR_YOU}
+    if kind == "order_analyse":
+        raw = str(body.get("text") or "").strip()[:4000]
+        if len(raw) < 8:
+            return {"ok": False, "message": "Écris l'adresse puis les produits (voir le modèle)."}
+        problem, results = await franchise.analyse(admin, raw)
+        if problem == "unavailable":
+            return {"ok": False, "message": texts.GENERIC_ERROR}
+        if problem == "parse":
+            return {"ok": False, "message": texts.EXTRACTION_PARSE_FAIL}
+        if problem and problem.startswith("complement:"):
+            return {"ok": False, "message": texts.complement_hint(int(problem.split(":")[1]))}
+        if problem == "none":
+            return {"ok": False, "message": texts.NO_ORDER_FOUND}
+        cards = []
+        for item_kind, item in results:
+            if item_kind != "order":
+                cards.append({"ok": False, "html": item})
+                continue
+            draft = await db.create_draft(admin["id"], raw)
+            draft = await db.update_draft(draft["id"], {"extracted": item}) or draft
+            cards.append({"ok": True, "draft_id": draft["id"],
+                          "html": texts.draft_card(item, config.get().price_max)})
+        return {"ok": True, "cards": cards}
+    if kind == "order_drop":
+        await db.update_draft_if_status(str(body.get("draft_id")), ["awaiting"], {"status": "expired"})
+        return {"ok": True}
+    if kind == "order_send":
+        draft = await db.get_draft(str(body.get("draft_id")))
+        if draft is None or draft["franchise_id"] != admin["id"]:
+            return {"ok": False, "message": texts.DRAFT_NOT_ACTIVE}
+        locked = await db.update_draft_if_status(draft["id"], ["awaiting"], {"status": "confirmed"})
+        if locked is None:
+            return {"ok": False, "message": texts.DRAFT_NOT_ACTIVE}
+        created, opts = await franchise.create_course(context, admin, locked, None)
+        return {"ok": True, "message": f"Course #{created['id']} enregistrée", "course_id": created["id"],
+                "options": [{**_who(o["user"]), "m": o.get("m"), "busy": o.get("busy", 0),
+                             "v": [[v, ok] for v, ok in (o.get("v") or [])]} for o in opts]}
+    if kind == "order_pick":
+        if course is None or course["status"] != "pending":
+            return {"ok": False, "message": texts.ALREADY_CLOSED}
+        if course["franchise_id"] != admin["id"] and not common.is_admin(admin):
+            return {"ok": False, "message": texts.NOT_FOR_YOU}
+        if body.get("auto"):
+            pick.forget(context.job_queue, course["id"])
+            await lifecycle.refresh_franchise_message(context, course)
+            await broadcast.run_wave(context, course["id"], advance=False)
+            return {"ok": True, "message": "Envoyée au plus proche"}
+        livreur = await db.get_user(str(body.get("livreur_id")))
+        if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
+            return {"ok": False, "message": texts.ALREADY_HANDLED}
+        pick.forget(context.job_queue, course["id"])
+        result = await franchise.send_to_livreur(context, admin, course, livreur)
+        return {"ok": result is not None, "message": result or texts.ALREADY_CLOSED}
+    return {"ok": False, "message": "Action inconnue."}
+
+
+async def _edit(context, admin: dict, kind: str, body: dict, course: dict | None) -> dict:
+    """Produits et prix d'une course (en attente ou en cours), lignes « quantité · produit · prix »."""
+    from bot.handlers import livreur as livreur_h
+    from bot.services import catalog, order_edit
+
+    if course is None or course["status"] not in ("pending", "assigned"):
+        return {"ok": False, "message": texts.COURSE_FINISHED}
+    if kind == "edit_lines":
+        return {"ok": True, "lines": order_edit.lines_from_course(course, await catalog.load())}
+    lines = []
+    for line in (body.get("lines") or [])[:order_edit.MAX_LINES]:
+        try:
+            name, qty, price = str(line["p"]).strip(), int(line["q"]), round(float(line["x"]), 2)
+        except (KeyError, TypeError, ValueError):
+            return {"ok": False, "message": "Ligne illisible."}
+        if name and qty > 0:
+            lines.append({"p": name, "q": min(qty, order_edit.MAX_QTY), "x": max(price, 0.0)})
+    if not lines:
+        return {"ok": False, "message": texts.ORDER_EDIT_EMPTY}
+    if order_edit.missing_prices(lines):
+        return {"ok": False, "message": texts.order_edit_missing_price(order_edit.missing_prices(lines))}
+    if order_edit.off_step_prices(lines):
+        return {"ok": False, "message": texts.order_edit_off_step(order_edit.off_step_prices(lines))}
+    fields = {"products": order_edit.products_text(lines), "price": order_edit.total(lines)}
+    updated = await db.update_course_if_status(course["id"], ["pending", "assigned"], fields)
+    if updated is None:
+        return {"ok": False, "message": texts.COURSE_FINISHED}
+    await db.log_event("course_modified", course["id"], admin["id"], {
+        "before": {"products": course["products"], "price": float(course["price"])},
+        "after": {"products": updated["products"], "price": float(updated["price"])}})
+    await livreur_h._notify_modified(context, admin, course, updated)
+    await lifecycle.refresh_franchise_message(context, updated)
+    return {"ok": True, "message": f"#{course['id']} modifiée : {updated['products']} — {texts.eur(updated['price'])}"}
+
+
+async def _text_form(context, admin: dict, kind: str, body: dict) -> dict:
+    """Rechargement (/ravi), swipe et récap de ventes : même texte et même lecture que dans le chat ;
+    *_prepare montre le récap, *_commit relit le texte et enregistre."""
+    from bot.handlers import restock_text, sales, swipe
+    from bot.services import restock_text as ravi_text
+
+    text = str(body.get("text") or "")[:6000]
+    what, step = kind.split("_")
+    if what in ("ravi", "swipe") and admin["role"] not in ("dispatch", "franchise", "ravitailleur"):
+        return {"ok": False, "message": texts.NOT_FOR_YOU}
+    if what == "ravi":
+        ravi = str(body.get("ravi") or "")
+        ravis = await restock_text._ravitailleurs()
+        if ravi not in ravis:
+            return {"ok": False, "message": "Choisis le ravitailleur."}
+        errors, blocks, warnings = await restock_text.prepare(text)
+        if errors or not blocks:
+            return {"ok": False, "html": texts.ravi_errors(errors) if errors else "Écris au moins un produit ou du cash."}
+        if ravi_text.missing(blocks):
+            return {"ok": False, "message": "Choisis le livreur et le box."}
+        if step == "prepare":
+            return {"ok": True, "html": texts.ravi_preview(ravi, blocks, warnings)}
+        users = await db.list_users(role="ravitailleur", status="active")
+        _, ravi_user = ravi_text.resolve_ravitailleur(ravi, [ravi], users)
+        done = await restock_text.commit(context, admin, {"ravi": ravi, "ravi_id": ravi_user["id"] if ravi_user else None,
+                                                          "blocks": blocks})
+        return {"ok": True, "html": done}
+    if what == "swipe":
+        errors, blocks, warnings = await swipe.prepare(text)
+        if errors or not blocks:
+            return {"ok": False, "html": texts.swipe_errors(errors) if errors else texts.SWIPE_HELP}
+        if step == "prepare":
+            return {"ok": True, "html": texts.swipe_preview(blocks, warnings)}
+        return {"ok": True, "html": await swipe.commit(context, admin, blocks)}
+    if not common.is_admin(admin):
+        return {"ok": False, "message": texts.NOT_FOR_YOU}
+    errors, ready = await sales.prepare(text, body.get("night") or None)
+    if errors or ready is None:
+        return {"ok": False, "html": texts.sales_errors(errors) if errors else texts.SALES_EMPTY}
+    if step == "prepare":
+        return {"ok": True, "html": texts.sales_preview(ready["blocks"], ready["tab"])}
+    done, ok = await sales.commit(context, admin, ready)
+    return {"ok": ok, "html": done}
+
+
+async def _expense(context, admin: dict, body: dict) -> dict:
+    from bot.handlers import cash as cash_h
+    from bot.services.sales import resolve_livreur
+
+    name, livreur = resolve_livreur(str(body.get("livreur") or ""), list(config.get().livreur_names),
+                                    await db.list_users(role="livreur", status="active"))
+    try:
+        amount = round(float(str(body.get("amount") or "0").replace(",", ".")), 2)
+    except ValueError:
+        amount = 0
+    kind = "paye" if body.get("kind") == "paye" else "charges"
+    if livreur is None:
+        return {"ok": False, "message": "Ce livreur n'a pas de compte sur le bot."}
+    if amount <= 0:
+        return {"ok": False, "message": texts.EXPENSE_ZERO}
+    row = await cash_h.save_expense(context, admin, livreur, kind, amount, str(body.get("motif") or "").strip()[:80])
+    return {"ok": True, "html": texts.expense_done(row, livreur["display_name"])}
+
+
+async def _user(context, admin: dict, kind: str, body: dict) -> dict:
+    """Fiches : nom, prénom, nom de feuille, rôle, bannir / réactiver / supprimer, valider / refuser."""
+    from bot.handlers import dispatch, onboarding, user_card
+
+    if kind == "user_prenom":                          # prénom d'un nom de feuille (compte ou non)
+        if not common.is_dispatch(admin):
+            return {"ok": False, "message": texts.DISPATCH_ONLY}
+        sheet = str(body.get("name") or "")
+        ok = sheet and await user_card.set_prenom(admin, sheet, str(body.get("value") or ""))
+        return {"ok": bool(ok), "message": "Prénom enregistré" if ok else texts.USER_NAME_INVALID}
+    if not common.is_dispatch(admin):
+        return {"ok": False, "message": texts.DISPATCH_ONLY}
+    user = await db.get_user(str(body.get("user_id")))
+    if user is None or user["role"] == "dispatch" or user["status"] == "deleted":
+        return {"ok": False, "message": texts.ALREADY_HANDLED}
+    if user["id"] == admin["id"]:
+        return {"ok": False, "message": texts.USER_SELF}
+    if kind == "user_approve" and user["status"] == "pending":
+        user = await onboarding.approve_user(context, user)
+        return {"ok": True, "message": texts.registration_approved(user)}
+    if kind == "user_reject" and user["status"] == "pending":
+        await onboarding.reject_user(context, user)
+        return {"ok": True, "message": texts.registration_rejected(user)}
+    if kind == "user_rename":
+        updated = await user_card.rename(admin, user, str(body.get("value") or ""))
+        return {"ok": updated is not None, "message": "Nom changé" if updated else texts.USER_NAME_INVALID}
+    if kind == "user_sheet_name":
+        _, error = await dispatch.set_sheet_name(context, admin, user, str(body.get("value") or ""))
+        return {"ok": not error, "message": error or "Nom de feuille changé"}
+    if kind == "user_role" and body.get("value") in user_card.ROLES and body.get("value") != user["role"]:
+        user = await user_card._change_role(context, admin, user, body["value"])
+        return {"ok": True, "message": f"{user['display_name']} : {texts.ROLE_LABEL[user['role']]}"}
+    if kind == "user_ban" and user["status"] == "active":
+        user = await dispatch.ban_user(context, admin, user)
+        return {"ok": True, "message": texts.banned_done(user)}
+    if kind == "user_unban" and user["status"] == "banned":
+        user = await dispatch.unban_user(context, admin, user)
+        return {"ok": True, "message": texts.unbanned_done(user)}
+    if kind == "user_delete":
+        user = await dispatch.delete_user(context, admin, user)
+        return {"ok": True, "message": texts.deleted_done(user)}
+    return {"ok": False, "message": texts.ALREADY_HANDLED}
+
+
+def _fake_update(context, admin: dict, text: str, chat):
+    from telegram import Message, Update, User
+
+    msg = Message(message_id=0, date=datetime.now(), chat=chat,
+                  from_user=User(id=admin["telegram_id"], first_name=admin.get("display_name") or "Admin", is_bot=False,
+                                 username=admin.get("telegram_username")),
+                  text=text)
+    msg.set_bot(context.bot)
+    chat.set_bot(context.bot)
+    return Update(update_id=0, message=msg)
+
+
+async def _capture(context, admin: dict, cmd: str, arg: str = "") -> list[str]:
+    """Lance une commande du chat et renvoie ses réponses au lieu de les envoyer (débrief, fin de service
+    d'un livreur, synchro, récap) : l'appli les affiche. Les avis aux autres partent normalement."""
+    from telegram import Chat
+
+    from bot.handlers import menu
+
+    sink: list[str] = []
+
+    class CaptureChat(Chat):
+        async def send_message(self, text, *args, **kwargs):  # noqa: ANN001 — même signature que Chat
+            sink.append(text)
+            return None
+
+    handler = menu._runners().get(cmd)
+    if handler is None:
+        return []
+    await handler(_fake_update(context, admin, f"/{cmd} {arg}".strip(), CaptureChat(id=admin["telegram_id"],
+                                                                                    type="private")), context)
+    return sink
+
+
 async def _run_command(context, admin: dict, cmd: str) -> dict:
     """Bouton d'une commande du chat (/stock, /ravi…) : le bot répond dans le chat, comme si elle était tapée."""
-    from telegram import Chat, Message, Update, User
+    from telegram import Chat
 
     from bot.handlers import menu
 
@@ -279,14 +554,7 @@ async def _run_command(context, admin: dict, cmd: str) -> dict:
         return {"ok": False, "message": "Commande inconnue."}
     if cmd in menu.DISPATCH_ONLY and not common.is_dispatch(admin):
         return {"ok": False, "message": texts.DISPATCH_ONLY}
-    tg_id = admin["telegram_id"]
-    msg = Message(message_id=0, date=datetime.now(), chat=Chat(id=tg_id, type="private"),
-                  from_user=User(id=tg_id, first_name=admin.get("display_name") or "Admin", is_bot=False,
-                                 username=admin.get("telegram_username")),
-                  text=f"/{cmd}")
-    msg.set_bot(context.bot)
-    msg.chat.set_bot(context.bot)
-    await handler(Update(update_id=0, message=msg), context)
+    await handler(_fake_update(context, admin, f"/{cmd}", Chat(id=admin["telegram_id"], type="private")), context)
     return {"ok": True, "message": "Réponse envoyée dans le chat.", "close": True}
 
 
@@ -351,11 +619,22 @@ async def section(name: str, viewer: dict) -> dict:
     if name == "team":
         users = [u for u in await db.list_users() if u["status"] in ("active", "pending", "banned")]
         order = {"dispatch": 0, "franchise": 1, "livreur": 2, "ravitailleur": 3}
-        return {"ok": True, "users": [{
-            **_who(u), "role": texts.ROLE_LABEL.get(u["role"], u["role"]), "status": u["status"],
-            "on_duty": bool(u.get("on_duty")), "username": u.get("telegram_username"),
-            "real_name": u.get("real_name")} for u in sorted(users, key=lambda u: (order.get(u["role"], 9),
-                                                                                  u.get("display_name") or ""))]}
+        taken = {u.get("display_name") for u in users}
+        sheet_only = [n for n in config.get().livreur_names if n not in taken]
+        return {"ok": True, "manage": common.is_dispatch(viewer), "users": [{
+            **_who(u), "role": u["role"], "role_label": texts.ROLE_LABEL.get(u["role"], u["role"]),
+            "status": u["status"], "on_duty": bool(u.get("on_duty")), "username": u.get("telegram_username"),
+            "real_name": u.get("real_name"), "me": u["id"] == viewer["id"],
+            "sheet_names": list(names.names_for(u["role"]))} for u in sorted(
+                users, key=lambda u: (u["status"] != "pending", order.get(u["role"], 9), u.get("display_name") or ""))],
+            "sheet_only": [{"name": n, "prenom": names.prenom(n)} for n in sheet_only]}
+    if name == "forms":
+        from bot.handlers import restock_text
+
+        return {"ok": True, "livreurs": await restock_text._livreur_names(),
+                "ravitailleurs": await restock_text._ravitailleurs(), "boxes": list(config.get().boxes),
+                "products": [p["name"] for p in await db.list_products()],
+                "can_order": common.can_order(viewer), "dispatch": common.is_dispatch(viewer)}
     return {"ok": False, "error": "Écran inconnu."}
 
 

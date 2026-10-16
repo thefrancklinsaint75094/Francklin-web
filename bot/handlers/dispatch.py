@@ -359,12 +359,17 @@ async def ban_do(update: Update, context):
         return texts.ALREADY_HANDLED
     if user["id"] == dispatcher["id"]:
         return texts.CANNOT_BAN_SELF, True
-    user = await _remove_access(context, user, "banned")
-    await messaging.send(context.bot, user, texts.BANNED_NOTICE, even_if_removed=True)
-    await db.log_event("user_banned", user_id=user["id"], payload={"by": dispatcher["id"]})
+    user = await ban_user(context, dispatcher, user)
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.banned_done(user))
     return "Banni"
+
+
+async def ban_user(context, admin: dict, user: dict) -> dict:
+    user = await _remove_access(context, user, "banned")
+    await messaging.send(context.bot, user, texts.BANNED_NOTICE, even_if_removed=True)
+    await db.log_event("user_banned", user_id=user["id"], payload={"by": admin["id"]})
+    return user
 
 
 # ================================================================ /supprimer (définitif)
@@ -406,6 +411,13 @@ async def delete_do(update: Update, context):
         return texts.ALREADY_HANDLED
     if user["id"] == admin["id"]:
         return texts.CANNOT_BAN_SELF, True
+    user = await delete_user(context, admin, user)
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         texts.deleted_done(user))
+    return "Supprimé"
+
+
+async def delete_user(context, admin: dict, user: dict) -> dict:
     telegram_id = user["telegram_id"]
     user = await _remove_access(context, user, "deleted")
     await messaging.send(context.bot, user, texts.DELETED_NOTICE, even_if_removed=True)
@@ -416,12 +428,10 @@ async def delete_do(update: Update, context):
         detached -= 10 ** 12
     await db.update_user(user["id"], {"telegram_id": detached, "telegram_username": None, "real_name": None})
     await db.log_event("user_deleted", user_id=user["id"], payload={"by": admin["id"], "role": user["role"]})
-    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
-                         texts.deleted_done(user))
     if admin["role"] != "dispatch":
         await messaging.notify_dispatch(context.bot, f"{texts.deleted_done(user)} (par {texts.esc(admin['display_name'])})",
                                         team=False)
-    return "Supprimé"
+    return user
 
 
 @common.callback
@@ -432,12 +442,17 @@ async def unban(update: Update, context):
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] != "banned":
         return texts.ALREADY_HANDLED
+    user = await unban_user(context, dispatcher, user)
+    await messaging.reply(update, texts.unbanned_done(user))
+    return "Réactivé"
+
+
+async def unban_user(context, admin: dict, user: dict) -> dict:
     user = await db.update_user(user["id"], {"status": "active"})
     await common.set_commands(context.bot, user)
     await messaging.send(context.bot, user, f"{texts.UNBANNED_NOTICE}\n\n{texts.welcome(user['role'])}")
-    await db.log_event("user_unbanned", user_id=user["id"], payload={"by": dispatcher["id"]})
-    await messaging.reply(update, texts.unbanned_done(user))
-    return "Réactivé"
+    await db.log_event("user_unbanned", user_id=user["id"], payload={"by": admin["id"]})
+    return user
 
 
 # ================================================================ catalogue des produits
@@ -884,17 +899,28 @@ async def name_set(update: Update, context):
     name = choices[int(idx)]
     if user.get("display_name") == name:
         return f"C'est déjà {name}"
-    holder = await names.holder_of(user["role"], name, exclude_user_id=user["id"])
-    if holder:
-        return texts.name_taken(name, holder), True
     old = user.get("display_name")
-    user = await db.update_user(user["id"], {"display_name": name})
-    await db.log_event("user_renamed", user_id=user["id"], payload={"from": old, "to": name, "by": admin["id"]})
-    await messaging.send(context.bot, user, texts.name_set_for_user(user))
+    user, error = await set_sheet_name(context, admin, user, name)
+    if error:
+        return error, True
     text, markup = await _picker(user)
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          f"{texts.name_set_done(user, old)}\n\n{text}", markup)
     return f"{old} → {name}"
+
+
+async def set_sheet_name(context, admin: dict, user: dict, name: str) -> tuple[dict, str | None]:
+    """Donne ce nom de feuille (« Livreur B »…) s'il est libre ; la personne est prévenue. (compte, erreur)."""
+    from bot.services import names
+
+    holder = await names.holder_of(user["role"], name, exclude_user_id=user["id"])
+    if holder:
+        return user, texts.name_taken(name, holder)
+    old = user.get("display_name")
+    user = await db.update_user(user["id"], {"display_name": name})
+    await db.log_event("user_renamed", user_id=user["id"], payload={"from": old, "to": name, "by": admin["id"]})
+    await messaging.send(context.bot, user, texts.name_set_for_user(user))
+    return user, None
 
 
 @common.callback

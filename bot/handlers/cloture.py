@@ -56,7 +56,6 @@ async def cloture(update: Update, context) -> None:
 @common.callback
 async def action(update: Update, context):
     """cl_go : clôturer · cl_x : annuler."""
-    global _last_done
     user = await common.actor(update)
     if not common.is_dispatch(user):
         return None
@@ -70,29 +69,43 @@ async def action(update: Update, context):
         return None
     if _lock.locked():
         return texts.CLOTURE_RUNNING, True
+    await messaging.edit(context.bot, chat_id, msg_id, texts.CLOTURE_IN_PROGRESS)
+    ok, text = await run(user)
+    if text == texts.CLOTURE_ALREADY:
+        await messaging.edit_markup(context.bot, chat_id, msg_id, None)
+        return text, True
+    await messaging.edit(context.bot, chat_id, msg_id, text)
+    return None
+
+
+async def run(user: dict) -> tuple[bool, str]:
+    """Remise à zéro de la semaine par le script (archives, onglets vidés, stock reporté). (réussi, texte)."""
+    global _last_done
+    if _lock.locked():
+        return False, texts.CLOTURE_RUNNING
     async with _lock:
         if _last_done is not None and time.monotonic() - _last_done < AGAIN_AFTER:
-            await messaging.edit_markup(context.bot, chat_id, msg_id, None)
-            return texts.CLOTURE_ALREADY, True
-        await messaging.edit(context.bot, chat_id, msg_id, texts.CLOTURE_IN_PROGRESS)
+            return False, texts.CLOTURE_ALREADY
         label = f"Reset du {to_paris(now_utc()):%Y-%m-%d %Hh%M}"
         tab = sheets.day_tab(now_utc())
         result = await sheets.fetch_action("cloture", payload={"onglet": tab, "libelle": label}, timeout=TIMEOUT)
         if not result or not result.get("ok"):
-            error = (result or {}).get("error") or "Google Sheets non relié"
-            await messaging.edit(context.bot, chat_id, msg_id, texts.cloture_failed(error))
-            return None
+            return False, texts.cloture_failed((result or {}).get("error") or "Google Sheets non relié")
         _last_done = time.monotonic()
         # Nouvelle semaine : les mouvements pas encore écrits appartenaient à l'ancienne.
         stock._inflight.clear()
         stock._sheet_cache = None
         await db.log_event("cloture", user_id=user["id"],
                            payload={"archive": result.get("archive"), "reports": result.get("reports")})
-        text = texts.cloture_done(result, tab)
-        await messaging.edit(context.bot, chat_id, msg_id, text)
-        if user["role"] != "dispatch":
-            await messaging.notify_dispatch(context.bot, f"{text}\n\n(par {texts.esc(user['display_name'])})")
-    return None
+        return True, texts.cloture_done(result, tab)
+
+
+async def precheck() -> tuple[bool, str]:
+    """Vérification avant la remise à zéro (courses ouvertes, stock reporté, cash pas récupéré)."""
+    if not sheets.enabled():
+        return False, texts.SHEETS_DISABLED
+    text, markup = await _precheck()
+    return markup is not None, text
 
 
 async def weekly_reminder(context) -> None:
