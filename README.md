@@ -427,6 +427,14 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
 - toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/stock`,
   `/caisse`, `/depense`, `/synchro`, `/close`, `/reset`, `/bannir`, `/reactiver`, `/supprimer`, `/produits`.
 
+### Le menu des admins par chapitres (/menu)
+
+Le ☰ de Telegram des admins ne garde que l'essentiel : `/menu`, `/encours`, `/livreurs`, `/users` (+ `/recap`
+pour le dispatch, `/mescourses` et `/modele` pour les franchisés). **`/menu`** ouvre six chapitres :
+🚚 Courses · 🛵 Livreurs · 👥 Utilisateurs · 📦 Stock · 💶 Argent · 📊 Bilans. Chaque chapitre liste ses
+commandes avec une phrase d'explication, et chaque bouton lance la commande comme si elle avait été tapée.
+Les mêmes chapitres s'affichent sous `/aide`. Toutes les commandes marchent toujours en les tapant.
+
 Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
 ### La fiche utilisateur (/users)

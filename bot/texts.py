@@ -81,28 +81,12 @@ WELCOME_DISPATCH = (
     "Dispatch actif — tous les droits.\n\n"
     "📝 Tu peux aussi passer des commandes comme un franchisé : envoie l'adresse et les produits ici "
     "(même fiche, même choix du livreur). Tu reçois une copie de chaque message 💬 entre livreurs et franchisés.\n\n"
-    "/recap — totaux par livreur\n"
-    "/journal — détail des courses livrées (envoyé automatiquement à 6h)\n"
-    "/encours — courses en attente et en cours (👤 Attribuer à un livreur)\n"
-    "/livreurs — mettre un livreur en service ou en pause\n"
-    "/users — tous les utilisateurs\n"
-    "/bannir — bannir quelqu'un : plus aucun accès au bot (réactivable avec /reactiver)\n"
-    "/reactiver — rendre un accès\n"
-    "/supprimer — supprimer un compte (définitif, la personne peut se réinscrire de zéro)\n"
-    "/prenom — le prénom affiché à côté de chaque livreur : « Livreur A (Ketur) »\n"
-    "/gouts — goûts des produits (MSX banane, fraise…) et ce qu'il reste chez chaque livreur\n"
-    "/produits — catalogue des produits (ajouter, supprimer)\n"
-    "/recharge — charger ou reprendre un livreur, cash récupéré\n"
-    "/ravi 1 — même chose en texte : livreur, box, quantités et produits\n"
-    "/swipe — transférer des produits d'un livreur à un autre (Livreur A &gt; Livreur B)\n"
-    "/stock — ce qui reste dans chaque box et chez les livreurs\n"
-    "/caisse — cash à récupérer chez chaque livreur\n"
-    "/depense — noter une dépense d'un livreur\n"
-    "/synchro — renvoyer les courses de la nuit vers Google Sheets\n"
-    "/ventes — ajouter un récap de ventes au tableau (par livreur)\n"
-    "/close — débrief de la journée (la journée est finie)\n"
-    "/reset — remise à zéro de la semaine : archives dans Drive, onglets vidés"
+    "☰ <b>/menu</b> — tout ce que le bot sait faire, par chapitre : 🚚 Courses · 🛵 Livreurs · 👥 Utilisateurs · "
+    "📦 Stock · 💶 Argent · 📊 Bilans.\n"
+    "Les plus utilisées : /encours (courses de la nuit) · /livreurs (service / pause) · /users (fiches) · "
+    "/recap (totaux)."
 )
+
 
 MODEL_HELP = (
     "📝 <b>Modèle de commande</b>\n\n"
@@ -143,8 +127,8 @@ WELCOME = {"franchise": WELCOME_FRANCHISE, "livreur": WELCOME_LIVREUR, "dispatch
 
 ADMIN_HELP_FRANCHISE = (
     "\n\n👑 <b>Pleins pouvoirs</b> — sur ta course : 👤 Attribuer à un livreur, ✏️ Modifier, 📦 Livrée.\n"
-    "/encours — toutes les courses · /livreurs — service / pause des livreurs\n"
-    "/recap · /journal · /users · /recharge · /ravi · /swipe · /stock · /caisse · /depense · /ventes · /synchro · /close · /reset · /bannir · /reactiver · /supprimer · /prenom · /gouts"
+    "☰ <b>/menu</b> — tout le reste, par chapitre : 🚚 Courses · 🛵 Livreurs · 👥 Utilisateurs · 📦 Stock · "
+    "💶 Argent · 📊 Bilans."
 )
 
 
@@ -2147,3 +2131,15 @@ def user_role_ask(user: dict) -> str:
 def role_changed_notice(role: str) -> str:
     return f"🔄 Ton rôle a changé : tu es maintenant <b>{ROLE_LABEL.get(role, role)}</b>."
 
+
+# ================================================================ /menu des admins
+
+MENU_HOME = ("☰ <b>Menu</b> — choisis un chapitre.\n"
+             "Toutes les commandes marchent aussi en les tapant (/encours, /stock…).")
+
+
+def menu_chapter(title: str, items) -> str:
+    lines = [f"<b>{title}</b>", ""]
+    for cmd, _, about in items:
+        lines.append(f"{'/' + cmd if not cmd.startswith('@') else '🗺'} — {about}")
+    return "\n".join(lines)
