@@ -709,3 +709,11 @@ simple qui respecte le mur de confidentialité (§12).
      `variants.set_variants` (les goûts retirés disparaissent aussi chez les livreurs). Développé et testé
      uniquement sur la base de test locale, avec des produits fictifs ; le catalogue de production n'a été ni
      lu ni modifié.
+
+166. **Trafic en temps réel avec TomTom, pas Waze** (l'exploitant : « relier Waze… avoir le temps réel »). Waze
+     n'expose aucune donnée de trajet à une application tierce (kit réservé à des partenaires, applis natives) ;
+     le bouton Waze reste pour la navigation. À la place : position en direct Telegram + TomTom Routing API
+     (`traffic=true`, voiture ou deux-roues) toutes les `TRAFFIC_REFRESH_MINUTES`, seulement pour la course en
+     cours de chaque livreur, position fraîche, pas sur place (150 m) — pour rester dans le quota gratuit.
+     Résultat en mémoire (`services/traffic.py`) ; alerte de retard ≥ 10 min sur l'heure annoncée, une fois par
+     course et par annonce. Sans clé, rien ne change.

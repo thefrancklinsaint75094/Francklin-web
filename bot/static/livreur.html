@@ -284,7 +284,9 @@ function currentCard(c) {
       c.requested_time ? el("div", { class: "muted", style: "margin-top:4px" }, "🕐 Le client veut : " + c.requested_time) : null,
       c.nav.maps ? el("div", { class: "two" }, el("button", { class: "big blue-b", onclick: () => open(c.nav.maps) }, "🗺 Y ALLER"),
         el("button", { class: "big grey", onclick: () => open(c.nav.waze) }, "Waze")) : null)),
-    el("div", { class: "step" }, el("span", { class: "n" }, "2"), el("div", { class: "b" }, el("div", { class: "label" }, "Ton temps"), etaBlock)),
+    el("div", { class: "step" }, el("span", { class: "n" }, "2"), el("div", { class: "b" }, el("div", { class: "label" }, "Ton temps"), etaBlock,
+      c.traffic ? el("div", { class: "muted", style: "margin-top:8px" }, `🚦 D'après le trafic : ${c.traffic.in} min (vers ${c.traffic.at})` +
+        (c.traffic.delay > 0 ? ` · ${c.traffic.delay} min de bouchons` : "")) : null)),
     el("div", { class: "step" }, el("span", { class: "n" }, "3"), el("div", { class: "b" },
       el("div", { class: "label" }, "À donner au client"),
       el("div", { class: "items" }, c.lines.length ? c.lines.map((l) => el("div", {}, `${l.q} × ${l.p}`)) : el("div", {}, c.products || "")),

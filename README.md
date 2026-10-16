@@ -89,6 +89,8 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `MAX_COURSES_PER_LIVREUR` | non | `0` | courses en même temps par livreur (`0` : sans limite, il les enchaîne) |
 | `PORT` | pour l'appli | | port du serveur web (mini-application) ; Railway : `8080`, avec un domaine public |
 | `WEBAPP_URL` | non | `https://<RAILWAY_PUBLIC_DOMAIN>` | adresse publique de l'appli (bouton « Dispatch ») |
+| `TOMTOM_API_KEY` | non | | heure d'arrivée en temps réel, trafic compris (developer.tomtom.com) ; vide : désactivé |
+| `TRAFFIC_REFRESH_MINUTES` | non | `3` | fréquence du calcul avec le trafic |
 | `QUIET_NOTIFICATIONS` | non | `1` | `0` : tous les avis en messages, pour tout le monde (sans tenir compte du réglage de chacun) |
 | `NOTIFY_FRANCHISES` | non | `1` | `0` : les franchisés ne reçoivent plus la copie des avis du dispatch |
 | `DRAFT_EXPIRY_MINUTES` | non | `15` | durée de vie d'une fiche non confirmée |
@@ -478,6 +480,14 @@ adresse, produits…) pour donner un coup de main. Ses propres commandes portent
 Les données se mettent à jour toutes les 10 secondes. Chaque appel est signé par Telegram (vérifié avec le token
 du bot) et réservé aux admins actifs ; les actions passent par exactement le même code que les boutons du chat.
 Serveur web dans le bot (aiohttp, `PORT`), domaine public Railway. Base : `sql/migrations/021_webapp.sql`.
+
+**🚦 Trafic en temps réel (TomTom).** Avec `TOMTOM_API_KEY`, toutes les 3 minutes, la position en direct de chaque
+livreur (partagée dans Telegram) part chez TomTom avec l'adresse de sa course en cours : temps de trajet avec les
+bouchons du moment. L'écran « En direct » montre cette heure (« 🚦 trafic », avec l'heure annoncée par le livreur
+à côté), l'appli du livreur aussi (« D'après le trafic : 14 min · 6 min de bouchons »), et si elle dépasse de
+10 min ou plus l'heure annoncée, le dispatch et les franchisés reçoivent une alerte (une fois par course). Une
+seule course par livreur, pas sur place, pas en transports en commun (TomTom ne les calcule pas : l'estimation
+habituelle reste) — environ 20 calculs par heure et par livreur en course, dans le quota gratuit de TomTom.
 
 **Moins de messages.** Chaque avis va dans 🔔 Activité. En message Telegram, par défaut (« l'essentiel »), seuls
 les problèmes et ce qui attend une action : aucun livreur disponible, livreur qui annule, annulée sur place,

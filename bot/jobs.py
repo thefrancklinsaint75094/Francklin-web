@@ -224,6 +224,11 @@ def register(job_queue) -> None:
     job_queue.run_repeating(_safe(declare.remind), interval=120, first=100, name="declare_remind")
     job_queue.run_repeating(_safe(stale_positions), interval=120, first=60, name="stale_positions")
     job_queue.run_repeating(_safe(stuck_courses), interval=300, first=90, name="stuck_courses")
+    if cfg.tomtom_api_key:                     # heure d'arrivée avec le trafic (TomTom)
+        from bot.services import traffic
+
+        job_queue.run_repeating(_safe(traffic.refresh), interval=cfg.traffic_refresh_minutes * 60, first=45,
+                                name="traffic")
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")
     job_queue.run_daily(_safe(daily_journal), time=time(cfg.night_end_hour, 0, tzinfo=PARIS), name="daily_journal")
     job_queue.run_daily(_safe(retention), time=time(7, 0, tzinfo=PARIS), name="retention")

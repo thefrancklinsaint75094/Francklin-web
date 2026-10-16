@@ -49,6 +49,15 @@ def _nav(c: dict) -> dict:
             "waze": f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"}
 
 
+def _traffic(course_id: int, now) -> dict | None:
+    from bot.services import traffic
+
+    live = traffic.live(course_id)
+    if not live:
+        return None
+    return {"at": hhmm(live["at"]), "in": max(0, int((live["at"] - now).total_seconds() // 60)), "delay": live["delay"]}
+
+
 async def board(user: dict) -> dict:
     from bot.handlers import declare as declare_h
     from bot.services import declare
@@ -73,7 +82,7 @@ async def board(user: dict) -> dict:
             "price": float(c.get("price") or 0), "requested_time": c.get("requested_time"),
             "eta_at": hhmm(eta) if eta else None, "eta_in": max(0, int((eta - now).total_seconds() // 60)) if eta else None,
             "franchise": franchise.get("display_name") or "Franchisé",
-            "pending_edit": bool(c.get("pending_edit")), "nav": _nav(c),
+            "pending_edit": bool(c.get("pending_edit")), "nav": _nav(c), "traffic": _traffic(c["id"], now),
             "messages": [{"mine": m["sender_id"] == user["id"], "text": m["content"], "at": _hm(m["created_at"])}
                          for m in msgs],
         }

@@ -3852,3 +3852,59 @@ async def test_catalog_management_in_app(h):
         assert r["ok"] is False and (await db.get_product(pid))["name"] == "Produit Test"   # nom déjà pris
         r = await act(DISPATCH, type="catalog_delete", id=pid)
         assert r["ok"] and await db.get_product(pid) is None
+
+
+async def test_traffic_live_arrival(h, test_config):
+    """TomTom : arrivée recalculée avec le trafic pour la course en cours, affichée dans les applis, alerte
+    une fois si elle dépasse le temps annoncé par le livreur. Sans clé : rien."""
+    import dataclasses
+
+    import httpx
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import config, web
+    from bot.services import traffic
+
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"routes": [{"summary": {"travelTimeInSeconds": 1800,
+                                                                  "trafficDelayInSeconds": 600, "lengthInMeters": 7400}}]})
+
+    assert await traffic.route(48.85, 2.35, 48.86, 2.36, "voiture") is None          # pas de clé
+    config.set_config(dataclasses.replace(test_config, tomtom_api_key="k"))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        r = await traffic.route(48.85, 2.35, 48.86, 2.36, "voiture", client=client)
+    assert r == {"seconds": 1800, "delay": 600, "meters": 7400} and "travelMode=car" in seen["url"]
+    assert await traffic.route(48.85, 2.35, 48.86, 2.36, "transport") is None        # métro : pas de TomTom
+
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "oberkampf")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await h.text(L1, "5")                                                           # annonce 5 min
+
+    async def fake_route(*a, **k):
+        return {"seconds": 1800, "delay": 600, "meters": 7400}
+
+    traffic._live.clear()
+    traffic._late_alerted.clear()
+    original = traffic.route
+    traffic.route = fake_route
+    try:
+        await traffic.refresh(h.context)
+        await traffic.refresh(h.context)
+    finally:
+        traffic.route = original
+    live = traffic.live(course["id"])
+    assert live and live["minutes"] == 30 and live["delay"] == 10
+    alerts = [t for t in h.tg.texts(DISPATCH) if t.startswith(f"🚦 #{course['id']}")]
+    assert len(alerts) == 1 and "sera en retard" in alerts[0]
+
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        board = await (await client.post("/api/board", headers={"X-Init-Data": _init_data(DISPATCH)})).json()
+        route = board["routes"][0]
+        assert route["arrival"]["source"] == "trafic" and route["arrival"]["announced"]
+        me = await (await client.post("/api/me/board", headers={"X-Init-Data": _init_data(L1)})).json()
+        assert me["current"]["traffic"]["delay"] == 10
