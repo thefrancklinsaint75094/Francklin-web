@@ -3908,3 +3908,62 @@ async def test_traffic_live_arrival(h, test_config):
         assert route["arrival"]["source"] == "trafic" and route["arrival"]["announced"]
         me = await (await client.post("/api/me/board", headers={"X-Init-Data": _init_data(L1)})).json()
         assert me["current"]["traffic"]["delay"] == 10
+
+
+NAVITIA = {"journeys": [{"duration": 1260, "arrival_date_time": "20261016T185200", "sections": [
+    {"type": "street_network", "duration": 240, "mode": "walking"},
+    {"type": "waiting", "duration": 120},
+    {"type": "public_transport", "duration": 600, "from": {"name": "Oberkampf"}, "to": {"name": "Robespierre"},
+     "display_informations": {"commercial_mode": "Métro", "code": "9", "direction": "Mairie de Montreuil"}},
+    {"type": "street_network", "duration": 300, "mode": "walking"}]}],
+    "disruptions": [{"id": "d1"}]}
+
+
+async def test_idfm_transit_route(h, test_config):
+    """IDFM (PRIM) : pour un livreur en transports, arrivée d'après les horaires réels et itinéraire simple
+    (lignes, arrêts, marche) dans son appli. Sans clé : rien."""
+    import dataclasses
+
+    import httpx
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import config, web
+    from bot.services import traffic
+
+    seen = {}
+
+    def handler(request):
+        seen["url"], seen["key"] = str(request.url), request.headers.get("apikey")
+        return httpx.Response(200, json=NAVITIA)
+
+    assert await traffic.route_transit(48.85, 2.35, 48.86, 2.36) is None             # pas de clé
+    config.set_config(dataclasses.replace(test_config, idfm_api_key="cle-idfm"))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        r = await traffic.route_transit(48.85, 2.35, 48.86, 2.36, client=client)
+    assert seen["key"] == "cle-idfm" and "from=2.35%3B48.85" in seen["url"]
+    assert r["seconds"] == 1260 and r["disruptions"] == 1
+    assert r["steps"] == ["🚶 4 min à pied", "⏳ 2 min d'attente",
+                          "🚇 Métro 9 → Mairie de Montreuil : Oberkampf → Robespierre", "🚶 5 min à pied"]
+
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    await db.update_user(l1["id"], {"transport_mode": "transport"})
+    course = await order(h, F1, "oberkampf")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+
+    async def fake_transit(*a, **k):
+        return {"seconds": 1260, "arrival": None, "steps": r["steps"], "disruptions": 1}
+
+    traffic._live.clear()
+    original = traffic.route_transit
+    traffic.route_transit = fake_transit
+    try:
+        await traffic.refresh(h.context)
+    finally:
+        traffic.route_transit = original
+    assert traffic.live(course["id"])["source"] == "transports"
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        me = await (await client.post("/api/me/board", headers={"X-Init-Data": _init_data(L1)})).json()
+        assert me["current"]["traffic"]["source"] == "transports" and len(me["current"]["traffic"]["steps"]) == 4
+        board = await (await client.post("/api/board", headers={"X-Init-Data": _init_data(DISPATCH)})).json()
+        assert board["routes"][0]["arrival"]["source"] == "transports"
