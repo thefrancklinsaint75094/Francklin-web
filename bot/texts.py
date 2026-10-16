@@ -996,17 +996,17 @@ def encours(pending_lines: list[str], assigned_lines: list[str], on_duty: int, t
     return "\n".join(lines)
 
 
-def encours_pending_line(course: dict, franchise: dict) -> str:
+def encours_pending_line(course: dict) -> str:
     return (
-        f"#{course['id']} — {esc(franchise['display_name'])} — {esc(course['district'])} — "
+        f"#{course['id']} — {esc(course['district'])} — {esc(course.get('products') or '?')} — "
         f"{eur(course['price'])} — vague {course['broadcast_round']}"
     )
 
 
-def encours_assigned_line(course: dict, franchise: dict, livreur: dict, minutes: int, two: bool) -> str:
+def encours_assigned_line(course: dict, livreur: dict, minutes: int, two: bool) -> str:
     text = (
-        f"#{course['id']} — {esc(franchise['display_name'])} → {esc(livreur['display_name'])} — "
-        f"{esc(course['district'])} — {eur(course['price'])} — depuis {minutes} min"
+        f"#{course['id']} — {esc(livreur['display_name'])} — {esc(course['district'])} — "
+        f"{esc(course.get('products') or '?')} — {eur(course['price'])} — depuis {minutes} min"
     )
     return text + (" · 2 courses" if two else "")
 

@@ -84,7 +84,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .place { font-weight: 600; margin-top: 6px; }
 .addr { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who { margin-top: 6px; font-size: 14px; }
-.prod { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.prod { color: var(--text); font-weight: 600; font-size: 13px; margin-top: 4px; }
 .price { font-weight: 700; color: var(--text); }
 .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .badge { font-size: 12px; background: var(--soft); border-radius: 8px; padding: 3px 8px; }
@@ -377,8 +377,8 @@ function viewHome() {
     wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, d.assigned.map((c) =>
       el("div", { class: "mini tap", onclick: () => { S.seg = "assigned"; S.open = c.id; go("courses"); S.open = c.id; render(); } },
         el("span", { class: "k" }, "#" + c.id),
-        el("div", { class: "grow" }, el("div", {}, c.district || ""), el("div", { class: "small muted" }, who(c.livreur) +
-          (order[c.id] ? ` · ${order[c.id] + 1}e à faire` : " · en route"))),
+        el("div", { class: "grow" }, el("div", {}, c.district || ""), el("div", { class: "small" }, "🛍 " + (c.products || "—")),
+          el("div", { class: "small muted" }, who(c.livreur) + (order[c.id] ? ` · ${order[c.id] + 1}e à faire` : " · en route"))),
         el("span", { class: "price" }, eur(c.price)))))));
   }
   return wrap;
@@ -400,10 +400,11 @@ function routeCard(r) {
     el("div", { class: "now" },
       el("div", { class: "where" }, el("div", {}, el("b", {}, "#" + c.id), " · ", c.district || ""),
          el("div", { class: "addr" }, c.address || ""),
-         el("div", { class: "small muted" }, `${who(c.franchise)} · ${eur(c.price)}` + (r.distance_km !== null ? ` · à ${r.distance_km} km` : ""))),
+         el("div", { class: "prod" }, "🛍 " + (c.products || "—")),
+         el("div", { class: "small muted" }, eur(c.price) + (r.distance_km !== null ? ` · à ${r.distance_km} km` : ""))),
       eta),
     r.queue.length ? el("div", { class: "next" }, r.queue.map((q, i) =>
-      el("div", {}, `${i + 2}. #${q.id} · ${q.district || ""} · ${eur(q.price)}`))) : null);
+      el("div", {}, `${i + 2}. #${q.id} · ${q.district || ""} · ${q.products || ""} · ${eur(q.price)}`))) : null);
 }
 
 function viewCourses() {
@@ -450,9 +451,8 @@ function courseCard(c) {
     el("div", { class: "row" }, el("span", { class: "num" }, "#" + c.id), pill, el("span", { class: "right" }, right)),
     el("div", { class: "place" }, c.district || ""),
     el("div", { class: "addr" }, c.address || ""),
-    el("div", { class: "who" }, who(c.franchise), el("span", { class: "muted" }, "  →  "),
-       c.livreur ? who(c.livreur) : el("span", { class: "muted" }, "pas encore de livreur")),
-    el("div", { class: "row prod" }, el("span", { class: "grow" }, c.products || ""), el("span", { class: "price" }, eur(c.price))),
+    el("div", { class: "row prod" }, el("span", { class: "grow" }, "🛍 " + (c.products || "—")), el("span", { class: "price" }, eur(c.price))),
+    el("div", { class: "who" }, c.livreur ? "🛵 " + who(c.livreur) : el("span", { class: "muted" }, "pas encore de livreur")),
     badges.length ? el("div", { class: "badges" }, badges) : null);
   if (S.open === c.id && c.status !== "delivered") card.append(courseActions(c));
   return card;

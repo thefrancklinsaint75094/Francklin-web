@@ -659,8 +659,9 @@ async def test_encours_and_overrides(h):
 
     await h.text(DISPATCH, "/encours")
     enc = h.tg.last(DISPATCH)
-    assert "⏳ En attente (1)" in enc.text and f"#{c2['id']} — Franchisé 2 — Paris 11e — 50 € — vague 1" in enc.text
-    assert f"#{c1['id']} — Franchisé 1 → Livreur 1 — Paris 4e — 60 € — depuis 0 min" in enc.text
+    assert "⏳ En attente (1)" in enc.text and f"#{c2['id']} — Paris 11e — {c2['products']} — 50 € — vague 1" in enc.text
+    assert f"#{c1['id']} — Livreur 1 — Paris 4e — {c1['products']} — 60 € — depuis 0 min" in enc.text
+    assert "Franchisé" not in enc.text.split("Livrées")[0]          # les produits, pas le nom des franchisés
     assert "📍 Livreurs en service : 1 / 2" in enc.text
 
     await h.press_data(DISPATCH, enc, f"force_release:{c1['id']}")
