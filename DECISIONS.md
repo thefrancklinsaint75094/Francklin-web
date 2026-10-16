@@ -617,3 +617,11 @@ simple qui respecte le mur de confidentialité (§12).
      🛵 Livreurs, 👥 Utilisateurs, 📦 Stock, 💶 Argent, 📊 Bilans. Un bouton construit un message « /commande »
      et appelle le handler de la commande : aucun comportement en double à maintenir. Le menu du livreur et
      celui du ravitailleur ne changent pas.
+
+151. **Fiche course unique** (inventaire, point 3). Le message de course du franchisé et la fiche ouverte depuis
+     `/encours` utilisent le même clavier (`keyboards.course_card`) ; `/encours` n'a plus qu'un bouton par
+     course. **🔄 Changer de livreur** sur une course prise : `lifecycle.reassign` change le livreur par une mise
+     à jour conditionnelle (statut `assigned` ET ancien livreur), sans repasser par la diffusion, puis réutilise
+     `after_assignment` (fiche, délai demandé, franchisé et dispatch prévenus) ; « Rediffuser » devient une option
+     de cette liste. **🕐 Heure** souhaitée modifiable (`requested_time`, texte libre, « - » l'enlève), appliquée
+     sans aperçu car sans risque. Pas de migration.

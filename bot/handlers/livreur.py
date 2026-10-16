@@ -457,7 +457,7 @@ async def _back_to_card(context, chat_id: int, message_id: int | None, course: d
     livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
     text, markup = lifecycle.franchise_view(course, livreur)
     if course["franchise_id"] != user["id"]:
-        markup = None  # boutons du message de course réservés au franchisé de la course
+        markup = keyboards.course_card(course, owner=False)   # fiche ouverte depuis /encours par un admin
     await messaging.edit(context.bot, chat_id, message_id, text, markup)
 
 

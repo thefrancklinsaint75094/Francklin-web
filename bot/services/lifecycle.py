@@ -107,6 +107,30 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
     stock.after_assignment_later(context, course, livreur)
 
 
+async def reassign(context, course: dict, livreur: dict, by: dict) -> dict | None:
+    """🔄 Changer de livreur : la course prise passe directement à un autre livreur, sans repasser par la
+    diffusion. L'ancien est libéré (fiche sans boutons + message), le nouveau reçoit la fiche complète ;
+    franchisé et dispatch prévenus comme pour une prise. None si la course a changé entre-temps."""
+    old_id = course.get("livreur_id")
+    updated = await db.update_course_if_status(
+        course["id"], ["assigned"],
+        {"livreur_id": livreur["id"], "assigned_at": iso(now_utc()), "livreur_message_id": None},
+        livreur_id=old_id,
+    )
+    if updated is None:
+        return None
+    old = await db.get_user(old_id) if old_id else None
+    if old:
+        await db.update_user(old["id"], {"soon_free": False})
+        await messaging.edit_markup(context.bot, old["telegram_id"], course.get("livreur_message_id"))
+        await messaging.send(context.bot, old, texts.reassigned_away_for_livreur(course["id"]))
+    await db.log_event("course_reassigned", course["id"], livreur["id"], {"from": old_id, "by": by["id"]})
+    await after_assignment(context, updated, livreur, None)
+    if old:
+        await broadcast.kick_pending(context)          # l'ancien livreur est libre pour une course en attente
+    return updated
+
+
 # ---------------------------------------------------------------- livraison
 
 PAYMENTS = {"e": "especes", "v": "virement"}   # code du bouton → valeur en base

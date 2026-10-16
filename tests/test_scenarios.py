@@ -355,8 +355,8 @@ async def test_dispo_broadcast_take_and_deliver(h):
     assert h.tg.messages[(L2, prop2.message_id)].text == texts.proposal_taken(course["id"])
     fmsg = h.tg.find(F1, f"Course #{course['id']} — prise par Livreur 1")
     assert "lv3001" not in fmsg.text
-    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["force_deliver", "order_edit", "addr", "relay_start",
-                                                          "course_withdraw"]
+    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["force_deliver", "order_edit", "addr", "ct", "assign",
+                                                          "relay_start", "course_withdraw"]
     assert f"🚴 <b>Course #{course['id']} prise</b> par Livreur 1\nPour Franchisé 1 · 📍 12 Rue de Rivoli 75004 Paris · 60 €" in [
         x.replace("\xa0", " ") for x in h.tg.texts(DISPATCH)]
     # Le franchisé reçoit un vrai message (une fiche modifiée ne sonne pas sur le téléphone).
@@ -1297,7 +1297,7 @@ async def test_franchise_has_full_admin_powers(h):
 
     # Le franchisé l'attribue lui-même, sans attendre « Je prends ».
     fmsg = h.tg.find(F1, f"Course #{course['id']}")
-    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["assign", "order_edit", "addr", "course_withdraw"]
+    assert [d.split(":")[0] for _, d in fmsg.buttons] == ["assign", "order_edit", "addr", "ct", "course_withdraw"]
     await h.press(F1, fmsg, "assign:")
     picker = h.tg.last(F1)
     assert "À quel livreur attribuer" in picker.text and "🟢 Livreur 1" in picker.buttons[0][0]
@@ -3253,3 +3253,53 @@ async def test_admin_menu_every_button_runs(h):
             assert len(h.tg.inbox(DISPATCH)) > before, cmd
             assert not any("Erreur technique" in t for t in h.tg.texts(DISPATCH)), cmd
             await h.text(DISPATCH, "/aide")              # sort d'une éventuelle saisie en cours
+
+
+async def test_course_card_change_livreur_and_time(h):
+    """Fiche course unique : /encours → fiche ; 🔄 Changer de livreur sur une course prise ; 🕐 Heure."""
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await go_on_duty(h, L2, REPUBLIQUE)
+    fiche_l1 = h.tg.find(L1, f"Course #{course['id']} — c'est pour toi")
+
+    # /encours : un bouton par course → la même fiche que chez le franchisé
+    await h.text(DISPATCH, "/encours")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"cc:{course['id']}")
+    card = h.tg.last(DISPATCH)
+    assert card.text.startswith(f"🚴 Course #{course['id']} — prise par Livreur 1") and "🏪 Franchisé 1" in card.text
+    data = [d.split(":")[0] for _, d in card.buttons]
+    assert data == ["force_deliver", "order_edit", "addr", "ct", "assign", "force_cancel"]
+
+    # 🔄 Changer de livreur : la liste ne propose pas le livreur actuel, et permet de rediffuser
+    await h.press_data(DISPATCH, card, f"assign:{course['id']}")
+    picker = h.tg.last(DISPATCH)
+    assert "Changer de livreur" in picker.text and "aujourd'hui : Livreur 1" in picker.text
+    targets = [d for _, d in picker.buttons]
+    assert f"assign_to:{course['id']}:{l1['id']}" not in targets and f"force_release:{course['id']}" in targets
+    await h.press_data(DISPATCH, picker, f"assign_to:{course['id']}:{l2['id']}")
+    moved = await db.get_course(course["id"])
+    assert moved["status"] == "assigned" and moved["livreur_id"] == l2["id"]
+    assert "donnée à Livreur 2 (au lieu de Livreur 1)" in h.tg.messages[(DISPATCH, picker.message_id)].text
+    assert any("donnée à un autre livreur" in t for t in h.tg.texts(L1))
+    assert not h.tg.messages[(L1, fiche_l1.message_id)].markup          # ancienne fiche sans boutons
+    h.tg.find(L2, f"Course #{course['id']} — c'est pour toi")
+    assert "prise par Livreur 2" in h.tg.messages[(F1, (await db.get_course(course["id"]))["franchise_message_id"])].text
+
+    # 🕐 Heure souhaitée, par le franchisé sur son message de course
+    fmsg = h.tg.messages[(F1, moved["franchise_message_id"])]
+    await h.press(F1, fmsg, "ct:")
+    assert "Heure souhaitée pour la course" in h.tg.last(F1).text
+    await h.text(F1, "vers 23h30")
+    assert (await db.get_course(course["id"]))["requested_time"] == "vers 23h30"
+    assert any("heure souhaitée : vers 23h30 ✅" in t for t in h.tg.texts(F1))
+    assert any("heure souhaitée : <b>vers 23h30</b>" in t for t in h.tg.texts(L2))
+    assert "🕐 vers 23h30" in h.tg.find(L2, f"Course #{course['id']} — c'est pour toi").text
+    assert any("heure souhaitée : <b>vers 23h30</b>" in t for t in h.tg.texts(DISPATCH))
+    assert "🕐 vers 23h30" in h.tg.messages[(F1, (await db.get_course(course["id"]))["franchise_message_id"])].text
+
+    # « - » enlève l'heure
+    await h.press(F1, h.tg.messages[(F1, (await db.get_course(course["id"]))["franchise_message_id"])], "ct:")
+    await h.text(F1, "-")
+    assert (await db.get_course(course["id"]))["requested_time"] is None

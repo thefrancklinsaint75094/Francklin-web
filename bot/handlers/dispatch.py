@@ -213,7 +213,7 @@ async def encours(update: Update, context) -> None:
             "cancelled": len(cancelled)}
     await messaging.reply(update, texts.encours(pending_lines, assigned_lines, on_duty, len(livreurs),
                                                 done, night_label(night)),
-                          keyboards.encours(pending, assigned))
+                          keyboards.encours(pending, assigned, users))
 
 
 @common.callback
@@ -686,45 +686,75 @@ async def duty(update: Update, context):
 
 @common.callback
 async def assign_ask(update: Update, context):
-    """assign:<course> : l'admin choisit le livreur d'une course en attente."""
+    """assign:<course> : l'admin choisit le livreur d'une course en attente, ou en change (course prise)."""
     if await _dispatch(update) is None:
         return None
     course = await db.get_course(common.arg(update, int))
-    if course is None or course["status"] != "pending":
+    if course is None or course["status"] not in ("pending", "assigned"):
         return texts.ALREADY_CLOSED, True
-    livreurs = sorted(await db.list_users(role="livreur", status="active"),
+    current = await db.get_user(course["livreur_id"]) if course["status"] == "assigned" else None
+    livreurs = sorted((lv for lv in await db.list_users(role="livreur", status="active")
+                       if lv["id"] != course.get("livreur_id")),
                       key=lambda u: (not u.get("on_duty"), u.get("display_name") or ""))
     if not livreurs:
         return texts.RESTOCK_NO_LIVREUR, True
     counts: dict[str, int] = defaultdict(int)
     for c in await db.list_assigned_for_livreurs([lv["id"] for lv in livreurs]):
         counts[c["livreur_id"]] += 1
-    await messaging.reply(update, texts.assign_prompt(course),
-                          keyboards.assign_livreurs(course["id"], livreurs, counts))
+    await messaging.reply(update, texts.assign_prompt(course, current if course["status"] == "assigned" else None),
+                          keyboards.assign_livreurs(course["id"], livreurs, counts,
+                                                    release=course["status"] == "assigned"))
     return None
 
 
 @common.callback
 async def assign_do(update: Update, context):
-    """assign_to:<course>:<livreur> : attribue la course, sans passer par « Je prends »."""
+    """assign_to:<course>:<livreur> : attribue la course (sans « Je prends »), ou la donne à un autre livreur."""
     admin = await _dispatch(update)
     if admin is None:
         return None
     _, course_id, livreur_id = update.callback_query.data.split(":", 2)
     livreur = await db.get_user(livreur_id)
-    message_id = update.callback_query.message.message_id
+    chat_id, message_id = update.effective_chat.id, update.callback_query.message.message_id
     if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
         return texts.ALREADY_HANDLED, True
+    course = await db.get_course(int(course_id))
+    if course is not None and course["status"] == "assigned":
+        if course.get("livreur_id") == livreur["id"]:
+            return texts.ALREADY_HANDLED, True
+        old = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
+        moved = await lifecycle.reassign(context, course, livreur, admin)
+        if moved is None:
+            await messaging.edit(context.bot, chat_id, message_id,
+                                 f"Rien à faire : la course #{course_id} a changé entre-temps.")
+            return texts.ALREADY_CLOSED, True
+        await messaging.edit(context.bot, chat_id, message_id, texts.reassigned_done(moved, old, livreur))
+        return "Livreur changé ✅"
     won = await db.take_course(int(course_id), livreur["id"])
     if won is None:
-        await messaging.edit(context.bot, update.effective_chat.id, message_id,
+        await messaging.edit(context.bot, chat_id, message_id,
                              f"Rien à faire : la course #{course_id} n'est plus en attente.")
         return texts.ALREADY_CLOSED, True
     await lifecycle.after_assignment(context, won, livreur, None)
     await db.log_event("course_assigned_by_admin", won["id"], livreur["id"], {"by": admin["id"]})
-    await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.assigned_done(won, livreur))
+    await messaging.edit(context.bot, chat_id, message_id, texts.assigned_done(won, livreur))
     return "Attribuée ✅"
 
+
+@common.callback
+async def course_card(update: Update, context):
+    """cc:<course> (bouton de /encours) : la fiche de la course, avec les mêmes boutons que chez le franchisé."""
+    admin = await _dispatch(update)
+    if admin is None:
+        return None
+    course = await db.get_course(common.arg(update, int))
+    if course is None or course["status"] not in ("pending", "assigned"):
+        return texts.ALREADY_CLOSED, True
+    franchise = await db.get_user(course["franchise_id"]) or {}
+    livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
+    await messaging.reply(update, texts.course_card(course, franchise, livreur),
+                          keyboards.course_card(course, owner=course["franchise_id"] == admin["id"]))
+    return None
 
 
 # ================================================================ nom dans les feuilles (livreurs, ravitailleurs)
