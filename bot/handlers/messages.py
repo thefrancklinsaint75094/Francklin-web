@@ -7,7 +7,7 @@ from __future__ import annotations
 from telegram import Update
 
 from bot import config, messaging, texts
-from bot.handlers import address, cash, user_card, common, declare, franchise, livreur, onboarding, restock, restock_text, sales, swipe
+from bot.handlers import address, cash, course_time, user_card, common, declare, franchise, livreur, onboarding, restock, restock_text, sales, swipe
 
 
 async def on_message(update: Update, context) -> None:
@@ -41,6 +41,10 @@ async def on_message(update: Update, context) -> None:
     # Nouvelle adresse d'une course (📍 Adresse) : franchisé ou admin.
     if state == address.STATE and update.message.text:
         await address.on_message(update, context, user, payload)
+        return
+    # Heure souhaitée d'une course (🕐 Heure) : franchisé ou admin.
+    if state == course_time.STATE and update.message.text:
+        await course_time.on_message(update, context, user, payload)
         return
     # Livreur qui écrit son temps (« 47 », « 1h10 ») : délai de sa course, le franchisé est prévenu.
     # Pas pendant une autre saisie (montant d'une dépense, prix d'une « Modif », stock…).

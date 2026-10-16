@@ -302,7 +302,12 @@ def franchise_course_status(course: dict, livreur: dict | None, no_livreur: bool
         head = f"🗑 Course #{cid} — retirée."
     else:
         head = f"🗑 Course #{cid} — annulée sur place."
-    return f"{head}\n{course_summary(course)}"
+    lines = [head, course_summary(course)]
+    if status in ("pending", "assigned"):                # fiche course : tout ce qui peut se changer
+        lines.append(f"🍾 {esc(course['products'])}")
+        if course.get("requested_time"):
+            lines.append(f"🕐 {esc(course['requested_time'])}")
+    return "\n".join(lines)
 
 
 def withdraw_confirm(course_id: int) -> str:
@@ -889,7 +894,10 @@ def duty_off_by_admin(admin: dict) -> str:
     return f"⏸ {esc(admin.get('display_name') or 'Le dispatch')} t'a mis en pause. Touche 🟢 Je commence pour reprendre."
 
 
-def assign_prompt(course: dict) -> str:
+def assign_prompt(course: dict, current: dict | None = None) -> str:
+    if current is not None:
+        return (f"🔄 Changer de livreur pour la course #{course['id']} (aujourd'hui : "
+                f"{esc(current.get('display_name') or '?')}) ?\n{course_summary(course)}")
     return f"👤 À quel livreur attribuer la course #{course['id']} ?\n{course_summary(course)}"
 
 
@@ -2143,3 +2151,38 @@ def menu_chapter(title: str, items) -> str:
     for cmd, _, about in items:
         lines.append(f"{'/' + cmd if not cmd.startswith('@') else '🗺'} — {about}")
     return "\n".join(lines)
+
+
+# ================================================================ fiche course : livreur changé, heure souhaitée
+
+def course_card(course: dict, franchise: dict, livreur: dict | None) -> str:
+    return f"{franchise_course_status(course, livreur)}\n🏪 {esc(franchise.get('display_name') or '?')}"
+
+
+def reassigned_done(course: dict, old: dict | None, new: dict) -> str:
+    was = f" (au lieu de {esc(old.get('display_name') or '?')})" if old else ""
+    return f"🔄 Course #{course['id']} donnée à {esc(new.get('display_name') or '?')}{was}."
+
+
+def reassigned_away_for_livreur(course_id: int) -> str:
+    return f"🔄 La course #{course_id} a été donnée à un autre livreur. Tu es libéré."
+
+
+COURSE_TIME_INVALID = "Écris l'heure en quelques mots (ex. 23h30, « vers minuit »), ou « - » pour l'enlever."
+
+
+def course_time_ask(course: dict) -> str:
+    now = f" (aujourd'hui : {esc(course['requested_time'])})" if course.get("requested_time") else ""
+    return (f"🕐 Heure souhaitée pour la course #{course['id']}{now} : écris-la (ex. 23h30, « vers minuit ») "
+            "ou « - » pour l'enlever.")
+
+
+def course_time_done(course: dict) -> str:
+    when = esc(course["requested_time"]) if course.get("requested_time") else "aucune"
+    return f"🕐 Course #{course['id']} — heure souhaitée : {when} ✅"
+
+
+def course_time_changed(course: dict, by: dict | None = None) -> str:
+    when = f"<b>{esc(course['requested_time'])}</b>" if course.get("requested_time") else "plus d'heure précise"
+    who = f" (par {esc(by.get('display_name') or '?')})" if by else ""
+    return f"🕐 Course #{course['id']} — heure souhaitée : {when}{who}"

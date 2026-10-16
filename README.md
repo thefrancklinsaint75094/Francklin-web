@@ -427,6 +427,20 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
 - toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/stock`,
   `/caisse`, `/depense`, `/synchro`, `/close`, `/reset`, `/bannir`, `/reactiver`, `/supprimer`, `/produits`.
 
+### La fiche course (franchisé et admins)
+
+Une seule fiche par course, la même sur le message de course du franchisé et, pour les admins, depuis
+`/encours` (un bouton par course : ⏳ en attente, 🚴 en cours). Elle montre l'adresse, le prix, les produits et
+l'heure souhaitée, avec les boutons : **👤 Attribuer** (en attente) ou **📦 Livrée** (en cours) · **✏️ Modifier**
+(produits et prix) · **📍 Adresse** · **🕐 Heure** · **🔄 Changer de livreur** (en cours) · **💬 Contacter**
+(le franchisé de la course) · **🗑 Retirer** (ou 🗑 Annuler pour un admin sur la course d'un autre).
+
+- **🔄 Changer de livreur** : la liste des livreurs sans celui qui a la course, plus 🔁 Remettre en diffusion.
+  La course passe directement au nouveau livreur (fiche complète, il écrit son temps) ; l'ancien est libéré
+  et prévenu ; le franchisé et le dispatch sont prévenus comme pour une prise.
+- **🕐 Heure** : écrire l'heure souhaitée (« 23h30 », « vers minuit ») ou « - » pour l'enlever. Le livreur de
+  la course est prévenu et sa fiche mise à jour ; les propositions encore ouvertes aussi.
+
 ### Le menu des admins par chapitres (/menu)
 
 Le ☰ de Telegram des admins ne garde que l'essentiel : `/menu`, `/encours`, `/livreurs`, `/users` (+ `/recap`
