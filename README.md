@@ -538,6 +538,33 @@ ravitailleurs) · **🙂 Prénom** · **🔄 Rôle** · **🟢 En service / ⏸ 
 ✅ Réactiver** · **🗑 Supprimer** · **↩️ Liste**. Un admin ne modifie pas sa propre fiche. Changer de rôle : un
 livreur quitte le service (ses courses repartent aux autres), la personne reçoit son nouveau menu.
 
+### 📱 L'appli des livreurs « Mes courses »
+
+Le bouton **« Mes courses »** à gauche du champ de message, le gros bouton **📱 Mes courses (l'appli)** en bas de
+l'écran, ou `/app` ouvrent une appli faite pour être la plus simple possible : très gros boutons, phrases
+courtes, une chose à la fois. Quatre onglets en bas : 🚴 Mes courses · 💶 Mon argent · 📦 Mon stock · ☰ Plus.
+
+- **Commencer** : choisir 🚶 / 🛵 / 🚗, puis **▶️ JE COMMENCE**. Sans position, une carte orange explique en
+  4 étapes comment la partager (la position en direct se partage toujours dans le chat).
+- **Stock du début (et de fin)** : « Le tableau dit que tu as… C'est juste ? » **✅ OUI** / **✏️ NON** (compteurs
+  − / +). Tant que ce n'est pas fait, pas de course (comme dans le chat).
+- **🆕 Nouvelle course pour toi** : quartier, distance, produits, prix, **✋ JE LA PRENDS**.
+- **🚴 Ta course maintenant**, en 4 étapes numérotées : 1. Où ? (adresse, digicode, heure voulue, **🗺 Y ALLER**
+  Google Maps / Waze) · 2. Ton temps (**⏱ J'ÉCRIS MON TEMPS** : le franchisé est prévenu) · 3. À donner, à
+  encaisser · 4. **✅ C'EST LIVRÉ** → **💵 EN ESPÈCES** / **💳 PAR CARTE / VIREMENT**. Et : les messages avec le
+  franchisé + **💬 ÉCRIRE AU FRANCHISÉ** (phrases toutes prêtes), **✏️ Le client a pris autre chose**
+  (compteurs, le franchisé valide), **❌ Je ne peux pas la faire**, **🏁 J'ai presque fini**.
+- **📋 Ensuite** : ses autres courses, dans l'ordre (une seule adresse à la fois).
+- **💶 Mon argent** : ce qu'il doit remettre (ventes en espèces − dépenses − déjà récupéré), ses courses de la nuit,
+  **🧾 J'AI PAYÉ UNE DÉPENSE** (⛽ 🚕 🍔 🅿️ 🚇, pour le travail ou avance sur paye, montant).
+- **📦 Mon stock** : ce qu'il a d'après le tableau, et **🍬 ses goûts** à cocher.
+- **☰ Plus** : ⏸ pause, **🏁 J'AI FINI MA SOIRÉE** (le récap s'affiche, puis le stock de fin), moyen de
+  déplacement, position, « Comment ça marche » en 6 étapes.
+
+Chaque bouton passe par exactement le même code que dans le chat (`livreur.take_course`, `set_eta`,
+`request_edit`, `lifecycle.deliver`, `relay.relay_text`, `declare.confirm`, `cash.save_expense`…). Le chat
+reste utilisable.
+
 ### Le menu du livreur (gros boutons, rien à taper)
 
 Dès sa validation, le livreur a un menu de gros boutons en bas de l'écran (clavier Telegram) :

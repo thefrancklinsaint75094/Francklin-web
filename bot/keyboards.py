@@ -431,9 +431,17 @@ LIVREUR_MENU = {
 
 
 def livreur_menu() -> ReplyKeyboardMarkup:
+    """Gros boutons en bas de l'écran ; en premier, l'appli « Mes courses » (si elle est en ligne)."""
+    from telegram import KeyboardButton, WebAppInfo
+
+    from bot import config
+
     labels = list(LIVREUR_MENU)
-    return ReplyKeyboardMarkup([labels[i:i + 2] for i in range(0, len(labels), 2)],
-                               resize_keyboard=True, is_persistent=True)
+    rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
+    url = config.get().webapp_url
+    if url:
+        rows.insert(0, [KeyboardButton("📱 Mes courses (l'appli)", web_app=WebAppInfo(f"{url}/livreur"))])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 
 def sales_confirm() -> M:

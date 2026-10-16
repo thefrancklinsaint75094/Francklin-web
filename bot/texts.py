@@ -2190,6 +2190,9 @@ def role_changed_notice(role: str) -> str:
 APP_OPEN = ("📱 <b>Dispatch</b> — l'appli : livreurs sur la route, courses, stock, caisse, bilan, activité.\n"
             "Elle s'ouvre aussi avec le bouton « Dispatch » à gauche du champ de message.")
 APP_UNAVAILABLE = "L'appli n'est pas encore en ligne."
+APP_OPEN_LIVREUR = ("📱 <b>Mes courses</b> — ton appli : commencer, prendre une course, y aller, livrer, ton argent, "
+                    "ton stock. Tout est dedans, avec des gros boutons.\n"
+                    "Elle s'ouvre aussi avec le bouton « Mes courses » à gauche, ou en bas de l'écran.")
 
 MENU_HOME = ("☰ <b>Menu</b> — choisis un chapitre.\n"
              "Toutes les commandes marchent aussi en les tapant (/encours, /stock…).")

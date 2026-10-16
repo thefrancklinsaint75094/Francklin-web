@@ -344,6 +344,21 @@ async def get_broadcast(course_id: int, livreur_id: str) -> dict | None:
     return _first(res)
 
 
+async def list_open_proposals(livreur_id: str) -> list[dict]:
+    """Courses encore en attente qui ont été proposées à ce livreur (plus récentes d'abord)."""
+    rows = (await _t("broadcasts").select("course_id,sent_at").eq("livreur_id", livreur_id).execute()).data
+    if not rows:
+        return []
+    courses = (await _t("courses").select("*").in_("id", [r["course_id"] for r in rows]).eq("status", "pending")
+               .order("id", desc=True).execute()).data
+    return courses
+
+
+async def list_course_messages(course_id: int, limit: int = 20) -> list[dict]:
+    res = await _t("messages").select("*").eq("course_id", course_id).order("id", desc=True).limit(limit).execute()
+    return list(reversed(res.data))
+
+
 async def reset_broadcasts_except(course_id: int, keep_livreur_id: str | None) -> None:
     """Remise en diffusion : les autres livreurs redeviennent sollicitables ;
     celui qu'on garde (qui a annulé ou a été retiré) reste exclu, en vague 0."""

@@ -115,21 +115,30 @@ async def action(update: Update, context):
             await messaging.edit_markup(context.bot, chat_id, msg_id, None)
             return texts.DECLARE_DONE_ALREADY, True
         items = payload["items"]
-    done = await db.update_declaration(decl["id"], {"status": "confirmed", "items": items,
-                                                    "confirmed_at": iso(now_utc())}, only_if_asked=True)
-    if done is None:                                   # deux appuis : la première a déjà confirmé
+    if not await confirm(context, user, decl, items):  # deux appuis : la première a déjà confirmé
         await messaging.edit_markup(context.bot, chat_id, msg_id, None)
         return texts.DECLARE_DONE_ALREADY, True
-    if user.get("conversation_state") == STATE:
+    await messaging.edit(context.bot, chat_id, msg_id, texts.declare_done(decl["kind"], items))
+    return "Noté ✅"
+
+
+async def confirm(context, user: dict, decl: dict, items: dict) -> bool:
+    """Stock déclaré confirmé ; dispatch prévenu (écarts) ; début de service : les courses en attente lui
+    sont proposées. False si c'était déjà confirmé."""
+    done = await db.update_declaration(decl["id"], {"status": "confirmed", "items": items,
+                                                    "confirmed_at": iso(now_utc())}, only_if_asked=True)
+    if done is None:
+        return False
+    fresh = await db.get_user(user["id"]) or user
+    if fresh.get("conversation_state") == STATE:
         await db.clear_state(user["id"])
     await db.log_event("stock_declared", user_id=user["id"], payload={"id": decl["id"], "kind": decl["kind"]})
-    await messaging.edit(context.bot, chat_id, msg_id, texts.declare_done(decl["kind"], items))
     await messaging.notify_dispatch(context.bot, texts.d_declared(user, decl["kind"], items, decl.get("expected")))
     if decl["kind"] == "start":                       # il peut maintenant recevoir les courses en attente
         from bot.services import broadcast
 
         await broadcast.kick_pending(context)
-    return "Noté ✅"
+    return True
 
 
 async def remind(context) -> None:
