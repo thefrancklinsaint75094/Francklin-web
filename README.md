@@ -550,6 +550,15 @@ stock. Table `stock_declarations` (migration 019).
 n'est ni dans la diffusion ni dans le choix du franchisé ; dès qu'il confirme, les courses en attente lui sont
 proposées. (Un admin peut toujours lui attribuer une course à la main.) `STOCK_DECLARATION=0` désactive tout.
 
+### Changer l'adresse d'une course
+
+Le client s'est trompé d'adresse ? Bouton **📍 Adresse** sur le message de la course (franchisé) ou dans
+`/encours` (dispatch) : écris la bonne adresse (2e ligne facultative : digicode, étage…), vérifie l'aperçu, ✅.
+La course garde son numéro, son livreur et ses produits. Course prise : le livreur reçoit « ⚠️📍 Nouvelle adresse »
+(message qui sonne) et sa fiche est mise à jour. Course en attente : les propositions déjà envoyées aux livreurs
+affichent la nouvelle adresse. Franchisé et dispatch prévenus ; les alertes « il arrive / sur place » repartent
+pour la nouvelle adresse.
+
 ### Délai annoncé par le livreur
 
 Quand il prend une course, le livreur reçoit « ⏱ Course #12 — dans combien de temps tu y es ? » et **écrit son

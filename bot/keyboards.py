@@ -39,12 +39,13 @@ def franchise_course(course: dict) -> M | None:
     if course["status"] == "pending":
         return M([
             [B("👤 Attribuer", callback_data=f"assign:{cid}"), B("✏️ Modifier", callback_data=f"order_edit:{cid}")],
-            [B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")],
+            [B("📍 Adresse", callback_data=f"addr:{cid}"), B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")],
         ])
     if course["status"] == "assigned":
         return M([
             [B("📦 Livrée", callback_data=f"force_deliver:{cid}"), B("✏️ Modifier", callback_data=f"order_edit:{cid}")],
-            [B("💬 Contacter", callback_data=f"relay_start:{cid}"), B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")],
+            [B("📍 Adresse", callback_data=f"addr:{cid}"), B("💬 Contacter", callback_data=f"relay_start:{cid}")],
+            [B("🗑 Retirer", callback_data=f"course_withdraw:{cid}")],
         ])
     return None
 
@@ -155,6 +156,7 @@ def encours(pending: list[dict], assigned: list[dict]) -> M | None:
     rows = []
     for c in pending:
         rows.append([B(f"#{c['id']} 👤 Attribuer", callback_data=f"assign:{c['id']}"),
+                     B("📍 Adresse", callback_data=f"addr:{c['id']}"),
                      B("🗑 Annuler", callback_data=f"force_cancel:{c['id']}")])
     for c in assigned:
         rows.append(
@@ -164,6 +166,7 @@ def encours(pending: list[dict], assigned: list[dict]) -> M | None:
                 B("🗑 Annuler", callback_data=f"force_cancel:{c['id']}"),
             ]
         )
+        rows.append([B(f"#{c['id']} 📍 Changer l'adresse", callback_data=f"addr:{c['id']}")])
     return M(rows) if rows else None
 
 
@@ -462,4 +465,12 @@ def declare_prompt(decl_id: int, has_expected: bool) -> M | None:
 
 def declare_confirm(decl_id: int) -> M:
     return M([[B("✅ Confirmer", callback_data=f"dc_ok:{decl_id}")], [B("✏️ Corriger", callback_data=f"dc_fix:{decl_id}")]])
+
+
+def address_cancel() -> M:
+    return M([[B("❌ Annuler", callback_data="addr_x")]])
+
+
+def address_confirm() -> M:
+    return M([[B("✅ Changer l'adresse", callback_data="addr_ok")], [B("❌ Annuler", callback_data="addr_x")]])
 
