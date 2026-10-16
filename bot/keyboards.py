@@ -573,3 +573,11 @@ def synchro_nights(nights, current) -> M | None:
     buttons = [B(f"📗 {'Cette nuit' if n == current else f'{_JOUR_COURT[n.weekday()]} {n.day}'}",
                  callback_data=f"sy:{n.isoformat()}") for n in nights]
     return M([buttons[i:i + 4] for i in range(0, len(buttons), 4)]) if buttons else None
+
+
+def ravi_choices(kind: str, block: int | None, choices: list[str]) -> M:
+    """/ravi : ravitailleur (r), livreur (l) ou box (b) oublié — un bouton par choix."""
+    prefix = f"rvf:{kind}:" if block is None else f"rvf:{kind}:{block}:"
+    buttons = [B(c[:30], callback_data=f"{prefix}{n}") for n, c in enumerate(choices)]
+    rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
+    return M(rows + [[B("❌ Annuler", callback_data="rvf:x")]])

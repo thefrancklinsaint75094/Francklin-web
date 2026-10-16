@@ -28,11 +28,13 @@ def select_eligible(
     now: datetime,
     stale_minutes: int,
     max_distance_km: float,
+    max_courses: int = 0,
 ) -> list[tuple[dict, float]]:
     """Règle d'éligibilité unique (§8.4), triée par distance puis position la plus récente.
 
     1. status = active   2. on_duty   3. position fraîche
-    4. aucune course assignée, ou exactement une et soon_free
+    4. moins de max_courses courses en cours (0 : sans limite) — il les enchaîne ; les livreurs libres
+       (ou « bientôt libres ») passent avant ceux qui ont déjà une course
     5. pas déjà sollicité pour cette course   6. à moins de MAX_DISTANCE_KM
 
     Un livreur mis en service par un admin (duty_forced) sans position fraîche reste
@@ -44,11 +46,15 @@ def select_eligible(
     stale_before = now - timedelta(minutes=stale_minutes)
     located: list[tuple[dict, float, datetime]] = []
     unlocated: list[dict] = []
+
+    def busy(lv: dict) -> bool:
+        return assigned_counts.get(lv["id"], 0) > 0 and not lv.get("soon_free")
+
     for lv in livreurs:
         if lv.get("role") != "livreur" or lv.get("status") != "active" or not lv.get("on_duty"):
             continue
         n = assigned_counts.get(lv["id"], 0)
-        if not (n == 0 or (n == 1 and lv.get("soon_free"))):
+        if max_courses and n >= max_courses:
             continue
         if lv["id"] in already_solicited:
             continue
@@ -63,7 +69,9 @@ def select_eligible(
         if dist > min(max_distance_km, transport.max_distance_km(mode)) * 1000:
             continue
         located.append((lv, dist, updated))
-    located.sort(key=lambda x: (transport.travel_minutes(x[1], x[0].get("transport_mode")), -x[2].timestamp()))
+    located.sort(key=lambda x: (busy(x[0]), transport.travel_minutes(x[1], x[0].get("transport_mode")),
+                                -x[2].timestamp()))
+    unlocated.sort(key=busy)
     return [(lv, dist) for lv, dist, _ in located] + [(lv, None) for lv in unlocated]
 
 
@@ -80,11 +88,11 @@ async def eligible_for(course: dict, already: set[str], context=None) -> list[tu
         counts[c["livreur_id"]] += 1
     eligible = select_eligible(
         livreurs, positions, counts, already, course["lat"], course["lon"], now_utc(),
-        cfg.position_stale_minutes, cfg.max_distance_km,
+        cfg.position_stale_minutes, cfg.max_distance_km, cfg.max_courses_per_livreur,
     )
     if context is None:
         return eligible
-    # Ceux qui ont tout en stock d'abord (si les alertes de stock sont activées).
+    # Sans ceux à qui il manque un produit d'après le tableau (si les alertes de stock sont activées).
     return await stock.rank_by_stock(context, course, eligible)
 
 

@@ -60,7 +60,7 @@ async def on_message(update: Update, context) -> None:
     if state == livreur.EDIT_STATE and payload.get("sel") is not None:
         await livreur.edit_typed_price(update, context, user)
         return
-    if state in (restock_text.STATE_INPUT, restock_text.STATE_CONFIRM) and update.message.text:
+    if state in (restock_text.STATE_INPUT, restock_text.STATE_CONFIRM, restock_text.STATE_FIX) and update.message.text:
         await restock_text.on_message(update, context, user, payload)
         return
     if state in (swipe.STATE_INPUT, swipe.STATE_CONFIRM) and update.message.text:

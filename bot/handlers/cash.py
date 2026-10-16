@@ -130,8 +130,9 @@ async def _validate(context, chat_id: int, user: dict, payload: dict):
     await db.log_event("expense", user_id=user["id"], payload={"expense_id": row["id"], "livreur_id": livreur["id"]})
     if user["id"] != livreur["id"]:
         await messaging.send(context.bot, livreur, texts.expense_for_livreur(row, user))
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, texts.d_expense(row, user, livreur))
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
+        text=texts.d_expense(row, user, livreur))
     cash.push_expense_later(row)
     return "Enregistré ✅"
 

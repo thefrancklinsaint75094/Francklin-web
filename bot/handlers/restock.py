@@ -165,8 +165,9 @@ async def _validate(context, chat_id: int, user: dict, payload: dict):
     await messaging.edit(context.bot, chat_id, payload["msg"], texts.restock_done(row, livreur["display_name"]))
     await db.log_event("restock", user_id=user["id"], payload={"restock_id": row["id"], "livreur_id": livreur["id"]})
     await messaging.send(context.bot, livreur, texts.restock_for_livreur(row))
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, texts.d_restock(row, user, livreur))
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
+        text=texts.d_restock(row, user, livreur))
     stock.push_restock_later(row)
     return "Enregistré ✅"
 

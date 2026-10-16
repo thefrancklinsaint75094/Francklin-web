@@ -86,6 +86,8 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `BROADCAST_WAVE_SECONDS` | non | `120` | délai avant d'élargir |
 | `POSITION_STALE_MINUTES` | non | `30` | position trop vieille → hors service |
 | `SOON_FREE_RADIUS_METERS` | non | `400` | rayon « bientôt libre » automatique |
+| `MAX_COURSES_PER_LIVREUR` | non | `0` | courses en même temps par livreur (`0` : sans limite, il les enchaîne) |
+| `NOTIFY_FRANCHISES` | non | `1` | `0` : les franchisés ne reçoivent plus la copie des avis du dispatch |
 | `DRAFT_EXPIRY_MINUTES` | non | `15` | durée de vie d'une fiche non confirmée |
 | `MAX_DISTANCE_KM` | non | `25` | au-delà, un livreur ne reçoit jamais la course |
 | `STUCK_COURSE_MINUTES` | non | `75` | course en cours trop longtemps → alerte |
@@ -196,8 +198,10 @@ cash 300
 peut écrire `/ravi` seul. Puis, par livreur : son nom, le box (gardé pour les livreurs suivants), une ligne
 par produit (quantité puis produit = chargé ; avec « - » devant = repris), et « cash 300 » pour le cash
 récupéré. Aperçu, puis **✅ Enregistrer** : mêmes effets qu'un `/recharge` (livreur et dispatch prévenus,
-tableau Rechargement rempli, stock et caisse à jour). Les erreurs (livreur, box ou produit inconnu, box
-manquant) sont listées ligne par ligne et rien n'est enregistré.
+tableau Rechargement rempli, stock et caisse à jour). **Oubli** du ravitailleur (admin), du livreur (produits
+écrits avant tout nom) ou du box : rien n'est annulé, le bot demande « pour quel livreur ? » / « quel box ? »
+avec un bouton par choix, puis montre l'aperçu (le box choisi vaut aussi pour les livreurs suivants sans box).
+Les vraies erreurs (livreur, box ou produit inconnu) sont listées ligne par ligne et rien n'est enregistré.
 
 Base créée avant cette version : exécuter une fois `sql/migrations/011_restock_text.sql`.
 
@@ -579,11 +583,27 @@ dispatch et dans le journal (colonne « paiement » du CSV), et écrit dans la c
 ### Dispatch selon le stock
 
 Avec `STOCK_ALERTS=1`, une course part **d'abord aux livreurs qui ont tout en stock** (stock de la feuille +
-mouvements en vol − leurs autres courses en cours), puis à ceux dont le stock est inconnu, puis aux autres — la
-distance départage dans chaque groupe. Si **aucun** livreur éligible n'a tout, la course part quand même au plus
-proche et les ravitailleurs et le dispatch reçoivent une alerte (une fois par course) avec ce qui manque. Les
-produits absents des colonnes de la feuille (coca…) sont ignorés. Le stock des livreurs est relu au plus une
-fois par minute.
+mouvements en vol − leurs autres courses en cours), puis à ceux dont le stock est inconnu — la distance
+départage. **Un livreur à qui il manque un produit d'après le tableau ne la reçoit pas et ne peut pas la
+prendre** : « Je prends » répond ce qui lui manque, et le dispatch (et les franchisés) sont prévenus. Si le
+rechargement n'était simplement pas encore saisi : saisis-le (`/ravi`) et il la reprend, ou **👤 Attribuer**
+la lui donne quand même. Si **aucun** livreur n'a tout, la course attend et les ravitailleurs et le dispatch
+reçoivent une alerte (une fois par course). Les produits absents des colonnes de la feuille sont ignorés. Le
+stock des livreurs est relu au plus une fois par minute.
+
+### Plusieurs courses à la suite
+
+Un livreur qui a déjà une adresse continue de recevoir les propositions et prend lui-même les suivantes
+(`MAX_COURSES_PER_LIVREUR`, sans limite par défaut). Les livreurs libres (ou « bientôt libres ») passent avant
+ceux qui ont déjà une course ; le stock compte ses courses déjà prises.
+
+### Tous les franchisés sont au courant
+
+Chaque avis du dispatch part aussi à **tous les franchisés**, même pour une course qui n'est pas la leur :
+course créée, prise, délai, arrivée, sur place, livrée, retirée, annulée, adresse ou heure changée, modification,
+stock, rechargements, dépenses, ventes, fin de service… Celui qui a agi et le franchisé de la course (qui a déjà
+son propre message) ne la reçoivent pas en double. Restent au dispatch seul : les copies des messages 💬 entre un
+livreur et un franchisé, les alertes techniques et les inscriptions à valider. `NOTIFY_FRANCHISES=0` coupe.
 
 ### Fin de service d'un livreur (`/close Livreur A`)
 

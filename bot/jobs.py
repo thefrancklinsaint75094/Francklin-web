@@ -126,7 +126,7 @@ async def refresh_commands(context) -> None:
 
 
 async def startup(context) -> None:
-    await messaging.notify_dispatch(context.bot, texts.BOT_STARTED)
+    await messaging.notify_dispatch(context.bot, texts.BOT_STARTED, team=False)
     await db.clear_expired_states()
     try:
         await refresh_commands(context)
@@ -166,7 +166,8 @@ async def edit_reminders(context) -> None:
                                  texts.edit_reminder(course, livreur or {}, pending, int(minutes)),
                                  keyboards.edit_decision(course["id"]))
         if n + 1 == EDIT_REMIND_MAX:
-            await messaging.notify_dispatch(context.bot, texts.d_edit_waiting(course, franchise or {}, int(minutes)))
+            await messaging.notify_dispatch(context.bot, texts.d_edit_waiting(course, franchise or {}, int(minutes)),
+                                            skip=[course["franchise_id"]])
 
 
 async def refresh_menus(context) -> None:
@@ -195,7 +196,7 @@ async def sheet_errors(context) -> None:
     if not events:
         return
     _sheet_error_seen = events[-1]["id"]
-    await messaging.notify_dispatch(context.bot, texts.d_sheet_errors(events))
+    await messaging.notify_dispatch(context.bot, texts.d_sheet_errors(events), team=False)
 
 
 def _safe(job):

@@ -103,7 +103,8 @@ async def check(context, livreur: dict, lat: float, lon: float, prev: dict | Non
                 franchise = await db.get_user(course["franchise_id"])
                 if franchise and franchise.get("role") != "dispatch":
                     await messaging.send(context.bot, franchise, texts.onsite_for_franchise(course, livreur))
-                await messaging.notify_dispatch(context.bot, texts.d_onsite(course, livreur))
+                await messaging.notify_dispatch(context.bot, texts.d_onsite(course, livreur),
+                                               skip=[course["franchise_id"]])
                 continue
             if cfg.arrival_notify_meters <= 0 and cfg.arrival_notify_minutes <= 0:
                 continue
@@ -117,6 +118,7 @@ async def check(context, livreur: dict, lat: float, lon: float, prev: dict | Non
             franchise = await db.get_user(course["franchise_id"])
             if franchise:
                 await messaging.send(context.bot, franchise, texts.arrival_for_franchise(course, livreur, label, eta))
-            await messaging.notify_dispatch(context.bot, texts.d_arrival(course, livreur, label, eta))
+            await messaging.notify_dispatch(context.bot, texts.d_arrival(course, livreur, label, eta),
+                                           skip=[course["franchise_id"]])
     except Exception:  # noqa: BLE001 — une alerte ratée ne doit jamais gêner le suivi de position
         log.exception("Alerte d'arrivée impossible")

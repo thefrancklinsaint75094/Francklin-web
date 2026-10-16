@@ -72,6 +72,8 @@ class Config:
     departements_autorises: tuple[str, ...] = ("75", "77", "78", "91", "92", "93", "94", "95")
     broadcast_wave_size: int = 3
     broadcast_wave_seconds: int = 120
+    max_courses_per_livreur: int = 0           # courses en même temps par livreur (0 : sans limite)
+    notify_franchises: bool = True             # tous les franchisés reçoivent les avis du dispatch
     position_stale_minutes: int = 30
     soon_free_radius_meters: int = 400
     draft_expiry_minutes: int = 15
@@ -122,6 +124,8 @@ class Config:
             departements_autorises=departements,
             broadcast_wave_size=_int("BROADCAST_WAVE_SIZE", 3),
             broadcast_wave_seconds=_int("BROADCAST_WAVE_SECONDS", 120),
+            max_courses_per_livreur=_int("MAX_COURSES_PER_LIVREUR", 0),
+            notify_franchises=(_raw("NOTIFY_FRANCHISES") or "1").lower() not in ("0", "non", "false", "off"),
             position_stale_minutes=_int("POSITION_STALE_MINUTES", 30),
             soon_free_radius_meters=_int("SOON_FREE_RADIUS_METERS", 400),
             draft_expiry_minutes=_int("DRAFT_EXPIRY_MINUTES", 15),

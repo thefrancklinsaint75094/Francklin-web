@@ -29,7 +29,7 @@ async def newcomer(update: Update, context, what: str) -> None:
     if now - _newcomers.get(tg.id, -NEWCOMER_ALERT_SECONDS) < NEWCOMER_ALERT_SECONDS:
         return
     _newcomers[tg.id] = now
-    await messaging.notify_dispatch(context.bot, texts.d_newcomer(tg.full_name, tg.username, what))
+    await messaging.notify_dispatch(context.bot, texts.d_newcomer(tg.full_name, tg.username, what), team=False)
 
 
 async def start(update: Update, context) -> None:
@@ -117,7 +117,7 @@ async def receive_name(update: Update, context, user: dict) -> None:
     await messaging.reply(update, texts.REGISTRATION_SENT)
     await messaging.notify_dispatch(
         context.bot, texts.new_registration(user["role"], name, user.get("telegram_username")),
-        keyboards.approve_reject(user["id"]),
+        keyboards.approve_reject(user["id"]), team=False,
     )
     await db.log_event("user_registered", user_id=user["id"], payload={"role": user["role"]})
 

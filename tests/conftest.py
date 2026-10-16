@@ -23,6 +23,7 @@ TEST_CONFIG = config.Config(
     dispatch_telegram_id=1000,
     openai_api_key=None,
     extraction_mode="ia",  # les scénarios historiques simulent l'extracteur IA
+    notify_franchises=False,   # copies aux franchisés : testées à part (test_franchises_get_every_notification)
     stock_alerts=False,    # activé seulement dans les tests qui simulent la lecture du stock
     livreur_names=(),      # « Livreur 1 », « Livreur 2 »… (les noms de feuille sont testés à part)
     ravitailleur_names=(),

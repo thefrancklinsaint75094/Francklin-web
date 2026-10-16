@@ -128,8 +128,9 @@ async def close(update: Update, context) -> None:
     text = await build_debrief(night)
     await messaging.reply(update, text)
     await db.log_event("day_closed", user_id=user["id"], payload={"night": night.isoformat()})
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, f"{text}\n\n(par {texts.esc(user['display_name'])})")
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
+        text=f"{text}\n\n(par {texts.esc(user['display_name'])})")
 
 
 async def close_livreur(update: Update, context, actor: dict, name: str, livreur: dict | None) -> None:
@@ -164,8 +165,9 @@ async def close_livreur(update: Update, context, actor: dict, name: str, livreur
     await messaging.reply(update, text, keyboards.livreur_menu() if actor["role"] == "livreur" else None)
     if livreur and livreur["id"] != actor["id"]:
         await messaging.send(context.bot, livreur, text + "\n\n" + texts.CLOSE_FOR_LIVREUR, keyboards.livreur_menu())
-    if actor["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, f"{text}\n\n(par {texts.esc(actor['display_name'])})")
+    await messaging.notify_dispatch(
+        context.bot, dispatch=actor["role"] != "dispatch", skip=[actor["id"]],
+        text=f"{text}\n\n(par {texts.esc(actor['display_name'])})")
     if livreur:
         from bot.handlers import declare
 

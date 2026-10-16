@@ -64,7 +64,8 @@ async def mark_no_livreur(context, course: dict) -> None:
     on_duty = await db.list_on_duty_livreurs()
     _no_livreur[course["id"]] = "none_on_duty" if not on_duty else "none_eligible"
     await refresh_franchise_message(context, course)
-    await messaging.notify_dispatch(context.bot, texts.d_no_livreur(course["id"]))
+    await messaging.notify_dispatch(context.bot, texts.d_no_livreur(course["id"]),
+                                    skip=[course["franchise_id"]])
     await db.log_event("no_livreur", course["id"])
 
 
@@ -100,7 +101,8 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
     # Une fiche modifiée ne sonne pas sur le téléphone : un vrai message prévient le franchisé.
     if franchise and franchise["role"] != "dispatch":
         await messaging.send(context.bot, franchise, texts.taken_for_franchise(course, livreur))
-    await messaging.notify_dispatch(context.bot, texts.d_taken(course, franchise or {"display_name": "?"}, livreur))
+    await messaging.notify_dispatch(context.bot, texts.d_taken(course, franchise or {"display_name": "?"}, livreur),
+                                    skip=[course["franchise_id"]])
     await db.log_event("course_taken", course["id"], livreur["id"])
     # Il écrit son temps (« 47 ») : le franchisé sait quand le livreur arrive.
     await messaging.send(context.bot, livreur, texts.eta_ask(course))
@@ -180,10 +182,11 @@ async def deliver(context, course: dict, by_dispatch: bool = False, payment: str
     franchise = await db.get_user(updated["franchise_id"])
     if franchise and franchise["role"] != "dispatch":       # le dispatch a déjà son avis ci-dessous
         await messaging.send(context.bot, franchise, texts.delivered_for_franchise(updated, livreur))
-    if not by_dispatch:
-        await messaging.notify_dispatch(
-            context.bot, texts.d_delivered(updated, livreur or {"display_name": "?"}, far_label)
-        )
+    # Livrée par le dispatch : lui sait déjà, les franchisés reçoivent quand même l'avis.
+    await messaging.notify_dispatch(
+        context.bot, texts.d_delivered(updated, livreur or {"display_name": "?"}, far_label),
+        dispatch=not by_dispatch, skip=[updated["franchise_id"]],
+    )
     await db.log_event(
         "course_delivered", course["id"], livreur["id"] if livreur else None,
         {"by_dispatch": by_dispatch, "distance_m": fields.get("delivered_distance_m")},
@@ -259,7 +262,8 @@ async def release(context, course: dict, reason: str) -> dict | None:
     await refresh_franchise_message(context, updated)
 
     if reason == "livreur_cancel" and livreur:
-        await messaging.notify_dispatch(context.bot, texts.d_livreur_cancel(course["id"], livreur))
+        await messaging.notify_dispatch(context.bot, texts.d_livreur_cancel(course["id"], livreur),
+                                        skip=[course["franchise_id"]])
         await db.log_event("livreur_cancelled", course["id"], livreur["id"],
                            {"cancel_count": livreur.get("cancel_count")})
     else:
@@ -314,9 +318,11 @@ async def cancel(context, course: dict, by: str) -> dict | None:
 
     if by == "franchise":
         if status == "pending":
-            await messaging.notify_dispatch(context.bot, texts.d_withdrawn(course["id"], franchise))
+            await messaging.notify_dispatch(context.bot, texts.d_withdrawn(course["id"], franchise),
+                                            skip=[course["franchise_id"]])
         else:
-            await messaging.notify_dispatch(context.bot, texts.d_cancelled_on_site(course["id"], franchise, livreur))
+            await messaging.notify_dispatch(context.bot, texts.d_cancelled_on_site(course["id"], franchise, livreur),
+                                            skip=[course["franchise_id"]])
     await db.log_event(
         "course_withdrawn" if status == "pending" else "cancelled_on_site",
         course["id"], franchise["id"] if franchise else None, {"by": by},

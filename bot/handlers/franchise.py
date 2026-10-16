@@ -158,7 +158,7 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
     except ExtractionUnavailable:
         await db.update_draft(draft["id"], {"status": fail_status})
         await messaging.reply(update, texts.GENERIC_ERROR)
-        await messaging.notify_dispatch(context.bot, texts.d_error("API Anthropic injoignable"))
+        await messaging.notify_dispatch(context.bot, texts.d_error("API Anthropic injoignable"), team=False)
         return
     except ExtractionParseError:
         await db.update_draft(draft["id"], {"status": fail_status})
@@ -298,8 +298,9 @@ async def confirm(update: Update, context):
         pick.schedule_timeout(context.job_queue, course["id"], broadcast.pick_timeout)
     text, markup = lifecycle.franchise_view(course)
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, text, markup)
-    if user["role"] != "dispatch":                # le dispatch qui commande voit déjà sa fiche
-        await messaging.notify_dispatch(context.bot, texts.d_created(course, user))
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
+        text=texts.d_created(course, user))
     if opts:
         return f"Course #{course['id']} enregistrée : choisis le livreur"
     await broadcast.run_wave(context, course["id"], advance=False)
@@ -543,8 +544,9 @@ async def edit_decision(update: Update, context):
                                  texts.full_fiche(updated, franchise), keyboards.livreur_course(updated["id"]),
                                  user=livreur, resend_if_old=False)
     await lifecycle.refresh_franchise_message(context, updated, livreur=livreur)
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, text)
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
+        text=text)
     await db.log_event("course_edit_decided", course["id"], user["id"], {"accepted": accepted, **pending})
     if updated["status"] == "delivered":
         stock.after_delivery_later(context, updated, livreur)   # la feuille reçoit la version décidée

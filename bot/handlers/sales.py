@@ -139,7 +139,8 @@ async def action(update: Update, context):
         error = texts.SHEETS_DISABLED
     text = texts.sales_done(len(rows), payload["tab"], added, error, len(spent))
     await messaging.edit(context.bot, chat_id, msg_id, text)
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, f"{texts.sales_preview(payload['blocks'], payload['tab'], done=True)}"
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
+        text=f"{texts.sales_preview(payload['blocks'], payload['tab'], done=True)}"
                                                      f"\n\n(par {texts.esc(user['display_name'])})")
     return "Ajouté ✅" if not error else None

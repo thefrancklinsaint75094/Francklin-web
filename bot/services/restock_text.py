@@ -27,7 +27,7 @@ BOX_RE = re.compile(r"^box\s*(?P<num>\S+)$", re.I)
 
 @dataclass
 class Block:
-    livreur: str
+    livreur: str | None                                  # None : produits écrits avant tout livreur (à demander)
     user: dict | None = None
     box: str | None = None
     load: list[dict] = field(default_factory=list)      # [{"p": "DIV", "q": 12}]
@@ -95,15 +95,13 @@ def parse(lines: list[str], catalog, livreur_names: list[str], livreurs: list[di
         m = CASH_RE.match(line)
         if m:
             if current is None:
-                out.errors.append(f"ligne {n} : écris d'abord le nom du livreur (ex. « Livreur A »)")
-            else:
-                current.cash += float(m["amount"].replace(",", "."))
+                current = _unnamed(out, box)
+            current.cash += float(m["amount"].replace(",", "."))
             continue
         m = ITEM_RE.match(line)
         if m:
             if current is None:
-                out.errors.append(f"ligne {n} : écris d'abord le nom du livreur (ex. « Livreur A »)")
-                continue
+                current = _unnamed(out, box)
             match = catalog.match(m["product"]) if catalog else None
             product = match.product["name"] if match and match.product else None
             qty = int(m["qty"])
@@ -130,8 +128,22 @@ def parse(lines: list[str], catalog, livreur_names: list[str], livreurs: list[di
             continue
         current = Block(name, user, box)
         out.blocks.append(current)
-    for b in out.blocks:
-        if (b.load or b.unload) and not b.box:
-            out.errors.append(f"{b.livreur} : indique le box (ex. « Box 1 ») avant les produits")
+    # Livreur oublié (produits avant tout nom) ou box oublié : pas une erreur, le bot le demande par boutons.
     out.blocks = [b for b in out.blocks if not b.empty()]
     return out
+
+
+def _unnamed(out: Parsed, box: str | None) -> Block:
+    block = Block(None, None, box)
+    out.blocks.append(block)
+    return block
+
+
+def missing(blocks: list[dict]) -> tuple[str, int] | None:
+    """Première chose à demander : (« livreur » | « box », n° du bloc), ou None si tout est là."""
+    for i, b in enumerate(blocks):
+        if not b.get("livreur"):
+            return "livreur", i
+        if (b.get("load") or b.get("unload")) and not b.get("box"):
+            return "box", i
+    return None

@@ -53,7 +53,7 @@ async def polling_error(context, err: Exception) -> None:
     _conflict["last"] = now
     if now - _conflict["first"] > CONFLICT_ALERT_SECONDS and not _conflict["notified"]:
         _conflict["notified"] = True
-        await messaging.notify_dispatch(context.bot, texts.D_TWO_INSTANCES)
+        await messaging.notify_dispatch(context.bot, texts.D_TWO_INSTANCES, team=False)
         await db.log_event("error", payload={"type": "Conflict", "message": "deux instances en polling"})
 
 
@@ -75,7 +75,7 @@ async def error_handler(update: object, context) -> None:
         })
     except Exception:  # noqa: BLE001
         log.exception("Impossible d'écrire l'événement d'erreur")
-    await messaging.notify_dispatch(context.bot, texts.d_error(kind))
+    await messaging.notify_dispatch(context.bot, texts.d_error(kind), team=False)
     if isinstance(update, Update):
         if update.callback_query:
             try:
@@ -192,6 +192,7 @@ def register_handlers(app: Application) -> None:
         (r"^cl_(go|x)$", cloture.action),
         (r"^sl_(ok|x)$", sales.action),
         (r"^rv_(ok|x)$", restock_text.action),
+        (r"^rvf:", restock_text.fix),
         (r"^sw_(ok|x)$", swipe.action),
         (r"^dc_(ok|same|fix):", declare.action),
         (r"^addr:", address.start),

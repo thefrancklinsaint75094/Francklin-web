@@ -74,7 +74,7 @@ async def _handle_blocked(bot, user: dict) -> None:
         await db.log_event("blocked_bot", user_id=user.get("id"))
     except Exception:  # noqa: BLE001
         log.exception("Impossible d'enregistrer le blocage")
-    await notify_dispatch(bot, texts.d_blocked(user))
+    await notify_dispatch(bot, texts.d_blocked(user), team=False)
 
 
 async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None = None,
@@ -93,13 +93,34 @@ async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None =
     return None
 
 
-async def notify_dispatch(bot, text: str, markup: InlineKeyboardMarkup | None = None, **kwargs) -> Message | None:
+async def notify_dispatch(bot, text: str, markup: InlineKeyboardMarkup | None = None, team: bool = True,
+                          skip=(), dispatch: bool = True, **kwargs) -> Message | None:
+    """Avis au dispatch, et (team) copie à tous les franchisés pour qu'ils sachent tout ce qui se passe
+    (sauf ceux de skip : celui qui a agi, le franchisé de la course qui a déjà son propre message).
+    team=False : alertes techniques, messages privés relayés, accès. dispatch=False : copie aux
+    franchisés seulement (le dispatch a fait l'action lui-même). Les boutons restent au dispatch."""
+    sent = None
+    if dispatch:
+        try:
+            sent = await bot.send_message(config.get().dispatch_telegram_id, names.decorate(text),
+                                          reply_markup=names.decorate_markup(markup), **kwargs)
+        except TelegramError as exc:
+            log.warning("Notification dispatch impossible : %s", exc)
+    if team and config.get().notify_franchises:
+        await notify_franchises(bot, text, skip)
+    return sent
+
+
+async def notify_franchises(bot, text: str, skip=()) -> None:
+    skipped = {s for s in skip or () if s}
     try:
-        return await bot.send_message(config.get().dispatch_telegram_id, names.decorate(text),
-                                      reply_markup=names.decorate_markup(markup), **kwargs)
-    except TelegramError as exc:
-        log.warning("Notification dispatch impossible : %s", exc)
-    return None
+        franchises = await db.list_users(role="franchise", status="active")
+    except Exception:  # noqa: BLE001
+        log.exception("Franchisés injoignables pour la notification")
+        return
+    for user in franchises:
+        if user["id"] not in skipped and user.get("telegram_id"):
+            await send(bot, user, text)
 
 
 async def edit(
