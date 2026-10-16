@@ -112,8 +112,9 @@ async def action(update: Update, context):
         await _refresh_proposals(context, course)
     if franchise and franchise["id"] != user["id"] and franchise["role"] != "dispatch":
         await messaging.send(context.bot, franchise, texts.address_for_franchise(course, old, user))
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, texts.d_address_changed(course, old, user))
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"], course["franchise_id"]],
+        text=texts.d_address_changed(course, old, user))
     await lifecycle.refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)
     return "Adresse changée ✅"
 

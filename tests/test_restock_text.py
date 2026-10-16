@@ -38,10 +38,24 @@ def test_parse_reports_problems():
     text = "12 DIV\nLivreur Z\nLivreur B\n12 DIV\nBox 9\n2 KT\nDIV douze\n"
     out = rt.parse(lines(text), CAT, NAMES, USERS, BOXES)
     assert out.errors == [
-        "ligne 1 : écris d'abord le nom du livreur (ex. « Livreur A »)",
         "ligne 2 : livreur inconnu « Livreur Z »",
         "ligne 5 : box inconnu « Box 9 » (box : Box 1, Box 2, Box 3)",
         "ligne 6 : produit inconnu « KT »",
         "ligne 7 : livreur inconnu « DIV douze »",
-        "Livreur B : indique le box (ex. « Box 1 ») avant les produits",
     ]
+
+
+def test_parse_forgotten_livreur_or_box_is_asked():
+    """Livreur ou box oublié : pas d'erreur, le bot demandera (rt.missing)."""
+    out = rt.parse(lines("12 DIV\ncash 50\n\nLivreur B\n4 US"), CAT, NAMES, USERS, BOXES)
+    assert out.errors == []
+    first, second = out.blocks
+    assert (first.livreur, first.box, first.load, first.cash) == (None, None, [{"p": "DIV", "q": 12}], 50.0)
+    assert (second.livreur, second.box) == ("Livreur B", None)
+    blocks = [{"livreur": b.livreur, "box": b.box, "load": b.load, "unload": b.unload} for b in out.blocks]
+    assert rt.missing(blocks) == ("livreur", 0)
+    blocks[0]["livreur"] = "Livreur A"
+    assert rt.missing(blocks) == ("box", 0)
+    blocks[0]["box"] = blocks[1]["box"] = "Box 1"
+    assert rt.missing(blocks) is None
+    assert rt.missing([{"livreur": "Livreur A", "box": None, "load": [], "unload": [], "cash": 20}]) is None

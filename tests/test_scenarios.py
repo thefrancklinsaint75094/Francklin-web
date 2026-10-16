@@ -438,27 +438,35 @@ async def test_waves_widen(h, test_config):
     assert (await db.get_course(course["id"]))["livreur_id"] == ls[0]["id"]
 
 
-async def test_one_course_at_a_time_and_soon_free(h):
+async def test_livreur_chains_several_courses(h, test_config):
+    """Un livreur qui a déjà une adresse reçoit et prend les suivantes lui-même (sans limite par défaut) ;
+    MAX_COURSES_PER_LIVREUR fixe un maximum."""
+    import dataclasses
+
+    from bot import config
+
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    c2 = await order(h, F2, "oberkampf")
-    assert not any(f"Course #{c2['id']}" in t for t in h.tg.texts(L1))  # occupé
-    # Il s'approche de l'adresse : « bientôt libre » automatique.
+    # Il s'approche de l'adresse : « bientôt libre » automatique (retombe à la livraison).
     await h.location(L1, 48.8557, 2.3578, edited=True, message_id=L1)
     assert (await db.get_user(l1["id"]))["soon_free"] is True
-    assert texts.SOON_FREE_AUTO in h.tg.texts(L1)
-    prop = h.tg.find(L1, f"🆕 Course #{c2['id']}")
-    await h.press(L1, prop, "course_take:")
-    assert len(await db.list_assigned_for_livreur(l1["id"])) == 2
-    c3 = await order(h, F1, "deux")  # pas de 3e course
-    assert all("🆕" not in t for t in h.tg.texts(L1)[-3:])
-    # Livraison de la première : soon_free retombe.
-    fiche1 = h.tg.find(L1, f"🚴 Course #{c1['id']}")
-    await deliver_course(h, L1, fiche1)
+    c2 = await order(h, F2, "oberkampf")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c2['id']}"), "course_take:")
+    c3 = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c3['id']}"), "course_take:")
+    assert len(await db.list_assigned_for_livreur(l1["id"])) == 3
+    await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c1['id']}"))
     assert (await db.get_user(l1["id"]))["soon_free"] is False
-    del c3
+
+    # Avec un maximum de 2 : plus de proposition, et « Je prends » est refusé.
+    config.set_config(dataclasses.replace(test_config, max_courses_per_livreur=2))
+    c4 = await order(h, F2, "oberkampf")
+    assert not any(f"🆕 Course #{c4['id']}" in t for t in h.tg.texts(L1))
+    await h.press_data(L1, h.tg.last(L1), f"course_take:{c4['id']}")
+    assert h.tg.answers()[-1].get("text") == texts.ALREADY_HAS_COURSE
+    assert (await db.get_course(c4["id"]))["status"] == "pending"
 
 
 async def test_livreur_cancel_rebroadcast(h):
@@ -1753,8 +1761,9 @@ async def test_expenses_and_cash_to_collect(h, monkeypatch):
 
 
 async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
-    """Le plus proche n'a pas de US : la course part d'abord à celui qui en a. Personne n'en a assez :
-    la course part quand même au plus proche, ravitailleurs et dispatch sont prévenus une fois."""
+    """Le plus proche n'a pas de US : la course part à celui qui en a (même s'il a déjà une course). Personne
+    n'en a assez : la course attend, ravitailleurs et dispatch prévenus une fois ; « Je prends » est refusé
+    au livreur sans le produit, un admin peut la lui attribuer."""
     import dataclasses
 
     from bot import config
@@ -1787,17 +1796,33 @@ async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
     assert not [t for t in h.tg.texts(R1) if "aucun livreur en service n'a tout" in t]
     await h.press(L2, h.tg.last(L2), "course_take:")
 
-    # Livreur 2 est occupé ; Livreur 1 n'a pas de US : il reçoit quand même la course, alerte envoyée.
+    # Livreur 2 a déjà une course mais encore 3 US : il reçoit la suivante ; Livreur 1 (0 US) non.
     c2 = await order(h, F1, "deux us")
-    assert h.tg.last(L1).text.startswith(f"🆕 Course #{c2['id']}")
-    alert = h.tg.find(R1, f"⚠️ Course #{c2['id']}").text.replace("\xa0", " ")
-    assert "aucun livreur en service n'a tout en stock" in alert and "• Livreur 1 : 0/2 US" in alert
-    assert h.tg.find(DISPATCH, f"⚠️ Course #{c2['id']}")
-    assert reads == ["stock_livreurs"]      # feuille lue une fois, gardée une minute
+    assert h.tg.last(L2).text.startswith(f"🆕 Course #{c2['id']}")
+    assert not [t for t in h.tg.texts(L1) if t.startswith(f"🆕 Course #{c2['id']}")]
+    await h.press(L2, h.tg.last(L2), "course_take:")
 
-    # Nouvelle vague pour la même course : pas de deuxième alerte.
-    await broadcast.run_wave(h.context, c2["id"], advance=True)
-    assert len([t for t in h.tg.texts(R1) if t.startswith(f"⚠️ Course #{c2['id']}")]) == 1
+    # Plus personne n'a 2 US : la course attend, ravitailleurs et dispatch prévenus une fois.
+    c3 = await order(h, F1, "deux us")
+    assert not [t for t in h.tg.texts(L1) + h.tg.texts(L2) if t.startswith(f"🆕 Course #{c3['id']}")]
+    alert = h.tg.find(R1, f"⚠️ Course #{c3['id']}").text.replace("\xa0", " ")
+    assert "aucun livreur en service n'a tout en stock" in alert and "• Livreur 1 : 0/2 US" in alert
+    assert "La course attend" in alert
+    assert h.tg.find(DISPATCH, f"⚠️ Course #{c3['id']}")
+    assert reads == ["stock_livreurs"]      # feuille lue une fois, gardée une minute
+    await broadcast.run_wave(h.context, c3["id"], advance=True)
+    assert len([t for t in h.tg.texts(R1) if t.startswith(f"⚠️ Course #{c3['id']}")]) == 1
+
+    # « Je prends » sans le produit (d'après le tableau) : refusé, le dispatch est prévenu…
+    await h.press_data(L1, h.tg.last(L1), f"course_take:{c3['id']}")
+    assert h.tg.answers()[-1].get("text").startswith("⛔ D'après le tableau, il te manque : 0/2 US")
+    assert (await db.get_course(c3["id"]))["status"] == "pending"
+    assert "voulait la prendre, mais il lui manque" in h.tg.last(DISPATCH).text
+    # … qui peut la lui attribuer quand même.
+    await h.text(DISPATCH, "/encours")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"assign:{c3['id']}")
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"assign_to:{c3['id']}:{l1['id']}")
+    assert (await db.get_course(c3["id"]))["livreur_id"] == l1["id"]
 
 
 async def test_weekly_cloture(h, monkeypatch):
@@ -2268,9 +2293,10 @@ async def test_ravi_text_restock(h, monkeypatch):
     await h.text(L1, "/ravi 1")
     assert h.tg.last(L1).text == texts.NOT_FOR_YOU
 
-    # Le ravitailleur, sans numéro : c'est lui. Erreur d'abord (pas de box), puis le bon texte.
+    # Le ravitailleur, sans numéro : c'est lui. Box oublié : le bot le demande ; puis un texte complet.
     await h.text(R1, "/ravi\nLivreur 1\n12 DIV")
-    assert "Livreur 1 : indique le box" in h.tg.last(R1).text
+    ask = h.tg.last(R1)
+    assert "quel box pour Livreur 1" in ask.text and ask.buttons[0][1] == "rvf:b:0:0"
     await h.text(R1, "Livreur 1\nBox 1\n12 DIV\n-2 MSX\ncash 300")
     preview = h.tg.last(R1)
     text = preview.text.replace("\xa0", " ")
@@ -2291,9 +2317,9 @@ async def test_ravi_text_restock(h, monkeypatch):
     assert any("Chargement reçu" in t for t in h.tg.texts(L1)) and any("Stock repris" in t for t in h.tg.texts(L1))
     assert any(t.startswith(f"📦 R#{rows[0]['id']} — Ravitailleur 1 → Livreur 1") for t in h.tg.texts(DISPATCH))
 
-    # Le dispatch : /ravi sans numéro → il doit préciser ; /ravi 1 seul → exemple, puis le texte.
+    # Le dispatch : /ravi sans numéro → boutons du ravitailleur ; /ravi 1 seul → exemple, puis le texte.
     await h.text(DISPATCH, "/ravi")
-    assert h.tg.last(DISPATCH).text == texts.RAVI_WHO
+    assert h.tg.last(DISPATCH).text == texts.RAVI_ASK_WHO
     await h.text(DISPATCH, "/ravi 1")
     assert "📦 <b>Rechargement — Ravitailleur 1</b> — envoie-le ici" in h.tg.last(DISPATCH).text
     await h.text(DISPATCH, "Livreur 2\nbox 2\n4 US")
@@ -3337,3 +3363,80 @@ async def test_course_card_change_livreur_and_time(h):
     await h.press(F1, h.tg.messages[(F1, (await db.get_course(course["id"]))["franchise_message_id"])], "ct:")
     await h.text(F1, "-")
     assert (await db.get_course(course["id"]))["requested_time"] is None
+
+
+async def test_ravi_asks_forgotten_livreur_box_and_ravitailleur(h, monkeypatch):
+    """/ravi : ravitailleur, livreur ou box oublié → le bot propose des boutons au lieu d'annuler."""
+    import asyncio
+
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_send(rows, client=None):
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    for name in ("DIV", "US"):
+        await db.create_product(name, name.lower(), [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+
+    # Dispatch : ni ravitailleur, ni livreur, ni box.
+    await h.text(DISPATCH, "/ravi\n12 DIV\ncash 40")
+    ask = h.tg.last(DISPATCH)
+    assert ask.text == texts.RAVI_ASK_WHO and ask.buttons[0] == ("Ravitailleur 1", "rvf:r:0")
+    await h.press_data(DISPATCH, ask, "rvf:r:0")
+    ask = h.tg.last(DISPATCH)
+    assert "pour quel livreur" in ask.text and "+12 DIV" in ask.text
+    assert [t for t, _ in ask.buttons] == ["Livreur 1", "Livreur 2", "❌ Annuler"]
+    await h.press_data(DISPATCH, ask, "rvf:l:0:1")
+    ask = h.tg.messages[(DISPATCH, ask.message_id)]
+    assert "quel box pour Livreur 2" in ask.text
+    await h.press_data(DISPATCH, ask, "rvf:b:0:1")
+    preview = h.tg.messages[(DISPATCH, ask.message_id)]
+    assert "<b>Livreur 2</b> · Box 2" in preview.text and [d for _, d in preview.buttons] == ["rv_ok", "rv_x"]
+    await h.press_data(DISPATCH, preview, "rv_ok")
+    await asyncio.gather(*list(sheets._tasks))
+    row = (await db._t("restocks").select("*").order("id").execute()).data[0]
+    assert (row["livreur_id"], row["box"], row["by_user_id"], float(row["cash"])) == (l2["id"], "Box 2", r1["id"], 40.0)
+
+    # Le box choisi vaut aussi pour le livreur suivant ; ❌ annule sans rien enregistrer.
+    await h.text(R1, "/ravi\nLivreur 1\n2 US\nLivreur 2\n3 US")
+    ask = h.tg.last(R1)
+    await h.press_data(R1, ask, "rvf:b:0:0")
+    preview = h.tg.messages[(R1, ask.message_id)]
+    assert "<b>Livreur 1</b> · Box 1" in preview.text and "<b>Livreur 2</b> · Box 1" in preview.text
+    await h.text(R1, "/ravi\n4 US")
+    ask = h.tg.last(R1)
+    await h.press_data(R1, ask, "rvf:x")
+    assert h.tg.messages[(R1, ask.message_id)].text == texts.RAVI_CANCELLED
+    assert len((await db._t("restocks").select("id").execute()).data) == 1
+
+
+async def test_franchises_get_every_notification(h, test_config):
+    """Tous les franchisés reçoivent les avis du dispatch, même pour une course qui n'est pas la leur ;
+    pas en double pour celui de la course, pas les messages privés relayés."""
+    import dataclasses
+
+    from bot import config
+
+    config.set_config(dataclasses.replace(test_config, notify_franchises=True))
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    assert any(t.startswith(f"🆕 #{course['id']}") or f"#{course['id']}" in t for t in h.tg.texts(F2))
+    n1 = len(h.tg.inbox(F1))
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    taken = [t for t in h.tg.texts(F2) if f"#{course['id']}" in t and "Livreur 1" in t]
+    assert taken                                            # F2 sait que Livreur 1 a pris la course de F1
+    assert len([m for m in h.tg.inbox(F1)[n1:] if "Livreur 1" in m.text]) == 1   # F1 : son seul message
+    # Message privé relayé entre F1 et le livreur : pas copié à F2.
+    before = len(h.tg.inbox(F2))
+    await h.press(F1, h.tg.find(F1, f"Course #{course['id']}"), "relay_start:")
+    await h.text(F1, "Code 1234")
+    assert not any("Code 1234" in m.text for m in h.tg.inbox(F2)[before:])
+    # Livrée par le dispatch : les franchisés sont prévenus.
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"fy:deliver:{course['id']}:e")
+    assert any(f"#{course['id']}" in t and "livr" in t for t in h.tg.texts(F2)[-3:])

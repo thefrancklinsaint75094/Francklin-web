@@ -256,6 +256,11 @@ async def override_do(update: Update, context):
     await db.log_event("dispatch_override", int(course_id), dispatcher["id"],
                        {"action": action, "previous_status": course["status"]})
     await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.d_override(action, int(course_id)))
+    if action != "deliver":            # livrée : lifecycle.deliver prévient déjà tout le monde
+        await messaging.notify_dispatch(
+            context.bot, texts.d_override(action, int(course_id)).replace(
+                "par le dispatch", f"par {texts.esc(dispatcher['display_name'])}"),
+            dispatch=dispatcher["role"] != "dispatch", skip=[dispatcher["id"], course["franchise_id"]])
     return "Fait"
 
 
@@ -407,7 +412,8 @@ async def delete_do(update: Update, context):
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.deleted_done(user))
     if admin["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, f"{texts.deleted_done(user)} (par {texts.esc(admin['display_name'])})")
+        await messaging.notify_dispatch(context.bot, f"{texts.deleted_done(user)} (par {texts.esc(admin['display_name'])})",
+                                        team=False)
     return "Supprimé"
 
 

@@ -378,7 +378,7 @@ SOON_FREE_AUTO = "📍 Tu arrives — je peux te proposer la course suivante."
 SOON_FREE_NO_COURSE = "Tu n'as pas de course en cours."
 SOON_FREE_ALREADY = "C'est noté, tu as déjà une course réservée."
 TOO_LATE = "Trop tard, course déjà prise."
-ALREADY_HAS_COURSE = "Tu as déjà une course en cours."
+ALREADY_HAS_COURSE = "Tu as déjà le nombre maximum de courses en même temps : livre-en une d'abord."
 NO_ASSIGNED = "Tu n'as aucune course en cours."
 LIVREUR_CANCEL_CONFIRM = "Tu es sûr ? Ça sera compté dans tes annulations."
 
@@ -810,14 +810,31 @@ def stock_empty_alert(course: dict, livreur: dict, sheet_name: str, products: li
     return f"📭 {who} n'a plus de {what} sur lui (course #{course['id']} livrée). Pense à le recharger (/recharge)."
 
 
-def stock_dispatch_alert(course: dict, short: list[tuple[dict, list[tuple[str, int, float]]]]) -> str:
+def stock_dispatch_alert(course: dict, short: list[tuple[dict, list[tuple[str, int, float]]]],
+                         waiting: bool = False) -> str:
     """Aucun livreur éligible n'a tout ce que demande la course."""
     lines = [f"⚠️ Course #{course['id']} ({esc(course['district'])}) : aucun livreur en service n'a tout en stock."]
     for livreur, missing in short[:6]:
         what = ", ".join(f"{_n(have)}/{need} {esc(p)}" for p, need, have in missing)
         lines.append(f"• {esc(livreur.get('display_name') or '?')} : {what}")
-    lines.append("La course part quand même au plus proche. Pense à recharger (/recharge).")
+    if waiting:
+        lines.append("La course attend : un livreur sans le produit ne peut pas la prendre. Recharge (/ravi) ou "
+                     "donne-la quand même avec 👤 Attribuer (/encours).")
+    else:
+        lines.append("Elle part seulement aux livreurs dont le stock n'est pas connu. Pense à recharger (/ravi).")
     return "\n".join(lines)
+
+
+def take_refused_stock(missing: list[tuple[str, int, float]]) -> str:
+    what = ", ".join(f"{_n(have)}/{need} {p}" for p, need, have in missing)
+    return (f"⛔ D'après le tableau, il te manque : {what}. Demande un rechargement ; "
+            "le dispatch peut aussi te l'attribuer.")
+
+
+def d_take_refused_stock(course: dict, livreur: dict, missing: list[tuple[str, int, float]]) -> str:
+    what = ", ".join(f"{_n(have)}/{need} {esc(p)}" for p, need, have in missing)
+    return (f"⛔ #{course['id']} — {esc(livreur.get('display_name') or '?')} voulait la prendre, mais il lui manque "
+            f"{what} d'après le tableau. Rechargement pas encore saisi ? 👤 Attribuer pour la lui donner quand même.")
 
 
 def arrival_for_franchise(course: dict, livreur: dict, distance_label: str, minutes: int) -> str:
@@ -1616,6 +1633,7 @@ def sales_done(count: int, tab: str, added: int, error: str | None, expenses: in
 
 RAVI_WHO = "Précise le ravitailleur : /ravi 1 ou /ravi 2 (puis le livreur, le box et les produits)."
 RAVI_EXPIRED = "Rechargement expiré : renvoie /ravi."
+RAVI_ASK_WHO = "📦 <b>Rechargement</b> — quel ravitailleur ?"
 RAVI_CANCELLED = "Rechargement annulé : rien n'a été enregistré."
 
 
@@ -1660,6 +1678,18 @@ def _ravi_blocks(blocks: list[dict]) -> list[str]:
         if b.get("cash"):
             lines.append(f"💶 cash récupéré {eur(b['cash'])}")
     return lines
+
+
+def _ravi_what(block: dict) -> str:
+    return "\n".join(_ravi_blocks([{**block, "livreur": block.get("livreur") or "Livreur ?"}])[1:])
+
+
+def ravi_ask_livreur(block: dict) -> str:
+    return f"📦 Tu n'as pas écrit le livreur : <b>pour quel livreur ?</b>\n{_ravi_what(block)}"
+
+
+def ravi_ask_box(block: dict) -> str:
+    return f"📦 Tu n'as pas écrit le box : <b>quel box pour {esc(block['livreur'])} ?</b>\n{_ravi_what(block)}"
 
 
 def ravi_preview(ravi: str, blocks: list[dict], warnings: list[str] | None = None) -> str:

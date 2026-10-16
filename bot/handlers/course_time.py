@@ -75,6 +75,7 @@ async def on_message(update: Update, context, user: dict, payload: dict) -> None
         await address._refresh_proposals(context, course)
     if franchise and franchise["id"] != user["id"] and franchise["role"] != "dispatch":
         await messaging.send(context.bot, franchise, texts.course_time_changed(course, user))
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, texts.course_time_changed(course, user))
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"], course["franchise_id"]],
+        text=texts.course_time_changed(course, user))
     await lifecycle.refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)

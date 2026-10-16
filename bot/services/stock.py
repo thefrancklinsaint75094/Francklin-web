@@ -131,9 +131,10 @@ async def _recipients(course: dict, livreur: dict) -> list[dict]:
 
 
 async def _broadcast(context, course: dict, livreur: dict, text: str) -> None:
-    for user in await _recipients(course, livreur):
+    recipients = await _recipients(course, livreur)
+    for user in recipients:
         await messaging.send(context.bot, user, text)
-    await messaging.notify_dispatch(context.bot, text)
+    await messaging.notify_dispatch(context.bot, text, skip=[u["id"] for u in recipients])
 
 
 async def check_assignment(context, course: dict, livreur: dict) -> None:
@@ -310,8 +311,9 @@ async def availability(course: dict, livreurs: list[dict]) -> dict[str, list[tup
 
 
 async def rank_by_stock(context, course: dict, eligible: list[tuple[dict, float | None]]):
-    """Livreurs éligibles réordonnés : d'abord ceux qui ont tout en stock, puis stock inconnu,
-    puis ceux à qui il manque quelque chose (l'ordre par distance est gardé dans chaque groupe).
+    """Livreurs éligibles : d'abord ceux qui ont tout en stock, puis stock inconnu (l'ordre par distance
+    est gardé). Ceux à qui il manque un produit d'après le tableau ne reçoivent pas la course (ils ne
+    peuvent pas la prendre, voir missing_for) ; un admin peut la leur attribuer quand même.
     Si aucun n'a tout, ravitailleurs et dispatch sont prévenus une fois pour la course.
     Ne lève jamais d'exception : en cas de problème, l'ordre reste celui des distances."""
     if not enabled() or not eligible:
@@ -325,20 +327,32 @@ async def rank_by_stock(context, course: dict, eligible: list[tuple[dict, float 
             missing = avail.get(item[0]["id"])
             return 1 if missing is None else (0 if not missing else 2)
 
-        ranked = sorted(eligible, key=group)   # tri stable : la distance départage
+        ranked = [x for x in sorted(eligible, key=group) if group(x) != 2]   # tri stable : la distance départage
         known = [m for m in avail.values() if m is not None]
         if known and all(known) and course["id"] not in _dispatch_alerted:
             _dispatch_alerted.add(course["id"])
-            await _alert_no_stock(context, course, eligible, avail)
+            await _alert_no_stock(context, course, eligible, avail, waiting=not ranked)
         return ranked
     except Exception:  # noqa: BLE001
         log.exception("Dispatch selon le stock impossible")
         return eligible
 
 
-async def _alert_no_stock(context, course: dict, eligible, avail) -> None:
+async def missing_for(course: dict, livreur: dict) -> list[tuple[str, int, float]] | None:
+    """Ce qui manque au livreur pour cette course d'après le tableau (moins ses autres courses en cours),
+    ou None : rien ne manque, stock inconnu, alertes de stock coupées, ou tableau illisible."""
+    if not enabled():
+        return None
+    try:
+        return (await availability(course, [livreur])).get(livreur["id"]) or None
+    except Exception:  # noqa: BLE001 — en cas de doute, on ne bloque pas
+        log.exception("Contrôle du stock à la prise impossible")
+        return None
+
+
+async def _alert_no_stock(context, course: dict, eligible, avail, waiting: bool = False) -> None:
     short = [(lv, avail[lv["id"]]) for lv, _ in eligible if avail.get(lv["id"])]
-    text = texts.stock_dispatch_alert(course, short)
+    text = texts.stock_dispatch_alert(course, short, waiting)
     await db.log_event("stock_dispatch_alert", course["id"],
                        payload={"livreurs": [lv["id"] for lv, _ in short]})
     for user in await db.list_users(role="ravitailleur", status="active"):

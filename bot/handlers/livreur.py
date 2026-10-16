@@ -11,7 +11,7 @@ from telegram import Update
 
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, declare, relay
-from bot.services import broadcast, catalog, lifecycle, order_edit, sales
+from bot.services import broadcast, catalog, lifecycle, order_edit, sales, stock
 from bot.timeutil import hhmm, iso, now_utc, parse_ts
 
 log = logging.getLogger(__name__)
@@ -245,9 +245,15 @@ async def take(update: Update, context):
                     else texts.proposal_taken(course_id))
             await messaging.edit(context.bot, update.effective_chat.id, message.message_id, text)
             return texts.TOO_LATE, True
-        assigned = await db.list_assigned_for_livreur(user["id"])
-        if len(assigned) >= 2 or (len(assigned) == 1 and not user.get("soon_free")):
+        limit = config.get().max_courses_per_livreur      # 0 : il enchaîne autant de courses qu'il veut
+        if limit and len(await db.list_assigned_for_livreur(user["id"])) >= limit:
             return texts.ALREADY_HAS_COURSE, True
+        # Il lui manque un produit d'après le tableau : il ne la prend pas (un admin peut l'attribuer).
+        short = await stock.missing_for(course, user)
+        if short:
+            await db.log_event("take_refused_stock", course_id, user["id"], {"missing": [p for p, _, _ in short]})
+            await messaging.notify_dispatch(context.bot, texts.d_take_refused_stock(course, user, short))
+            return texts.take_refused_stock(short), True
         won = await db.take_course(course_id, user["id"])
         if won is None:
             await messaging.edit(context.bot, update.effective_chat.id, message.message_id,
@@ -341,7 +347,8 @@ async def set_eta(update: Update, context, user: dict, minutes: int) -> bool:
     franchise = await db.get_user(course["franchise_id"])
     if franchise and franchise["role"] != "dispatch":
         await messaging.send(context.bot, franchise, texts.eta_for_franchise(course, user, minutes, at, update_))
-    await messaging.notify_dispatch(context.bot, texts.d_eta(course, user, minutes, at, update_))
+    await messaging.notify_dispatch(context.bot, texts.d_eta(course, user, minutes, at, update_),
+                                    skip=[course["franchise_id"]])
     await lifecycle.refresh_franchise_message(context, course, livreur=user, franchise=franchise)
     return True
 
@@ -625,7 +632,8 @@ async def _edit_request(context, chat_id: int, user: dict, payload: dict, course
                              keyboards.edit_decision(course["id"]))
     await messaging.notify_dispatch(context.bot, texts.edit_request(course, user, pending)
                                     .replace("Tu valides ? (c'est toi qui as le dernier mot)",
-                                             "En attente de la validation du franchisé."))
+                                             "En attente de la validation du franchisé."),
+                                    skip=[course["franchise_id"]])
     await db.log_event("course_edit_requested", course["id"], user["id"], {
         "before": {"products": course["products"], "price": float(course["price"])},
         "after": {"products": pending["products"], "price": float(pending["price"])},
@@ -654,9 +662,9 @@ async def _notify_modified(context, editor: dict, before: dict, updated: dict) -
         await messaging.send(context.bot, franchise,
                              texts.order_modified_for_franchise(updated, before["price"], editor["display_name"]))
         await lifecycle.refresh_franchise_message(context, updated, livreur=livreur, franchise=franchise)
-    if editor["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot,
-                                        texts.d_order_modified(updated, editor, before["products"], before["price"]))
+    await messaging.notify_dispatch(
+        context.bot, dispatch=editor["role"] != "dispatch", skip=[editor["id"], updated["franchise_id"]],
+        text=texts.d_order_modified(updated, editor, before["products"], before["price"]))
 
 
 async def edit_typed_price(update: Update, context, user: dict) -> None:

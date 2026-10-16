@@ -98,4 +98,4 @@ async def action(update: Update, context):
 async def weekly_reminder(context) -> None:
     """Lundi 6h05 : rappel au dispatch de clôturer la semaine."""
     if sheets.enabled():
-        await messaging.notify_dispatch(context.bot, texts.CLOTURE_REMINDER)
+        await messaging.notify_dispatch(context.bot, texts.CLOTURE_REMINDER, team=False)

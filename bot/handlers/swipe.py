@@ -111,7 +111,8 @@ async def action(update: Update, context):
             if livreur:
                 await messaging.send(context.bot, livreur, text)
     await messaging.edit(context.bot, chat_id, msg_id, texts.swipe_done(payload["blocks"]))
-    if user["role"] != "dispatch":
-        await messaging.notify_dispatch(context.bot, f"{texts.swipe_done(payload['blocks'], short=True)}"
+    await messaging.notify_dispatch(
+        context.bot, dispatch=user["role"] != "dispatch", skip=[user["id"]],
+        text=f"{texts.swipe_done(payload['blocks'], short=True)}"
                                                      f"\n\n(par {texts.esc(user['display_name'])})")
     return "Enregistré ✅"

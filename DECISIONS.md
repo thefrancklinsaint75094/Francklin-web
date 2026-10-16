@@ -639,3 +639,23 @@ simple qui respecte le mur de confidentialité (§12).
 154. **Colonnes de calcul protégées** (point 4). Protection Google Sheets « avertissement seulement » sur les colonnes
      masquées des onglets visibles (pas de blocage : le script tourne sous le compte du propriétaire et
      l'exploitant garde la main). Posées une fois par l'API ; `protegerCalculs` (script) les repose sans doublon.
+
+155. **/ravi : oubli demandé, pas annulé** (l'exploitant : « au lieu d'annuler, ça doit juste me proposer pour
+     quel livreur… pour quel box »). Produits avant tout nom de livreur → bloc sans livreur ; box absent → plus une
+     erreur. `restock_text.missing` trouve la première chose à demander ; boutons `rvf:` (ravitailleur pour un
+     admin, livreur, box), puis aperçu habituel. Le box choisi vaut pour les blocs suivants sans box, comme dans
+     le texte.
+
+156. **Stock manquant : pas de prise** (l'exploitant a choisi « bloquer, l'admin peut forcer »). Revient sur la
+     tolérance de la décision « dispatch selon le stock » : un livreur à qui il manque un produit d'après le
+     tableau ne reçoit plus la proposition et « Je prends » est refusé (dispatch prévenu, il peut 👤 Attribuer).
+     Stock inconnu, feuille illisible ou alertes coupées : personne n'est bloqué.
+
+157. **Courses à la suite, sans limite** (choix de l'exploitant). La règle « aucune course, ou une et bientôt
+     libre » disparaît : `MAX_COURSES_PER_LIVREUR` (0 = sans limite). Les livreurs libres ou bientôt libres
+     passent avant les occupés.
+
+158. **Avis à tous les franchisés** (choix « tout sauf messages privés »). `notify_dispatch` copie aux franchisés
+     actifs (`team`), sans l'auteur ni le franchisé de la course (`skip`) ; les actions du dispatch, qui ne lui
+     envoyaient rien, partent maintenant aux franchisés (`dispatch=False`). Exclus : messages relayés, erreurs et
+     alertes techniques, inscriptions, accès. Les boutons restent au dispatch.
