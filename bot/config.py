@@ -86,6 +86,8 @@ class Config:
     quiet_notifications: bool = True           # niveau par personne (users.notify_level) ; sinon tout en messages
     tomtom_api_key: str | None = None          # heure d'arrivée en temps réel, trafic compris (vide : désactivé)
     traffic_refresh_minutes: int = 3
+    idfm_api_key: str | None = None            # transports d'Île-de-France (PRIM) : arrivée et itinéraire (vide : désactivé)
+    idfm_url: str | None = None                # adresse du calculateur PRIM (vide : celle par défaut)
     webapp_url: str | None = None              # adresse publique de la mini-application (vide : pas d'appli)
     web_port: int | None = None                # port du serveur web (Railway : PORT)
     position_stale_minutes: int = 30
@@ -143,6 +145,8 @@ class Config:
             quiet_notifications=(_raw("QUIET_NOTIFICATIONS") or "1").lower() not in ("0", "non", "false", "off"),
             webapp_url=_webapp_url(),
             tomtom_api_key=_raw("TOMTOM_API_KEY"),
+            idfm_api_key=_raw("IDFM_API_KEY"),
+            idfm_url=_raw("IDFM_URL"),
             traffic_refresh_minutes=max(1, _int("TRAFFIC_REFRESH_MINUTES", 3)),
             web_port=int(_raw("PORT")) if (_raw("PORT") or "").isdigit() else None,
             position_stale_minutes=_int("POSITION_STALE_MINUTES", 30),

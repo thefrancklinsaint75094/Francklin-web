@@ -1,15 +1,18 @@
-"""Heure d'arrivée en temps réel, trafic compris (TomTom Routing API), pour la course en cours de chaque livreur.
+"""Heure d'arrivée en temps réel pour la course en cours de chaque livreur.
 
 Toutes les TRAFFIC_REFRESH_MINUTES : position en direct du livreur (partagée dans Telegram) → temps de trajet
-jusqu'à l'adresse avec le trafic du moment. Une seule course par livreur (celle qu'il fait), seulement avec une
-position fraîche, pas sur place, pas en transports en commun (TomTom ne les connaît pas : l'estimation
-habituelle reste). Résultat gardé en mémoire (recalculé au plus TRAFFIC_REFRESH_MINUTES après un redémarrage),
-affiché dans les applis ; retard sur le temps annoncé par le livreur : dispatch et franchisés prévenus une
-fois par course. Sans TOMTOM_API_KEY, rien ne se passe.
+jusqu'à l'adresse :
+- 🚗 voiture, 🛵 deux-roues : TomTom Routing API, avec le trafic du moment (TOMTOM_API_KEY) ;
+- 🚶 à pied / transports : calculateur d'itinéraires d'Île-de-France Mobilités (PRIM, IDFM_API_KEY), avec les
+  horaires réels et la marche ; l'itinéraire (lignes, arrêts) est montré au livreur.
+Une seule course par livreur (celle qu'il fait), position fraîche, pas sur place. Résultat gardé en mémoire
+(recalculé au plus TRAFFIC_REFRESH_MINUTES après un redémarrage), affiché dans les applis ; retard sur le temps
+annoncé par le livreur : dispatch et franchisés prévenus une fois par course. Sans clé, rien ne se passe.
 """
 from __future__ import annotations
 
 import logging
+import unicodedata
 from datetime import datetime, timedelta
 
 import httpx
@@ -30,7 +33,71 @@ _late_alerted: set[tuple[int, str]] = set()
 
 
 def enabled() -> bool:
-    return bool(config.get().tomtom_api_key)
+    cfg = config.get()
+    return bool(cfg.tomtom_api_key or cfg.idfm_api_key)
+
+
+IDFM_URL = "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/journeys"
+TRANSIT_ICON = {"metro": "🚇", "rer": "🚆", "train": "🚆", "transilien": "🚆", "bus": "🚌", "tramway": "🚊",
+                "tram": "🚊", "noctilien": "🌙🚌"}
+
+
+def _nav_time(value: str | None) -> datetime | None:
+    """« 20261016T185200 » (heure de Paris) → datetime UTC."""
+    from bot.config import PARIS
+
+    try:
+        return datetime.strptime(value, "%Y%m%dT%H%M%S").replace(tzinfo=PARIS).astimezone(now_utc().tzinfo)
+    except (TypeError, ValueError):
+        return None
+
+
+def transit_steps(journey: dict) -> list[str]:
+    """Sections d'un trajet Navitia → étapes simples : « 🚇 Métro 9 → Montreuil : Oberkampf → Robespierre »,
+    « 🚶 6 min à pied »."""
+    steps = []
+    for s in journey.get("sections") or []:
+        kind = s.get("type")
+        minutes = round(int(s.get("duration") or 0) / 60)
+        if kind == "public_transport":
+            info = s.get("display_informations") or {}
+            mode = str(info.get("commercial_mode") or info.get("physical_mode") or "").strip()
+            plain = unicodedata.normalize("NFKD", mode.lower()).encode("ascii", "ignore").decode()   # « Métro » → metro
+            icon = TRANSIT_ICON.get(plain.split()[0] if plain else "", "🚍")
+            line = " ".join(x for x in (mode, str(info.get("code") or "")) if x)
+            direction = info.get("direction") or ""
+            start = (s.get("from") or {}).get("name") or ""
+            end = (s.get("to") or {}).get("name") or ""
+            steps.append(f"{icon} {line}{' → ' + direction if direction else ''} : {start} → {end}")
+        elif kind in ("street_network", "transfer", "crow_fly") and minutes >= 1:
+            steps.append(f"🚶 {minutes} min à pied")
+        elif kind == "waiting" and minutes >= 1:
+            steps.append(f"⏳ {minutes} min d'attente")
+    return steps
+
+
+async def route_transit(lat1: float, lon1: float, lat2: float, lon2: float,
+                        client: httpx.AsyncClient | None = None) -> dict | None:
+    """{"seconds", "arrival", "steps", "disruptions"} en transports d'Île-de-France (horaires réels), ou None."""
+    cfg = config.get()
+    if not cfg.idfm_api_key:
+        return None
+    params = {"from": f"{lon1};{lat1}", "to": f"{lon2};{lat2}", "data_freshness": "realtime", "count": 1}
+    own = client is None
+    client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        r = await client.get(cfg.idfm_url or IDFM_URL, params=params, headers={"apikey": cfg.idfm_api_key})
+        r.raise_for_status()
+        data = r.json()
+        journey = (data.get("journeys") or [])[0]
+        return {"seconds": int(journey["duration"]), "arrival": _nav_time(journey.get("arrival_date_time")),
+                "steps": transit_steps(journey), "disruptions": len(data.get("disruptions") or [])}
+    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+        log.warning("IDFM indisponible : %s", exc)
+        return None
+    finally:
+        if own:
+            await client.aclose()
 
 
 def live(course_id: int) -> dict | None:
@@ -92,13 +159,23 @@ async def refresh(context) -> None:
             continue
         if haversine_m(pos["lat"], pos["lon"], course["lat"], course["lon"]) <= ONSITE_METERS:
             continue
-        result = await route(pos["lat"], pos["lon"], course["lat"], course["lon"], lv.get("transport_mode"))
-        if result is None:
-            continue
-        arrival = now + timedelta(seconds=result["seconds"])
-        _live[course["id"]] = {"minutes": max(1, round(result["seconds"] / 60)), "at": arrival,
-                               "delay": round(result["delay"] / 60), "km": round(result["meters"] / 1000, 1),
-                               "updated": now, "livreur_id": livreur_id}
+        if lv.get("transport_mode") == "transport":     # à pied / métro : IDFM
+            result = await route_transit(pos["lat"], pos["lon"], course["lat"], course["lon"])
+            if result is None:
+                continue
+            arrival = result["arrival"] or now + timedelta(seconds=result["seconds"])
+            _live[course["id"]] = {"minutes": max(1, round((arrival - now).total_seconds() / 60)), "at": arrival,
+                                   "delay": 0, "km": None, "updated": now, "livreur_id": livreur_id,
+                                   "source": "transports", "steps": result["steps"],
+                                   "disruptions": result["disruptions"]}
+        else:
+            result = await route(pos["lat"], pos["lon"], course["lat"], course["lon"], lv.get("transport_mode"))
+            if result is None:
+                continue
+            arrival = now + timedelta(seconds=result["seconds"])
+            _live[course["id"]] = {"minutes": max(1, round(result["seconds"] / 60)), "at": arrival,
+                                   "delay": round(result["delay"] / 60), "km": round(result["meters"] / 1000, 1),
+                                   "updated": now, "livreur_id": livreur_id, "source": "trafic"}
         await _late_check(context, course, lv, arrival)
 
 

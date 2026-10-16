@@ -90,6 +90,8 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `PORT` | pour l'appli | | port du serveur web (mini-application) ; Railway : `8080`, avec un domaine public |
 | `WEBAPP_URL` | non | `https://<RAILWAY_PUBLIC_DOMAIN>` | adresse publique de l'appli (bouton « Dispatch ») |
 | `TOMTOM_API_KEY` | non | | heure d'arrivée en temps réel, trafic compris (developer.tomtom.com) ; vide : désactivé |
+| `IDFM_API_KEY` | non | | transports d'Île-de-France (PRIM, prim.iledefrance-mobilites.fr) : arrivée et itinéraire des livreurs en 🚶 transports ; vide : désactivé |
+| `IDFM_URL` | non | calculateur PRIM | à changer seulement si IDFM change l'adresse de son API |
 | `TRAFFIC_REFRESH_MINUTES` | non | `3` | fréquence du calcul avec le trafic |
 | `QUIET_NOTIFICATIONS` | non | `1` | `0` : tous les avis en messages, pour tout le monde (sans tenir compte du réglage de chacun) |
 | `NOTIFY_FRANCHISES` | non | `1` | `0` : les franchisés ne reçoivent plus la copie des avis du dispatch |
@@ -488,6 +490,12 @@ bouchons du moment. L'écran « En direct » montre cette heure (« 🚦 trafic 
 10 min ou plus l'heure annoncée, le dispatch et les franchisés reçoivent une alerte (une fois par course). Une
 seule course par livreur, pas sur place, pas en transports en commun (TomTom ne les calcule pas : l'estimation
 habituelle reste) — environ 20 calculs par heure et par livreur en course, dans le quota gratuit de TomTom.
+
+**🚇 Transports d'Île-de-France (IDFM).** Avec `IDFM_API_KEY` (compte gratuit sur la plateforme PRIM d'Île-de-France
+Mobilités), les livreurs en 🚶 transports ont aussi leur heure d'arrivée, d'après les horaires réels (marche,
+attente, métro, RER, bus, tram), et leur appli leur montre le trajet étape par étape (« 🚇 Métro 9 → Mairie de
+Montreuil : Oberkampf → Robespierre », « 🚶 5 min à pied »), avec un avertissement en cas de perturbation. Même
+fréquence, même alerte de retard ; l'écran « En direct » l'affiche « 🚇 transports ».
 
 **Moins de messages.** Chaque avis va dans 🔔 Activité. En message Telegram, par défaut (« l'essentiel »), seuls
 les problèmes et ce qui attend une action : aucun livreur disponible, livreur qui annule, annulée sur place,

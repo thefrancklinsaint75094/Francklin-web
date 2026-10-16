@@ -55,7 +55,9 @@ def _traffic(course_id: int, now) -> dict | None:
     live = traffic.live(course_id)
     if not live:
         return None
-    return {"at": hhmm(live["at"]), "in": max(0, int((live["at"] - now).total_seconds() // 60)), "delay": live["delay"]}
+    return {"at": hhmm(live["at"]), "in": max(0, int((live["at"] - now).total_seconds() // 60)), "delay": live["delay"],
+            "source": live.get("source") or "trafic", "steps": live.get("steps") or [],
+            "disruptions": live.get("disruptions") or 0}
 
 
 async def board(user: dict) -> dict:

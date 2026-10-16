@@ -717,3 +717,10 @@ simple qui respecte le mur de confidentialité (§12).
      cours de chaque livreur, position fraîche, pas sur place (150 m) — pour rester dans le quota gratuit.
      Résultat en mémoire (`services/traffic.py`) ; alerte de retard ≥ 10 min sur l'heure annoncée, une fois par
      course et par annonce. Sans clé, rien ne change.
+
+167. **Transports d'Île-de-France avec IDFM (PRIM)** (l'exploitant : « une variante pour les transports en
+     Île-de-France ? »). TomTom ne calcule pas les transports en commun : pour les livreurs en mode « transport »,
+     calculateur d'itinéraires Navitia d'IDFM (`journeys`, `data_freshness=realtime`, clé dans l'en-tête `apikey`).
+     Arrivée = `arrival_date_time` du trajet ; étapes simplifiées pour le livreur (ligne, direction, arrêts,
+     marche, attente) ; nombre de perturbations signalé. Adresse de l'API réglable (`IDFM_URL`) au cas où PRIM la
+     change. Sans clé, rien ne change.

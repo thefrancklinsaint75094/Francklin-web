@@ -180,7 +180,7 @@ def _routes(assigned: list[dict], livreurs: list[dict], positions: dict, users: 
         live = traffic.live(current["id"])
         if live:                                       # trafic en temps réel (TomTom) : la référence
             arrival = {"at": hhmm(live["at"]), "in": max(0, int((live["at"] - now).total_seconds() // 60)),
-                       "source": "trafic", "delay": live["delay"], "announced": announced}
+                       "source": live.get("source") or "trafic", "delay": live["delay"], "announced": announced}
         else:
             arrival = {**announced, "source": "livreur"} if announced else None
         pos = positions.get(lv_id)
