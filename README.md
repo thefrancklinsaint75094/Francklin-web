@@ -552,11 +552,12 @@ proposées. (Un admin peut toujours lui attribuer une course à la main.) `STOCK
 
 ### Délai annoncé par le livreur
 
-Quand il prend une course, le livreur reçoit « ⏱ Course #12 — tu y es dans combien de temps ? » avec des boutons
-5 min · 10 · 15 · 20 · 30 · 45 · 1 h : **un appui**, et le franchisé reçoit « ⏱ Livreur A sera chez ton client
-dans ~15 min (vers 22h45) », le dispatch aussi, et la fiche de la course du franchisé affiche l'heure prévue.
-En retard ? Il touche un autre temps : « ⏱ Nouveau délai ». Colonnes `courses.eta_minutes` / `eta_at`
-(migration 020).
+Quand il prend une course, le livreur reçoit « ⏱ Course #12 — dans combien de temps tu y es ? » et **écrit son
+temps précis** : `47`, `47 min`, `1h10`… Le franchisé reçoit « ⏱ Livreur A sera chez ton client dans 47 min
+(vers 22h52) », le dispatch aussi, et la fiche de la course du franchisé affiche l'heure prévue. En retard ? Il
+écrit le nouveau temps : « ⏱ Nouveau délai ». Le temps va à sa course qui n'a pas encore de délai, sinon à la
+plus ancienne ; pendant une autre saisie (montant d'une dépense, prix d'une « Modif », stock), un nombre n'est
+pas pris pour un délai. Colonnes `courses.eta_minutes` / `eta_at` (migration 020).
 
 ### Débrief de la journée (`/close`)
 

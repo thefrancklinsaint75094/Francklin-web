@@ -593,3 +593,8 @@ simple qui respecte le mur de confidentialité (§12).
      franchisés soient au courant », sans que ce soit lourd). Après la prise : un message avec 7 boutons (5 min à
      1 h), un appui → franchisé et dispatch prévenus avec l'heure prévue, fiche du franchisé mise à jour ; un
      autre appui = nouveau délai. Remis à zéro si la course est réattribuée. Migration 020.
+
+147. **Délai écrit, pas de boutons** (l'exploitant : « je ne veux pas de fourchette… qu'il écrive le temps
+     précis »). Les boutons 5 min à 1 h de la 146 sont remplacés par la saisie libre (`47`, `47 min`, `1h10`, de
+     1 à 300 min), reconnue sans état de conversation : un livreur qui n'est dans aucune autre saisie et qui a une
+     course en cours. Le premier temps va à la course sans délai, un nouveau temps corrige (« Nouveau délai »).

@@ -310,38 +310,40 @@ async def pay(update: Update, context):
     return "Livrée ✅"
 
 
-@common.callback
-async def eta(update: Update, context):
-    """eta:<course>:<minutes> — le livreur annonce dans combien de temps il est chez le client (ou corrige)."""
-    user = await _livreur(update)
-    if user is None:
+ETA_RE = re.compile(r"^\s*(?:(?P<h>\d{1,2})\s*h(?:eures?)?\s*(?P<hm>\d{1,2})?|(?P<m>\d{1,3}))\s*"
+                    r"(?:mn|min|mins|minutes?|m)?\s*\.?\s*$", re.I)
+ETA_MAX_MINUTES = 300
+
+
+def eta_minutes(text: str | None) -> int | None:
+    """« 47 », « 47 min », « 1h10 », « 1 h » → minutes (1 à 300) ; sinon None."""
+    m = ETA_RE.match(text or "")
+    if not m:
         return None
-    try:
-        _, cid, minutes = (update.callback_query.data or "").split(":")
-        cid, minutes = int(cid), int(minutes)
-    except ValueError:
-        return None
-    course = await db.get_course(cid)
-    chat_id, msg_id = update.effective_chat.id, update.callback_query.message.message_id
-    if course is None or course.get("livreur_id") != user["id"] or course["status"] != "assigned":
-        await messaging.edit_markup(context.bot, chat_id, msg_id, None)
-        return texts.ALREADY_HANDLED, True
-    if course.get("eta_minutes") == minutes:
-        return "Déjà noté ✅"
+    minutes = int(m["m"]) if m["m"] else int(m["h"]) * 60 + int(m["hm"] or 0)
+    return minutes if 0 < minutes <= ETA_MAX_MINUTES else None
+
+
+async def set_eta(update: Update, context, user: dict, minutes: int) -> bool:
+    """Le livreur écrit son temps (« 47 ») : délai de sa course en cours — celle qui n'en a pas encore,
+    sinon la plus ancienne. Franchisé et dispatch prévenus. False s'il n'a aucune course en cours."""
+    courses = await db.list_assigned_for_livreur(user["id"])
+    if not courses:
+        return False
+    course = next((c for c in reversed(courses) if not c.get("eta_at")), None) or courses[0]
     update_ = course.get("eta_at") is not None
     at_dt = now_utc() + timedelta(minutes=minutes)
-    course = await db.update_course(cid, {"eta_minutes": minutes, "eta_at": iso(at_dt)}) or {**course, "eta_minutes": minutes,
-                                                                                           "eta_at": iso(at_dt)}
+    fields = {"eta_minutes": minutes, "eta_at": iso(at_dt)}
+    course = await db.update_course(course["id"], fields) or {**course, **fields}
     at = hhmm(at_dt)
-    await db.log_event("eta_set", cid, user["id"], {"minutes": minutes})
-    await messaging.edit(context.bot, chat_id, msg_id, texts.eta_set(course, minutes, at),
-                         keyboards.eta_choice(cid, minutes))
+    await db.log_event("eta_set", course["id"], user["id"], {"minutes": minutes})
+    await messaging.reply(update, texts.eta_set(course, minutes, at))
     franchise = await db.get_user(course["franchise_id"])
     if franchise and franchise["role"] != "dispatch":
         await messaging.send(context.bot, franchise, texts.eta_for_franchise(course, user, minutes, at, update_))
     await messaging.notify_dispatch(context.bot, texts.d_eta(course, user, minutes, at, update_))
     await lifecycle.refresh_franchise_message(context, course, livreur=user, franchise=franchise)
-    return f"Noté : ~{minutes} min ✅" if minutes < 60 else "Noté : ~1 h ✅"
+    return True
 
 
 @common.callback

@@ -2010,27 +2010,32 @@ def d_declare_missing(livreur: dict, kind: str, minutes: int) -> str:
 # ================================================================ délai annoncé par le livreur
 
 def _eta(minutes: int) -> str:
-    return "1 h" if minutes == 60 else f"{minutes} min"
+    """47 → « 47 min » ; 60 → « 1 h » ; 70 → « 1 h 10 »."""
+    if minutes < 60:
+        return f"{minutes} min"
+    h, m = divmod(minutes, 60)
+    return f"{h} h {m:02d}" if m else f"{h} h"
 
 
 def eta_ask(course: dict) -> str:
-    return (f"⏱ <b>Course #{course['id']}</b> — tu y es dans combien de temps ?\n"
-            f"📍 {esc(course.get('district') or course.get('address') or '')} · le franchisé sera prévenu")
+    return (f"⏱ <b>Course #{course['id']}</b> — dans combien de temps tu y es ?\n"
+            f"Écris juste le temps, par exemple <b>47</b> (minutes) ou <b>1h10</b>. Le franchisé sera prévenu.\n"
+            f"📍 {esc(course.get('district') or course.get('address') or '')}")
 
 
 def eta_set(course: dict, minutes: int, at: str) -> str:
-    return (f"⏱ <b>Course #{course['id']}</b> — arrivée prévue dans ~{_eta(minutes)} (vers {at}). Le franchisé est prévenu.\n"
-            "En retard ? Touche un autre temps.")
+    return (f"⏱ <b>Course #{course['id']}</b> — noté : {_eta(minutes)} (vers {at}). Le franchisé est prévenu.\n"
+            "En retard ? Écris le nouveau temps.")
 
 
 def eta_for_franchise(course: dict, livreur: dict, minutes: int, at: str, update: bool = False) -> str:
     head = "⏱ <b>Nouveau délai</b> — " if update else "⏱ "
-    return (f"{head}{esc(livreur.get('display_name') or 'Le livreur')} sera chez ton client dans ~{_eta(minutes)} "
+    return (f"{head}{esc(livreur.get('display_name') or 'Le livreur')} sera chez ton client dans {_eta(minutes)} "
             f"(vers {at}) — course #{course['id']}\n📍 {esc(course.get('address') or '')}")
 
 
 def d_eta(course: dict, livreur: dict, minutes: int, at: str, update: bool = False) -> str:
     what = "nouveau délai" if update else "y sera"
-    return (f"⏱ #{course['id']} — {esc(livreur.get('display_name') or '?')} {what} dans ~{_eta(minutes)} (vers {at}) — "
+    return (f"⏱ #{course['id']} — {esc(livreur.get('display_name') or '?')} {what} dans {_eta(minutes)} (vers {at}) — "
             f"{esc(course.get('district') or '')}")
 
