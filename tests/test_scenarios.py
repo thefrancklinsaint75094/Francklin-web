@@ -2620,32 +2620,41 @@ async def test_no_course_until_start_stock_confirmed(h, test_config):
 
 
 async def test_livreur_announces_eta(h):
-    """Course prise : un appui (5 min … 1 h) et le franchisé sait quand le livreur arrive ; il peut corriger."""
+    """Course prise : le livreur écrit son temps précis (« 47 », « 1h10 ») ; franchisé et dispatch prévenus,
+    fiche du franchisé à jour ; un nouveau temps = nouveau délai. Pendant une autre saisie, « 20 » n'est pas un délai."""
+    from bot.handlers import livreur as livreur_h
+
+    assert [livreur_h.eta_minutes(t) for t in ("47", "47 min", "50mn", "1h10", "1 h", "2h", " 12 minutes ")] == \
+        [47, 47, 50, 70, 60, 120, 12]
+    assert [livreur_h.eta_minutes(t) for t in ("OK", "3 US", "0", "500", "rue 12", "")] == [None] * 6
+
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
     await h.press(L1, h.tg.last(L1), "course_take:")
-    ask = h.tg.find(L1, f"⏱ <b>Course #{course['id']}</b> — tu y es dans combien de temps ?")
-    assert [b for b, _ in ask.buttons] == ["5 min", "10 min", "15 min", "20 min", "30 min", "45 min", "1 h"]
+    ask = h.tg.find(L1, f"⏱ <b>Course #{course['id']}</b> — dans combien de temps tu y es ?")
+    assert not ask.buttons
 
-    await h.press_data(L1, ask, f"eta:{course['id']}:15")
-    now_ask = h.tg.messages[(L1, ask.message_id)]
-    assert "arrivée prévue dans ~15 min" in now_ask.text and "✅ 15 min" in [b for b, _ in now_ask.buttons]
+    await h.text(L1, "47")
+    assert h.tg.last(L1).text.startswith(f"⏱ <b>Course #{course['id']}</b> — noté : 47 min (vers ")
     to_f1 = h.tg.last(F1).text
-    assert to_f1.startswith("⏱ Livreur 1 sera chez ton client dans ~15 min (vers ") and f"course #{course['id']}" in to_f1
-    assert any(t.startswith(f"⏱ #{course['id']} — Livreur 1 y sera dans ~15 min") for t in h.tg.texts(DISPATCH))
+    assert to_f1.startswith("⏱ Livreur 1 sera chez ton client dans 47 min (vers ") and f"course #{course['id']}" in to_f1
+    assert any(t.startswith(f"⏱ #{course['id']} — Livreur 1 y sera dans 47 min") for t in h.tg.texts(DISPATCH))
     c = await db.get_course(course["id"])
-    assert c["eta_minutes"] == 15 and c["eta_at"]
-    card = h.tg.messages[(F1, c["franchise_message_id"])].text
-    assert "⏱ Arrivée prévue vers " in card
+    assert c["eta_minutes"] == 47 and c["eta_at"]
+    assert "⏱ Arrivée prévue vers " in h.tg.messages[(F1, c["franchise_message_id"])].text
 
-    await h.press_data(L1, now_ask, f"eta:{course['id']}:30")          # retard : nouveau délai
-    assert h.tg.last(F1).text.startswith("⏱ <b>Nouveau délai</b> — Livreur 1 sera chez ton client dans ~30 min")
+    await h.text(L1, "1h10")                                          # retard : nouveau délai
+    assert h.tg.last(F1).text.startswith("⏱ <b>Nouveau délai</b> — Livreur 1 sera chez ton client dans 1 h 10")
+    assert (await db.get_course(course["id"]))["eta_minutes"] == 70
+
+    await h.text(L2, "15")                                            # pas de course : message habituel
+    assert h.tg.last(L2).text == texts.LIVREUR_TEXT_HINT
+
+    await h.text(L1, "/depense")                                      # pendant une dépense, « 20 » est un montant
     n = len(h.tg.inbox(F1))
-    await h.press_data(L1, now_ask, f"eta:{course['id']}:30")          # même choix : rien de plus
-    assert len(h.tg.inbox(F1)) == n
-    await h.press_data(L2, now_ask, f"eta:{course['id']}:5")           # pas sa course
-    assert h.tg.answers()[-1]["text"] == texts.ALREADY_HANDLED
+    await h.text(L1, "20")
+    assert len(h.tg.inbox(F1)) == n and (await db.get_course(course["id"]))["eta_minutes"] == 70
 
 
 def _decl_id(msg) -> int:

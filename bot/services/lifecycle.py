@@ -102,8 +102,8 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
         await messaging.send(context.bot, franchise, texts.taken_for_franchise(course, livreur))
     await messaging.notify_dispatch(context.bot, texts.d_taken(course, franchise or {"display_name": "?"}, livreur))
     await db.log_event("course_taken", course["id"], livreur["id"])
-    # Un appui pour annoncer son délai : le franchisé sait quand le livreur arrive.
-    await messaging.send(context.bot, livreur, texts.eta_ask(course), keyboards.eta_choice(course["id"]))
+    # Il écrit son temps (« 47 ») : le franchisé sait quand le livreur arrive.
+    await messaging.send(context.bot, livreur, texts.eta_ask(course))
     stock.after_assignment_later(context, course, livreur)
 
 

@@ -463,13 +463,3 @@ def declare_prompt(decl_id: int, has_expected: bool) -> M | None:
 def declare_confirm(decl_id: int) -> M:
     return M([[B("✅ Confirmer", callback_data=f"dc_ok:{decl_id}")], [B("✏️ Corriger", callback_data=f"dc_fix:{decl_id}")]])
 
-
-ETA_CHOICES = ((5, 10, 15, 20), (30, 45, 60))
-
-
-def eta_choice(course_id: int, chosen: int | None = None) -> M:
-    """Le livreur annonce son délai d'un appui ; il peut en choisir un autre s'il prend du retard."""
-    def label(m: int) -> str:
-        text = "1 h" if m == 60 else f"{m} min"
-        return f"✅ {text}" if m == chosen else text
-    return M([[B(label(m), callback_data=f"eta:{course_id}:{m}") for m in row] for row in ETA_CHOICES])

@@ -33,6 +33,11 @@ async def on_message(update: Update, context) -> None:
     if user["role"] == "livreur" and livreur.menu_action(update.message.text):
         await livreur.on_menu(update, context, user, livreur.menu_action(update.message.text))
         return
+    # Livreur qui écrit son temps (« 47 », « 1h10 ») : délai de sa course, le franchisé est prévenu.
+    # Pas pendant une autre saisie (montant d'une dépense, prix d'une « Modif », stock…).
+    if user["role"] == "livreur" and not state and livreur.eta_minutes(update.message.text) is not None:
+        if await livreur.set_eta(update, context, user, livreur.eta_minutes(update.message.text)):
+            return
     # Livreur qui déclare son stock (début / fin de service) ; « OK » / « Modif » valident toujours sa course.
     if (state == declare.STATE and declare.looks_like_stock(update.message.text)
             and not livreur.is_validation(update.message.text)):
