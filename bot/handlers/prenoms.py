@@ -42,6 +42,9 @@ async def prenom(update: Update, context) -> None:
     if not common.is_admin(user):
         await messaging.reply(update, texts.NOT_FOR_YOU)
         return
+    if not common.is_dispatch(user):
+        await messaging.reply(update, texts.DISPATCH_ONLY)
+        return
     args = (update.message.text or "").split()[1:]
     known = await _all_livreurs()
     if not args:

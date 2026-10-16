@@ -25,18 +25,22 @@ log = logging.getLogger(__name__)
 TELEGRAM_LIMIT = 4000
 
 
-async def _dispatch(update: Update) -> dict | None:
-    """Admin (dispatch ou franchisé) à l'origine du bouton, sinon None."""
+async def _dispatch(update: Update, only: bool = False) -> dict | None:
+    """Admin (dispatch ou franchisé) à l'origine du bouton, sinon None ; only : le dispatch seulement."""
     user = await common.actor(update)
-    return user if common.is_admin(user) else None
+    return user if (common.is_dispatch(user) if only else common.is_admin(user)) else None
 
 
-async def _guard_command(update: Update) -> bool:
+async def _guard_command(update: Update, only: bool = False) -> bool:
+    """only : commande réservée au dispatch (les franchisés reçoivent « réservé au dispatch »)."""
     user = await common.actor(update)
     if not await common.require(update, user):
         return False
     if not common.is_admin(user):
         await messaging.reply(update, texts.NOT_FOR_YOU)
+        return False
+    if only and not common.is_dispatch(user):
+        await messaging.reply(update, texts.DISPATCH_ONLY)
         return False
     return True
 
@@ -272,14 +276,14 @@ async def users(update: Update, context) -> None:
         return
     from bot.handlers import user_card
 
-    text, markup = await user_card.list_view()
+    text, markup = await user_card.list_view(await common.actor(update))
     await messaging.reply(update, text, markup)
 
 
 # ================================================================ /bannir (ex-/exclure), /reactiver
 
 async def exclure(update: Update, context) -> None:
-    if not await _guard_command(update):
+    if not await _guard_command(update, only=True):
         return
     me = update.effective_user.id
     targets = [u for u in await db.list_users(status="active") if u["role"] != "dispatch" and u["telegram_id"] != me]
@@ -290,7 +294,7 @@ async def exclure(update: Update, context) -> None:
 
 
 async def reactiver(update: Update, context) -> None:
-    if not await _guard_command(update):
+    if not await _guard_command(update, only=True):
         return
     targets = await db.list_users(status="banned")
     if not targets:
@@ -322,7 +326,7 @@ async def _remove_access(context, user: dict, status: str) -> dict:
 
 @common.callback
 async def ban_ask(update: Update, context):
-    if await _dispatch(update) is None:
+    if await _dispatch(update, only=True) is None:
         return None
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] != "active" or user["role"] == "dispatch":
@@ -335,7 +339,7 @@ async def ban_ask(update: Update, context):
 
 @common.callback
 async def ban_do(update: Update, context):
-    dispatcher = await _dispatch(update)
+    dispatcher = await _dispatch(update, only=True)
     if dispatcher is None:
         return None
     user = await db.get_user(common.arg(update))
@@ -354,7 +358,7 @@ async def ban_do(update: Update, context):
 # ================================================================ /supprimer (définitif)
 
 async def supprimer(update: Update, context) -> None:
-    if not await _guard_command(update):
+    if not await _guard_command(update, only=True):
         return
     me = update.effective_user.id
     targets = [u for u in await db.list_users() if u["role"] != "dispatch" and u["telegram_id"] != me]
@@ -366,7 +370,7 @@ async def supprimer(update: Update, context) -> None:
 
 @common.callback
 async def delete_ask(update: Update, context):
-    if await _dispatch(update) is None:
+    if await _dispatch(update, only=True) is None:
         return None
     user = await db.get_user(common.arg(update))
     if user is None or user["status"] == "deleted" or user["role"] == "dispatch":
@@ -382,7 +386,7 @@ async def delete_do(update: Update, context):
     """Compte supprimé : accès retiré comme une exclusion, puis le compte est détaché de son
     Telegram (la personne peut se réinscrire de zéro avec /start, dans le rôle de son choix) et
     son nom de feuille est libéré. Les courses passées gardent son nom dans l'historique."""
-    admin = await _dispatch(update)
+    admin = await _dispatch(update, only=True)
     if admin is None:
         return None
     user = await db.get_user(common.arg(update))
@@ -409,7 +413,7 @@ async def delete_do(update: Update, context):
 
 @common.callback
 async def unban(update: Update, context):
-    dispatcher = await _dispatch(update)
+    dispatcher = await _dispatch(update, only=True)
     if dispatcher is None:
         return None
     user = await db.get_user(common.arg(update))
@@ -545,17 +549,75 @@ async def catalog_delete(update: Update, context):
 
 # ================================================================ /synchro (Google Sheets)
 
+WEEKDAYS = {"lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4, "samedi": 5, "dimanche": 6}
+
+
+def _parse_night(arg: str, current: date) -> date | None:
+    """« » → nuit en cours · « hier » · « lundi » (la dernière nuit de lundi) · « 14/10 ». ValueError sinon."""
+    arg = arg.strip().lower()
+    if not arg:
+        return current
+    if arg == "hier":
+        return current - timedelta(days=1)
+    if arg in WEEKDAYS:
+        return current - timedelta(days=(current.weekday() - WEEKDAYS[arg]) % 7)
+    day, _, month = arg.replace("-", "/").replace(".", "/").partition("/")
+    wanted = date(current.year, int(month), int(day))
+    return wanted if wanted <= current else date(current.year - 1, int(month), int(day))
+
+
+async def _sync_nights() -> list[date]:
+    """Nuits qu'on peut renvoyer, de la plus récente à la plus ancienne : la semaine en cours seulement.
+    Chaque nuit va dans l'onglet de son jour (Lundi…) : une nuit d'avant le dernier /reset, ou de plus de
+    six jours, écraserait la nuit du même jour de la semaine en cours."""
+    current = _current_night()
+    nights = [current - timedelta(days=k) for k in range(7)]
+    reset = await db.last_event("cloture")
+    reset_at = parse_ts(reset["created_at"]) if reset else None
+    if reset_at is not None:
+        nights = [n for n in nights if night_bounds(n, config.get().night_end_hour)[1] > reset_at]
+    return nights
+
+
 async def synchro(update: Update, context) -> None:
-    """Renvoie à Google Sheets toutes les courses livrées de la nuit en cours.
-    Sans danger : la feuille ignore les courses déjà présentes."""
-    if not await _guard_command(update):
+    """/synchro : renvoie à Google Sheets la nuit en cours ; /synchro hier, /synchro lundi, /synchro 14/10 :
+    une nuit passée de la semaine. Sans danger : la feuille ignore ce qui est déjà présent."""
+    if not await _guard_command(update, only=True):
         return
     if not sheets.enabled():
         await messaging.reply(update, texts.SHEETS_DISABLED)
         return
-    cfg = config.get()
-    night = _current_night()
-    start, end = night_bounds(night, cfg.night_end_hour)
+    current = _current_night()
+    try:
+        night = _parse_night(" ".join((update.message.text or "").split()[1:]), current)
+    except ValueError:
+        await messaging.reply(update, texts.SYNCHRO_HELP)
+        return
+    allowed = await _sync_nights()
+    if night not in allowed:
+        await messaging.reply(update, texts.synchro_out_of_week(night_label(night)))
+        return
+    await _synchro_night(update, night, current, allowed)
+
+
+@common.callback
+async def synchro_pick(update: Update, context):
+    """sy:<AAAA-MM-JJ> : renvoie cette nuit (boutons sous le résultat de /synchro)."""
+    if await _dispatch(update, only=True) is None:
+        return texts.DISPATCH_ONLY, True
+    try:
+        night = date.fromisoformat(common.arg(update))
+    except ValueError:
+        return None
+    allowed = await _sync_nights()
+    if night not in allowed:
+        return texts.synchro_out_of_week(night_label(night)), True
+    await _synchro_night(update, night, _current_night(), allowed)
+    return "Envoyé"
+
+
+async def _synchro_night(update: Update, night: date, current: date, allowed: list[date]) -> None:
+    start, end = night_bounds(night, config.get().night_end_hour)
     # Une course dont la modification attend le franchisé n'est écrite qu'après sa décision.
     delivered = [c for c in await db.list_delivered_between(start, end) if not c.get("pending_edit")]
     restocks = await db.list_restocks_between(start, end)
@@ -572,7 +634,11 @@ async def synchro(update: Update, context) -> None:
     except RuntimeError as exc:
         await messaging.reply(update, texts.sheets_failed(str(exc)))
         return
-    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks), len(expenses), len(sold)))
+    label = None if night == current else night_label(night)
+    others = [n for n in allowed if n != night]
+    await messaging.reply(update, texts.sheets_synced(len(delivered), added, len(restocks), len(expenses), len(sold),
+                                                      label=label),
+                          keyboards.synchro_nights(others, current))
 
 
 # ================================================================ /livreurs : service et pause par un admin
@@ -776,7 +842,7 @@ async def name_ask(update: Update, context):
     """sname:<utilisateur> : ouvre le choix du nom de feuille."""
     from bot.services import names
 
-    if await _dispatch(update) is None:
+    if await _dispatch(update, only=True) is None:
         return None
     user = await db.get_user(common.arg(update))
     if user is None or not names.names_for(user["role"]):
@@ -790,7 +856,7 @@ async def name_set(update: Update, context):
     """sname_set:<utilisateur>:<n° du nom> : donne ce nom de feuille (s'il est libre)."""
     from bot.services import names
 
-    admin = await _dispatch(update)
+    admin = await _dispatch(update, only=True)
     if admin is None:
         return None
     _, user_id, idx = update.callback_query.data.split(":", 2)
@@ -816,7 +882,7 @@ async def name_set(update: Update, context):
 
 @common.callback
 async def name_done(update: Update, context):
-    if await _dispatch(update) is None:
+    if await _dispatch(update, only=True) is None:
         return None
     user = await db.get_user(common.arg(update))
     label = f"🏷 {texts.esc(user['display_name'])} ({texts.esc(user.get('real_name') or '?')})" if user else "OK"

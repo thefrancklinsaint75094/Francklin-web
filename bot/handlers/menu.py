@@ -49,6 +49,9 @@ CHAPTERS: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
 }
 
 
+DISPATCH_ONLY = {"bannir", "reactiver", "supprimer", "prenom", "synchro", "reset"}   # pas pour les franchisés
+
+
 def _runners() -> dict:
     """Commande → handler (import tardif : ces modules importent beaucoup de choses)."""
     from bot.handlers import (cash, close_day, cloture, dispatch, franchise, prenoms, restock, restock_text,
@@ -90,6 +93,8 @@ async def action(update: Update, context):
     act, _, arg = data.partition(":")
     if act == "mn" and arg in CHAPTERS:
         title, items = CHAPTERS[arg]
+        if not common.is_dispatch(user):
+            items = [i for i in items if i[0] not in DISPATCH_ONLY]
         await messaging.edit(context.bot, chat_id, msg_id, texts.menu_chapter(title, items),
                              keyboards.menu_chapter(items))
         return None

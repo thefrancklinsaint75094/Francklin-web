@@ -29,6 +29,12 @@ def is_admin(user: dict | None) -> bool:
     return bool(user) and user.get("status") == "active" and user.get("role") in ADMIN_ROLES
 
 
+def is_dispatch(user: dict | None) -> bool:
+    """Pouvoirs réservés au dispatch (pas aux franchisés) : accès des personnes (valider, bannir, réactiver,
+    supprimer, rôle, noms), remise à zéro de la semaine et /synchro."""
+    return bool(user) and user.get("status") == "active" and user.get("role") == "dispatch"
+
+
 # Le ☰ ne garde que l'essentiel ; tout le reste est dans /menu (handlers/menu.py), et chaque commande
 # marche toujours en la tapant.
 _ADMIN_COMMANDS = [("menu", "Tout le menu, par chapitre"), ("encours", "Ce soir : en attente, en cours, livrées"),
