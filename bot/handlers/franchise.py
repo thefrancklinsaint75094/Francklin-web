@@ -158,7 +158,8 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
     except ExtractionUnavailable:
         await db.update_draft(draft["id"], {"status": fail_status})
         await messaging.reply(update, texts.GENERIC_ERROR)
-        await messaging.notify_dispatch(context.bot, texts.d_error("API Anthropic injoignable"), team=False)
+        await messaging.notify_dispatch(context.bot, texts.d_error("API Anthropic injoignable"), team=False,
+                                            important=True)
         return
     except ExtractionParseError:
         await db.update_draft(draft["id"], {"status": fail_status})

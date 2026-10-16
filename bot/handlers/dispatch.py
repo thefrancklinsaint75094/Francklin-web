@@ -237,31 +237,38 @@ async def override_do(update: Update, context):
     if dispatcher is None:
         return None
     parts = update.callback_query.data.split(":")
-    action, course_id = parts[1], parts[2]
-    payment = lifecycle.PAYMENTS.get(parts[3]) if len(parts) > 3 else None
-    course = await db.get_course(int(course_id))
+    action, course_id = parts[1], int(parts[2])
+    result = await apply_override(context, dispatcher, action, course_id, parts[3] if len(parts) > 3 else None)
     message_id = update.callback_query.message.message_id
+    if result is None:
+        await messaging.edit(context.bot, update.effective_chat.id, message_id,
+                             f"Rien à faire : la course #{course_id} a changé d'état entre-temps.")
+        return None
+    await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.d_override(action, course_id))
+    return "Fait"
+
+
+async def apply_override(context, admin: dict, action: str, course_id: int, pay: str | None = None) -> dict | None:
+    """Un admin annule (cancel), marque livrée (deliver, pay : e / v) ou remet en diffusion (release) une
+    course ; tout le monde est prévenu. None si la course a changé d'état entre-temps."""
+    course = await db.get_course(course_id)
     result = None
     if course is not None:
         if action == "cancel":
             result = await lifecycle.cancel(context, course, by="dispatch")
         elif action == "deliver" and course["status"] == "assigned":
-            result = await lifecycle.deliver(context, course, by_dispatch=True, payment=payment)
+            result = await lifecycle.deliver(context, course, by_dispatch=True, payment=lifecycle.PAYMENTS.get(pay or ""))
         elif action == "release" and course["status"] == "assigned":
             result = await lifecycle.release(context, course, reason="dispatch")
     if result is None:
-        await messaging.edit(context.bot, update.effective_chat.id, message_id,
-                             f"Rien à faire : la course #{course_id} a changé d'état entre-temps.")
         return None
-    await db.log_event("dispatch_override", int(course_id), dispatcher["id"],
-                       {"action": action, "previous_status": course["status"]})
-    await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.d_override(action, int(course_id)))
+    await db.log_event("dispatch_override", course_id, admin["id"], {"action": action, "previous_status": course["status"]})
     if action != "deliver":            # livrée : lifecycle.deliver prévient déjà tout le monde
         await messaging.notify_dispatch(
-            context.bot, texts.d_override(action, int(course_id)).replace(
-                "par le dispatch", f"par {texts.esc(dispatcher['display_name'])}"),
-            dispatch=dispatcher["role"] != "dispatch", skip=[dispatcher["id"], course["franchise_id"]])
-    return "Fait"
+            context.bot, texts.d_override(action, course_id).replace(
+                "par le dispatch", f"par {texts.esc(admin['display_name'])}"),
+            dispatch=admin["role"] != "dispatch", skip=[admin["id"], course["franchise_id"]])
+    return result
 
 
 @common.callback
@@ -786,31 +793,35 @@ async def assign_do(update: Update, context):
     if admin is None:
         return None
     _, course_id, livreur_id = update.callback_query.data.split(":", 2)
+    ok, text = await assign_course(context, admin, int(course_id), livreur_id)
+    if text:
+        await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, text)
+    if not ok:
+        return texts.ALREADY_CLOSED if text else texts.ALREADY_HANDLED, True
+    return "Attribuée ✅"
+
+
+async def assign_course(context, admin: dict, course_id: int, livreur_id: str) -> tuple[bool, str | None]:
+    """Un admin donne la course à ce livreur : en attente → attribuée sans « Je prends » ; déjà prise →
+    changement de livreur. (réussi, texte du résultat)."""
     livreur = await db.get_user(livreur_id)
-    chat_id, message_id = update.effective_chat.id, update.callback_query.message.message_id
     if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
-        return texts.ALREADY_HANDLED, True
-    course = await db.get_course(int(course_id))
+        return False, None
+    course = await db.get_course(course_id)
     if course is not None and course["status"] == "assigned":
         if course.get("livreur_id") == livreur["id"]:
-            return texts.ALREADY_HANDLED, True
+            return False, None
         old = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
         moved = await lifecycle.reassign(context, course, livreur, admin)
         if moved is None:
-            await messaging.edit(context.bot, chat_id, message_id,
-                                 f"Rien à faire : la course #{course_id} a changé entre-temps.")
-            return texts.ALREADY_CLOSED, True
-        await messaging.edit(context.bot, chat_id, message_id, texts.reassigned_done(moved, old, livreur))
-        return "Livreur changé ✅"
-    won = await db.take_course(int(course_id), livreur["id"])
+            return False, f"Rien à faire : la course #{course_id} a changé entre-temps."
+        return True, texts.reassigned_done(moved, old, livreur)
+    won = await db.take_course(course_id, livreur["id"])
     if won is None:
-        await messaging.edit(context.bot, chat_id, message_id,
-                             f"Rien à faire : la course #{course_id} n'est plus en attente.")
-        return texts.ALREADY_CLOSED, True
+        return False, f"Rien à faire : la course #{course_id} n'est plus en attente."
     await lifecycle.after_assignment(context, won, livreur, None)
     await db.log_event("course_assigned_by_admin", won["id"], livreur["id"], {"by": admin["id"]})
-    await messaging.edit(context.bot, chat_id, message_id, texts.assigned_done(won, livreur))
-    return "Attribuée ✅"
+    return True, texts.assigned_done(won, livreur)
 
 
 @common.callback

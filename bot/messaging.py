@@ -74,7 +74,7 @@ async def _handle_blocked(bot, user: dict) -> None:
         await db.log_event("blocked_bot", user_id=user.get("id"))
     except Exception:  # noqa: BLE001
         log.exception("Impossible d'enregistrer le blocage")
-    await notify_dispatch(bot, texts.d_blocked(user), team=False)
+    await notify_dispatch(bot, texts.d_blocked(user), team=False, important=True)
 
 
 async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None = None,
@@ -94,33 +94,56 @@ async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None =
 
 
 async def notify_dispatch(bot, text: str, markup: InlineKeyboardMarkup | None = None, team: bool = True,
-                          skip=(), dispatch: bool = True, **kwargs) -> Message | None:
+                          skip=(), dispatch: bool = True, important: bool = False, **kwargs) -> Message | None:
     """Avis au dispatch, et (team) copie à tous les franchisés pour qu'ils sachent tout ce qui se passe
     (sauf ceux de skip : celui qui a agi, le franchisé de la course qui a déjà son propre message).
     team=False : alertes techniques, messages privés relayés, accès. dispatch=False : copie aux
-    franchisés seulement (le dispatch a fait l'action lui-même). Les boutons restent au dispatch."""
+    franchisés seulement (le dispatch a fait l'action lui-même). Les boutons restent au dispatch.
+
+    Chaque avis va dans le fil de la mini-application. En message Telegram : les avis importants
+    (problème, action attendue), et tous les autres seulement pour qui a choisi « tout »."""
+    cfg = config.get()
+    try:
+        await db.add_feed(text, team, important)
+    except Exception:  # noqa: BLE001
+        log.exception("Fil d'activité : écriture impossible")
+    levels = await _levels() if cfg.quiet_notifications and not important else {}
     sent = None
-    if dispatch:
+    if dispatch and (important or levels.get(cfg.dispatch_telegram_id, "tout") == "tout"):
         try:
-            sent = await bot.send_message(config.get().dispatch_telegram_id, names.decorate(text),
+            sent = await bot.send_message(cfg.dispatch_telegram_id, names.decorate(text),
                                           reply_markup=names.decorate_markup(markup), **kwargs)
         except TelegramError as exc:
             log.warning("Notification dispatch impossible : %s", exc)
-    if team and config.get().notify_franchises:
-        await notify_franchises(bot, text, skip)
+    if team and cfg.notify_franchises:
+        await notify_franchises(bot, text, skip, important)
     return sent
 
 
-async def notify_franchises(bot, text: str, skip=()) -> None:
+async def _levels() -> dict[int, str]:
+    """{telegram_id: niveau} des admins (dispatch, franchisés)."""
+    try:
+        users = await db.list_users(status="active")
+    except Exception:  # noqa: BLE001
+        return {}
+    return {u["telegram_id"]: u.get("notify_level") or "essentiel" for u in users
+            if u.get("role") in ("dispatch", "franchise") and u.get("telegram_id")}
+
+
+async def notify_franchises(bot, text: str, skip=(), important: bool = False) -> None:
     skipped = {s for s in skip or () if s}
     try:
         franchises = await db.list_users(role="franchise", status="active")
     except Exception:  # noqa: BLE001
         log.exception("Franchisés injoignables pour la notification")
         return
+    quiet = config.get().quiet_notifications and not important
     for user in franchises:
-        if user["id"] not in skipped and user.get("telegram_id"):
-            await send(bot, user, text)
+        if user["id"] in skipped or not user.get("telegram_id"):
+            continue
+        if quiet and (user.get("notify_level") or "essentiel") != "tout":
+            continue
+        await send(bot, user, text)
 
 
 async def edit(

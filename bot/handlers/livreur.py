@@ -252,7 +252,8 @@ async def take(update: Update, context):
         short = await stock.missing_for(course, user)
         if short:
             await db.log_event("take_refused_stock", course_id, user["id"], {"missing": [p for p, _, _ in short]})
-            await messaging.notify_dispatch(context.bot, texts.d_take_refused_stock(course, user, short))
+            await messaging.notify_dispatch(context.bot, texts.d_take_refused_stock(course, user, short),
+                                            important=True)
             return texts.take_refused_stock(short), True
         won = await db.take_course(course_id, user["id"])
         if won is None:

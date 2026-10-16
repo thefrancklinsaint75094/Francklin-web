@@ -59,7 +59,7 @@ async def on_location(update: Update, context) -> None:
             await messaging.reply(update, texts.ON_DUTY, markup)
         if not loc.live_period:
             await messaging.reply(update, texts.STATIC_POSITION_WARNING)
-            await messaging.notify_dispatch(context.bot, texts.d_static_position(user))
+            await messaging.notify_dispatch(context.bot, texts.d_static_position(user), important=True)
         if became_available:
             await declare.ask(context.bot, user, "start")      # stock sur lui, une fois par nuit
 

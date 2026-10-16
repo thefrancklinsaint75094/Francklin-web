@@ -13,7 +13,7 @@ from telegram.ext import (
     AIORateLimiter, Application, CallbackQueryHandler, CommandHandler, Defaults, MessageHandler, filters,
 )
 
-from bot import config, db, jobs, messaging, texts
+from bot import config, db, jobs, messaging, texts, web
 from bot.config import PARIS
 from bot.handlers import (
     address, course_time, declare, menu, user_card,
@@ -53,7 +53,7 @@ async def polling_error(context, err: Exception) -> None:
     _conflict["last"] = now
     if now - _conflict["first"] > CONFLICT_ALERT_SECONDS and not _conflict["notified"]:
         _conflict["notified"] = True
-        await messaging.notify_dispatch(context.bot, texts.D_TWO_INSTANCES, team=False)
+        await messaging.notify_dispatch(context.bot, texts.D_TWO_INSTANCES, team=False, important=True)
         await db.log_event("error", payload={"type": "Conflict", "message": "deux instances en polling"})
 
 
@@ -75,7 +75,7 @@ async def error_handler(update: object, context) -> None:
         })
     except Exception:  # noqa: BLE001
         log.exception("Impossible d'écrire l'événement d'erreur")
-    await messaging.notify_dispatch(context.bot, texts.d_error(kind), team=False)
+    await messaging.notify_dispatch(context.bot, texts.d_error(kind), team=False, important=True)
     if isinstance(update, Update):
         if update.callback_query:
             try:
@@ -95,7 +95,15 @@ async def post_init(app: Application) -> None:
     await names.refresh()
     await app.bot.set_my_commands([BotCommand(c, d) for c, d in common.COMMON_COMMANDS])
     jobs.register(app.job_queue)
+    try:
+        await web.start(app)                     # mini-application (si PORT est défini)
+    except Exception:  # noqa: BLE001 — le bot doit marcher même sans l'appli
+        log.exception("Mini-application : démarrage impossible")
     log.info("Bot prêt (dispatch : %s)", cfg.dispatch_telegram_id)
+
+
+async def post_shutdown(app: Application) -> None:
+    await web.stop()
 
 
 def build_application(cfg: config.Config) -> Application:
@@ -108,6 +116,7 @@ def build_application(cfg: config.Config) -> Application:
         .rate_limiter(AIORateLimiter(max_retries=3))
         .concurrent_updates(True)
         .post_init(post_init)
+        .post_shutdown(post_shutdown)
         .build()
     )
     register_handlers(app)
@@ -155,6 +164,7 @@ def register_handlers(app: Application) -> None:
     cmd("gout", variants_h.gouts)
     cmd("cloture", cloture.cloture)   # ancien nom, gardé
     cmd("menu", menu.menu)
+    cmd("app", menu.open_app)
 
     callbacks = [
         (r"^role:", onboarding.choose_role),

@@ -87,6 +87,9 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `POSITION_STALE_MINUTES` | non | `30` | position trop vieille → hors service |
 | `SOON_FREE_RADIUS_METERS` | non | `400` | rayon « bientôt libre » automatique |
 | `MAX_COURSES_PER_LIVREUR` | non | `0` | courses en même temps par livreur (`0` : sans limite, il les enchaîne) |
+| `PORT` | pour l'appli | | port du serveur web (mini-application) ; Railway : `8080`, avec un domaine public |
+| `WEBAPP_URL` | non | `https://<RAILWAY_PUBLIC_DOMAIN>` | adresse publique de l'appli (bouton « Dispatch ») |
+| `QUIET_NOTIFICATIONS` | non | `1` | `0` : tous les avis en messages, pour tout le monde (sans tenir compte du réglage de chacun) |
 | `NOTIFY_FRANCHISES` | non | `1` | `0` : les franchisés ne reçoivent plus la copie des avis du dispatch |
 | `DRAFT_EXPIRY_MINUTES` | non | `15` | durée de vie d'une fiche non confirmée |
 | `MAX_DISTANCE_KM` | non | `25` | au-delà, un livreur ne reçoit jamais la course |
@@ -430,6 +433,31 @@ Le dispatch **et les franchisés** ont les pouvoirs d'admin (sauf ce qui est �
 - sur son message de course, le franchisé a aussi **✏️ Modifier** et **📦 Livrée** ;
 - toutes les commandes du dispatch : `/encours`, `/recap`, `/journal`, `/users`, `/recharge`, `/stock`,
   `/caisse`, `/depense`, `/synchro`, `/close`, `/reset`, `/bannir`, `/reactiver`, `/supprimer`, `/produits`.
+
+### 📱 L'appli Dispatch (mini-application Telegram)
+
+Pour le dispatch et les franchisés, le bouton **« Dispatch »** à gauche du champ de message (ou `/app`) ouvre une
+vraie appli dans Telegram, avec un **menu à gauche** (☰ ou glisser depuis le bord) :
+
+- **🏠 En direct** (écran principal) : les courses à attribuer ; **chaque livreur sur la route avec la seule
+  adresse qu'il est en train de faire** (la plus ancienne qu'il a prise) et son **heure d'arrivée** — celle
+  qu'il a écrite, sinon une estimation depuis sa position — puis « +2 à suivre » ; les livreurs libres ; toutes
+  les livraisons en cours (1re, 2e, 3e à faire…).
+- **🚚 Courses** : à attribuer / en cours / livrées ; une course touchée → 👤 Attribuer, 📦 Livrée (espèces ou
+  virement), 🔄 changer de livreur, 🕐 heure, 📍 adresse (vérifiée avant), 🔁 rediffuser, ✏️ produits (dans le
+  chat), 🗑 annuler.
+- **🛵 Livreurs** : service / pause d'un geste, position (envoyée dans le chat), adresse en cours.
+- **📦 Stock** (box et livreurs), **🍾 Produits** (lecture), **💶 Caisse**, **📊 Bilan de la nuit**,
+  **🔔 Activité** (tous les avis), **👥 Équipe**, **⚙️ Commandes et réglages** (les commandes du chat par chapitre).
+
+Les données se mettent à jour toutes les 10 secondes. Chaque appel est signé par Telegram (vérifié avec le token
+du bot) et réservé aux admins actifs ; les actions passent par exactement le même code que les boutons du chat.
+Serveur web dans le bot (aiohttp, `PORT`), domaine public Railway. Base : `sql/migrations/021_webapp.sql`.
+
+**Moins de messages.** Chaque avis va dans 🔔 Activité. En message Telegram, par défaut (« l'essentiel »), seuls
+les problèmes et ce qui attend une action : aucun livreur disponible, livreur qui annule, annulée sur place,
+stock manquant, course trop longue, position perdue, modification en attente, inscription, erreur… Chacun peut
+choisir « Tout » dans ⚙️ Réglages. Les messages de ses propres courses (franchisé) ne changent pas.
 
 ### 🔒 Réservé au dispatch
 

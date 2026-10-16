@@ -2187,6 +2187,10 @@ def role_changed_notice(role: str) -> str:
 
 # ================================================================ /menu des admins
 
+APP_OPEN = ("📱 <b>Dispatch</b> — l'appli : livreurs sur la route, courses, stock, caisse, bilan, activité.\n"
+            "Elle s'ouvre aussi avec le bouton « Dispatch » à gauche du champ de message.")
+APP_UNAVAILABLE = "L'appli n'est pas encore en ligne."
+
 MENU_HOME = ("☰ <b>Menu</b> — choisis un chapitre.\n"
              "Toutes les commandes marchent aussi en les tapant (/encours, /stock…).")
 

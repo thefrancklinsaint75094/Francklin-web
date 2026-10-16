@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Dispatch</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --bg: var(--tg-theme-secondary-bg-color, #f2f2f7);
+  --card: var(--tg-theme-bg-color, #ffffff);
+  --text: var(--tg-theme-text-color, #111111);
+  --muted: var(--tg-theme-hint-color, #8a8a8e);
+  --accent: var(--tg-theme-button-color, #2f7cf6);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --line: rgba(127, 127, 127, .16);
+  --soft: rgba(127, 127, 127, .10);
+  --green: #22a35a; --orange: #e8890c; --red: #e0453a; --blue: #2f7cf6; --violet: #8a5cf6;
+  --radius: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--tg-theme-secondary-bg-color, #000000);
+    --card: var(--tg-theme-bg-color, #1c1c1e);
+    --text: var(--tg-theme-text-color, #f2f2f2);
+    --muted: var(--tg-theme-hint-color, #8d8d93);
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+
+/* ---------- barre du haut */
+.top { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 12px 8px;
+  display: flex; align-items: center; gap: 10px; }
+.burger { width: 40px; height: 40px; border-radius: 12px; background: var(--card); font-size: 20px; flex: none; }
+.top .t { flex: 1; min-width: 0; }
+.top h1 { margin: 0; font-size: 20px; letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .sub { color: var(--muted); font-size: 12px; }
+.live { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+.dot.off { background: var(--red); }
+
+/* ---------- menu de gauche */
+.drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 40; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.drawer-bg.open { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; top: 0; bottom: 0; left: 0; width: min(82vw, 320px); z-index: 41; background: var(--card);
+  transform: translateX(-102%); transition: transform .22s ease, visibility .22s; overflow-y: auto; visibility: hidden;
+  padding: calc(14px + env(safe-area-inset-top)) 10px calc(14px + env(safe-area-inset-bottom)); box-shadow: 4px 0 24px rgba(0,0,0,.18); }
+.drawer.open { transform: none; visibility: visible; }
+.drawer .me { padding: 6px 10px 14px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.drawer .me b { display: block; font-size: 18px; }
+.drawer .me span { color: var(--muted); font-size: 13px; }
+.nav { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 10px; border-radius: 12px; text-align: left; font-weight: 500; }
+.nav .i { width: 26px; text-align: center; font-size: 19px; }
+.nav .n { margin-left: auto; font-size: 12px; font-weight: 700; background: var(--soft); border-radius: 99px; padding: 2px 8px; }
+.nav .n.red { background: var(--red); color: #fff; }
+.nav.on { background: var(--accent); color: var(--accent-text); }
+.nav.on .n { background: rgba(255,255,255,.25); color: inherit; }
+.drawer .sep { height: 1px; background: var(--line); margin: 8px 6px; }
+
+/* ---------- contenu */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 0 12px; }
+.stat { background: var(--card); border-radius: 12px; padding: 9px 4px; text-align: center; }
+.stat b { display: block; font-size: 18px; }
+.stat span { color: var(--muted); font-size: 11px; }
+.h2 { display: flex; align-items: baseline; gap: 8px; font-size: 13px; text-transform: uppercase; color: var(--muted);
+  margin: 18px 16px 8px; letter-spacing: .3px; font-weight: 600; }
+.h2 .more { margin-left: auto; text-transform: none; color: var(--accent); font-weight: 600; }
+.list { padding: 0 12px; display: flex; flex-direction: column; gap: 10px; }
+.card { background: var(--card); border-radius: var(--radius); padding: 12px 14px; }
+.tap { cursor: pointer; }
+.row { display: flex; align-items: center; gap: 8px; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.num { font-weight: 700; font-size: 16px; }
+.pill { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 99px; color: #fff; white-space: nowrap; }
+.p-pending { background: var(--orange); } .p-assigned { background: var(--blue); }
+.p-delivered { background: var(--green); } .p-alert { background: var(--red); } .p-pick { background: var(--violet); }
+.right { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.place { font-weight: 600; margin-top: 6px; }
+.addr { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who { margin-top: 6px; font-size: 14px; }
+.prod { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.price { font-weight: 700; color: var(--text); }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.badge { font-size: 12px; background: var(--soft); border-radius: 8px; padding: 3px 8px; }
+.badge.warn { color: var(--red); font-weight: 600; }
+.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.btn { background: var(--soft); border-radius: 10px; padding: 10px 6px; font-size: 13px; font-weight: 600; text-align: center; }
+.btn.main { background: var(--accent); color: var(--accent-text); }
+.btn.danger { color: var(--red); }
+.full { width: 100%; margin-top: 10px; padding: 13px; }
+.empty { text-align: center; color: var(--muted); padding: 30px 20px; }
+.empty b { display: block; font-size: 30px; margin-bottom: 6px; }
+
+/* livreur sur la route : une seule adresse à la fois */
+.route .lv { font-weight: 700; font-size: 16px; }
+.route .now { display: flex; gap: 12px; margin-top: 8px; align-items: center; }
+.route .where { flex: 1; min-width: 0; }
+.route .eta { text-align: right; flex: none; }
+.route .eta b { display: block; font-size: 22px; letter-spacing: -.5px; }
+.route .eta span { font-size: 11px; color: var(--muted); }
+.route .eta.late b { color: var(--red); }
+.route .next { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--muted); }
+.route .next div { padding: 2px 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border-radius: 99px; padding: 7px 12px; font-size: 13px; margin: 0 6px 6px 0; }
+.chips { padding: 0 12px; }
+.mini { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mini:last-child { border-bottom: 0; }
+.mini .k { font-weight: 700; width: 44px; flex: none; }
+
+.switch { width: 50px; height: 30px; border-radius: 99px; background: var(--line); position: relative; flex: none; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: left .15s; }
+.switch.on { background: var(--green); } .switch.on::after { left: 23px; }
+.icon-btn { width: 38px; height: 38px; border-radius: 10px; background: var(--soft); font-size: 17px; flex: none; }
+.seg { display: flex; background: var(--card); border-radius: 10px; padding: 3px; margin: 4px 12px 10px; }
+.seg button { flex: 1; padding: 7px 4px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.seg button.on { background: var(--accent); color: var(--accent-text); }
+.feed .item { display: flex; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.feed .item:last-child { border-bottom: 0; }
+.feed .at { color: var(--muted); font-size: 12px; width: 38px; flex: none; padding-top: 2px; }
+.feed .txt { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.feed .item.imp .txt { font-weight: 600; }
+.feed .item.imp .at { color: var(--red); }
+.big { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.kv:last-child { border-bottom: 0; }
+.grid { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 14px; }
+.grid span:nth-child(even) { text-align: right; font-weight: 600; }
+.cmd { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); width: 100%; text-align: left; }
+.cmd:last-child { border-bottom: 0; }
+.cmd small { display: block; color: var(--muted); font-size: 12px; }
+input, textarea { width: 100%; font: inherit; color: var(--text); background: var(--soft); border: 1px solid var(--line);
+  border-radius: 10px; padding: 11px 12px; outline: none; }
+textarea { min-height: 76px; resize: vertical; }
+.search { margin: 4px 12px 10px; width: calc(100% - 24px); }
+
+/* fenêtre du bas */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50; display: none; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--card); border-radius: 18px 18px 0 0;
+  max-height: 86vh; overflow: auto; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); transform: translateY(105%);
+  transition: transform .2s, visibility .2s; visibility: hidden; }
+.sheet.open { transform: none; visibility: visible; }
+.sheet .grab { width: 38px; height: 5px; border-radius: 99px; background: var(--line); margin: 4px auto 10px; }
+.sheet h3 { margin: 0 0 4px; font-size: 18px; }
+.sheet p { color: var(--muted); margin: 0 0 12px; font-size: 13px; }
+.choice { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+.choice:last-child { border-bottom: 0; }
+.toast { position: fixed; left: 16px; right: 16px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 60;
+  background: #222; color: #fff; padding: 12px 14px; border-radius: 12px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: .95; }
+.hidden { display: none !important; }
+.loading { text-align: center; color: var(--muted); padding: 40px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <button class="burger" id="burger" aria-label="Menu">☰</button>
+  <div class="t"><h1 id="title">En direct</h1><div class="sub" id="night">Chargement…</div></div>
+  <div class="live"><span class="dot" id="live"></span><span id="updated">—</span></div>
+</header>
+
+<main id="view"><div class="loading">Chargement…</div></main>
+
+<div class="drawer-bg" id="drawer-bg"></div>
+<aside class="drawer" id="drawer"></aside>
+<div class="sheet-bg" id="sheet-bg"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheet-body"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch (e) {} }
+const INIT = tg ? tg.initData : "";
+const SCREENS = [
+  { key: "home", icon: "🏠", label: "En direct" },
+  { key: "courses", icon: "🚚", label: "Courses" },
+  { key: "livreurs", icon: "🛵", label: "Livreurs" },
+  { key: "stock", icon: "📦", label: "Stock" },
+  { key: "products", icon: "🍾", label: "Produits" },
+  { key: "cash", icon: "💶", label: "Caisse" },
+  { key: "bilan", icon: "📊", label: "Bilan de la nuit" },
+  { key: "feed", icon: "🔔", label: "Activité" },
+  { key: "team", icon: "👥", label: "Équipe" },
+  { key: "plus", icon: "⚙️", label: "Commandes et réglages" },
+];
+const S = { screen: "home", seg: null, open: null, data: null, feed: [], feedImportant: false, busy: false, cache: {}, q: "" };
+const $ = (id) => document.getElementById(id);
+
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== false) n.append(k.nodeType ? k : String(k));
+  return n;
+}
+const nodes = (...kids) => kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false);
+const eur = (v) => (Math.round((v || 0) * 100) / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 }) + " €";
+const haptic = (t) => { try { tg && tg.HapticFeedback.notificationOccurred(t); } catch (e) {} };
+const tap = () => { try { tg && tg.HapticFeedback.impactOccurred("light"); } catch (e) {} };
+const plural = (n, w) => `${n} ${w}${n > 1 ? "s" : ""}`;
+const who = (p) => p ? (p.prenom ? `${p.name} (${p.prenom})` : p.name) : "—";
+const plain = (s) => String(s || "").replace(/<[^>]+>/g, "").replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Init-Data": INIT },
+                                body: JSON.stringify(body || {}) });
+  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  return r.json();
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = plain(msg); t.classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2800);
+}
+function confirmBox(text) {
+  return new Promise((ok) => tg && tg.showConfirm ? tg.showConfirm(text, ok) : ok(window.confirm(text)));
+}
+
+// ------------------------------------------------------------------ chargement
+async function load(quiet) {
+  try {
+    S.data = await api("/api/board");
+    $("live").className = "dot"; $("updated").textContent = S.data.now;
+    if (!S.seg) S.seg = S.data.pending.length ? "pending" : "assigned";
+    $("night").textContent = `Nuit du ${S.data.night}`;
+    drawer();
+    if (!$("sheet").classList.contains("open") && ["home", "courses", "livreurs", "bilan", "plus"].includes(S.screen)) render();
+  } catch (e) {
+    $("live").className = "dot off";
+    if (!quiet) $("view").replaceChildren(el("div", { class: "empty" }, el("b", {}, "⚠️"), "Impossible de charger : " + e.message));
+  }
+}
+async function loadFeed(more) {
+  const before = more && S.feed.length ? S.feed[S.feed.length - 1].id : null;
+  const r = await api("/api/feed", { before });
+  S.feed = more ? S.feed.concat(r.items) : r.items;
+  S.feedEnd = r.items.length < 80;
+  if (S.screen === "feed") render();
+}
+async function loadSection(name) {
+  S.cache[name] = { loading: true };
+  if (S.screen === name) render();
+  try { S.cache[name] = await api("/api/section", { name }); }
+  catch (e) { S.cache[name] = { ok: false, error: e.message }; }
+  if (S.screen === name) render();
+}
+
+// ------------------------------------------------------------------ menu de gauche
+function drawer() {
+  const d = S.data;
+  const counts = d ? { home: d.routes.length || "", courses: d.pending.length || "", livreurs: d.livreurs.filter((l) => l.on_duty).length || "" } : {};
+  $("drawer").replaceChildren(...nodes(
+    el("div", { class: "me" }, el("b", {}, "Dispatch"), el("span", {}, d ? `${d.me.name} · ${d.me.dispatch ? "dispatch" : "franchisé"}` : "")),
+    SCREENS.map((s, i) => [
+      i === 3 || i === 7 ? el("div", { class: "sep" }) : null,
+      el("button", { class: "nav" + (S.screen === s.key ? " on" : ""), onclick: () => go(s.key) },
+        el("span", { class: "i" }, s.icon), s.label,
+        counts[s.key] ? el("span", { class: "n" + (s.key === "courses" ? " red" : "") }, counts[s.key]) : null)])));
+}
+function openDrawer() { tap(); $("drawer").classList.add("open"); $("drawer-bg").classList.add("open"); }
+function closeDrawer() { $("drawer").classList.remove("open"); $("drawer-bg").classList.remove("open"); }
+$("burger").addEventListener("click", openDrawer);
+$("drawer-bg").addEventListener("click", closeDrawer);
+let touchX = null;
+document.addEventListener("touchstart", (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  if (touchX < 30 && dx > 60) openDrawer();
+  if ($("drawer").classList.contains("open") && dx < -60) closeDrawer();
+  touchX = null;
+}, { passive: true });
+
+function go(key) {
+  S.screen = key; S.open = null; S.q = ""; closeDrawer(); window.scrollTo(0, 0);
+  $("title").textContent = SCREENS.find((s) => s.key === key).label;
+  if (key === "feed") loadFeed(false);
+  if (["stock", "cash", "products", "team"].includes(key)) loadSection(key);
+  drawer(); render();
+}
+
+// ------------------------------------------------------------------ écrans
+function render() {
+  if (!S.data) return;
+  const views = { home: viewHome, courses: viewCourses, livreurs: viewLivreurs, stock: viewStock, products: viewProducts,
+                  cash: viewCash, bilan: viewBilan, feed: viewFeed, team: viewTeam, plus: viewPlus };
+  $("view").replaceChildren(views[S.screen]());
+}
+
+function stats() {
+  const d = S.data;
+  return el("div", { class: "stats" },
+    el("div", { class: "stat" }, el("b", {}, d.pending.length), el("span", {}, "à attribuer")),
+    el("div", { class: "stat" }, el("b", {}, d.assigned.length), el("span", {}, "en livraison")),
+    el("div", { class: "stat" }, el("b", {}, d.totals.n), el("span", {}, "livrées")),
+    el("div", { class: "stat" }, el("b", {}, eur(d.totals.total)), el("span", {}, "encaissé")));
+}
+
+function viewHome() {
+  const d = S.data;
+  const wrap = el("div", {}, stats());
+  if (d.pending.length) {
+    wrap.append(el("div", { class: "h2" }, "⚠️ À attribuer", el("button", { class: "more", onclick: () => { S.seg = "pending"; go("courses"); } }, "Tout voir")));
+    wrap.append(el("div", { class: "list" }, d.pending.map(courseCard)));
+  }
+  wrap.append(el("div", { class: "h2" }, "🛵 Sur la route", el("span", { class: "more muted" }, d.routes.length ? plural(d.routes.length, "livreur") : "")));
+  const routes = el("div", { class: "list" });
+  if (!d.routes.length) routes.append(el("div", { class: "card empty" }, el("b", {}, "🌙"), "Aucune livraison en cours."));
+  d.routes.forEach((r) => routes.append(routeCard(r)));
+  wrap.append(routes);
+  const free = d.livreurs.filter((l) => l.on_duty && !l.courses);
+  if (free.length) {
+    wrap.append(el("div", { class: "h2" }, "🟢 Libres"));
+    wrap.append(el("div", { class: "chips" }, free.map((l) => el("span", { class: "chip" }, (l.transport || "🛵") + " " + who(l)))));
+  }
+  if (d.assigned.length) {
+    wrap.append(el("div", { class: "h2" }, "📋 Toutes les livraisons en cours", el("button", { class: "more", onclick: () => { S.seg = "assigned"; go("courses"); } }, "Gérer")));
+    const order = {};
+    d.routes.forEach((r) => [r.current, ...r.queue].forEach((c, i) => { order[c.id] = i; }));
+    wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, d.assigned.map((c) =>
+      el("div", { class: "mini tap", onclick: () => { S.seg = "assigned"; S.open = c.id; go("courses"); S.open = c.id; render(); } },
+        el("span", { class: "k" }, "#" + c.id),
+        el("div", { class: "grow" }, el("div", {}, c.district || ""), el("div", { class: "small muted" }, who(c.livreur) +
+          (order[c.id] ? ` · ${order[c.id] + 1}e à faire` : " · en route"))),
+        el("span", { class: "price" }, eur(c.price)))))));
+  }
+  return wrap;
+}
+
+function routeCard(r) {
+  const c = r.current, a = r.arrival;
+  const late = a && a.source === "livreur" && a.in === 0;
+  const eta = a ? el("div", { class: "eta" + (late ? " late" : "") }, el("b", {}, a.at),
+      el("span", {}, a.in === 0 ? (a.source === "livreur" ? "heure dépassée" : "sur place") : `dans ${a.in} min` + (a.source === "estimation" ? " (estimé)" : "")))
+    : el("div", { class: "eta" }, el("b", {}, "—"), el("span", {}, "pas de délai"));
+  return el("div", { class: "card route tap", onclick: () => { S.seg = "assigned"; go("courses"); S.open = c.id; render(); } },
+    el("div", { class: "row" }, el("span", { class: "lv" }, (r.transport || "🛵") + " " + who(r.livreur)),
+       el("span", { class: "right" }, r.queue.length ? `+${r.queue.length} à suivre` : "")),
+    el("div", { class: "now" },
+      el("div", { class: "where" }, el("div", {}, el("b", {}, "#" + c.id), " · ", c.district || ""),
+         el("div", { class: "addr" }, c.address || ""),
+         el("div", { class: "small muted" }, `${who(c.franchise)} · ${eur(c.price)}` + (r.distance_km !== null ? ` · à ${r.distance_km} km` : ""))),
+      eta),
+    r.queue.length ? el("div", { class: "next" }, r.queue.map((q, i) =>
+      el("div", {}, `${i + 2}. #${q.id} · ${q.district || ""} · ${eur(q.price)}`))) : null);
+}
+
+function viewCourses() {
+  const d = S.data;
+  const segs = [["pending", "À attribuer", d.pending.length], ["assigned", "En cours", d.assigned.length], ["delivered", "Livrées", d.delivered.length]];
+  const wrap = el("div", {});
+  wrap.append(el("div", { class: "seg" }, segs.map(([k, l, n]) =>
+    el("button", { class: S.seg === k ? "on" : "", onclick: () => { tap(); S.seg = k; S.open = null; render(); } }, `${l} · ${n}`))));
+  const items = d[S.seg];
+  const list = el("div", { class: "list" });
+  if (!items.length) list.append(el("div", { class: "card empty" }, el("b", {}, S.seg === "pending" ? "🎉" : "🌙"),
+    S.seg === "pending" ? "Aucune course à attribuer." : S.seg === "assigned" ? "Aucune course en cours." : "Aucune course livrée cette nuit."));
+  items.forEach((c) => list.append(courseCard(c)));
+  wrap.append(list);
+  return wrap;
+}
+
+function courseCard(c) {
+  let pill, right;
+  if (c.status === "pending") {
+    pill = c.no_livreur ? el("span", { class: "pill p-alert" }, "Aucun livreur")
+         : c.waiting_pick ? el("span", { class: "pill p-pick" }, "Choix du franchisé")
+         : el("span", { class: "pill p-pending" }, `Proposée · vague ${c.round || 1}`);
+    right = c.created ? `créée ${c.created}` : "";
+  } else if (c.status === "assigned") {
+    pill = el("span", { class: "pill p-assigned" }, "En cours");
+    right = c.minutes !== null ? `depuis ${c.minutes} min` : "";
+  } else {
+    pill = el("span", { class: "pill p-delivered" }, "Livrée");
+    right = c.delivered ? `à ${c.delivered}` : "";
+  }
+  const badges = [];
+  if (c.requested_time) badges.push(el("span", { class: "badge" }, "🕐 " + c.requested_time));
+  if (c.eta && c.status === "assigned") badges.push(el("span", { class: "badge" }, "⏱ arrivée vers " + c.eta));
+  if (c.minutes !== null && c.minutes >= 60 && c.status === "assigned") badges.push(el("span", { class: "badge warn" }, "⏰ longue"));
+  if (c.payment) badges.push(el("span", { class: "badge" }, c.payment === "especes" ? "💵 espèces" : "💳 virement"));
+  if (c.detail) badges.push(el("span", { class: "badge" }, "🔑 " + c.detail));
+  const card = el("div", { class: "card tap", onclick: (e) => { if (e.target.closest(".actions")) return; tap(); S.open = S.open === c.id ? null : c.id; render(); } },
+    el("div", { class: "row" }, el("span", { class: "num" }, "#" + c.id), pill, el("span", { class: "right" }, right)),
+    el("div", { class: "place" }, c.district || ""),
+    el("div", { class: "addr" }, c.address || ""),
+    el("div", { class: "who" }, who(c.franchise), el("span", { class: "muted" }, "  →  "),
+       c.livreur ? who(c.livreur) : el("span", { class: "muted" }, "pas encore de livreur")),
+    el("div", { class: "row prod" }, el("span", { class: "grow" }, c.products || ""), el("span", { class: "price" }, eur(c.price))),
+    badges.length ? el("div", { class: "badges" }, badges) : null);
+  if (S.open === c.id && c.status !== "delivered") card.append(courseActions(c));
+  return card;
+}
+
+function courseActions(c) {
+  const a = [];
+  if (c.status === "pending") a.push(el("button", { class: "btn main", onclick: () => pickLivreur(c) }, "👤 Attribuer"));
+  else {
+    a.push(el("button", { class: "btn main", onclick: () => deliverSheet(c) }, "📦 Livrée"));
+    a.push(el("button", { class: "btn", onclick: () => pickLivreur(c) }, "🔄 Livreur"));
+  }
+  a.push(el("button", { class: "btn", onclick: () => timeSheet(c) }, "🕐 Heure"));
+  a.push(el("button", { class: "btn", onclick: () => addressSheet(c) }, "📍 Adresse"));
+  if (c.status === "assigned") a.push(el("button", { class: "btn", onclick: () => doAction({ type: "release", course_id: c.id }, `Remettre la course #${c.id} en diffusion ?`) }, "🔁 Rediffuser"));
+  a.push(el("button", { class: "btn", onclick: () => doAction({ type: "open_chat", course_id: c.id }) }, "✏️ Produits"));
+  a.push(el("button", { class: "btn danger", onclick: () => doAction({ type: "cancel", course_id: c.id }, `Annuler la course #${c.id} ?`) }, "🗑 Annuler"));
+  return el("div", { class: "actions" }, a);
+}
+
+function viewLivreurs() {
+  const lvs = S.data.livreurs;
+  const list = el("div", { class: "list", style: "margin-top:4px" });
+  if (!lvs.length) list.append(el("div", { class: "card empty" }, el("b", {}, "🛵"), "Aucun livreur inscrit."));
+  const route = {};
+  S.data.routes.forEach((r) => { route[r.livreur.id] = r; });
+  lvs.forEach((lv) => {
+    const r = route[lv.id];
+    const meta = [lv.on_duty ? (lv.courses ? plural(lv.courses, "course") : "libre") : "en pause"];
+    meta.push(lv.position_min === null ? "pas de position" : lv.position_min <= 1 ? "position à l'instant" : `position il y a ${lv.position_min} min`);
+    list.append(el("div", { class: "card" },
+      el("div", { class: "row" },
+        el("div", { class: "grow" },
+          el("div", { style: "font-weight:600" }, (lv.on_duty ? "🟢 " : "⏸ ") + who(lv) + (lv.transport ? " " + lv.transport : "")),
+          el("div", { class: "small muted" }, meta.join(" · "))),
+        el("button", { class: "icon-btn", title: "Position", onclick: () => doAction({ type: "position", livreur_id: lv.id }) }, "📍"),
+        el("button", { class: "switch" + (lv.on_duty ? " on" : ""), "aria-label": "En service",
+          onclick: () => doAction({ type: "duty", livreur_id: lv.id, on: !lv.on_duty }, lv.on_duty ? `Mettre ${lv.name} en pause ?` : null) })),
+      r ? el("div", { class: "badges" }, el("span", { class: "badge" }, `🚚 #${r.current.id} · ${r.current.district || ""}` + (r.arrival ? ` · ${r.arrival.at}` : "")),
+            r.queue.length ? el("span", { class: "badge" }, `+${r.queue.length} à suivre`) : null) : null,
+      lv.stock_to_confirm ? el("div", { class: "badges" }, el("span", { class: "badge warn" }, "Stock de début à confirmer")) : null));
+  });
+  return list;
+}
+
+function sectionState(name) {
+  const s = S.cache[name];
+  if (!s || s.loading) return el("div", { class: "loading" }, "Lecture des tableaux…");
+  if (!s.ok) return el("div", { class: "list" }, el("div", { class: "card empty" }, el("b", {}, "⚠️"), plain(s.error || "Indisponible"),
+    el("button", { class: "btn full", onclick: () => loadSection(name) }, "Réessayer")));
+  return null;
+}
+const refreshBtn = (name) => el("button", { class: "more", onclick: () => loadSection(name) }, "Actualiser");
+function itemsGrid(items) {
+  const keys = Object.keys(items || {});
+  if (!keys.length) return el("div", { class: "muted small" }, "vide");
+  return el("div", { class: "grid" }, keys.map((p) => [el("span", {}, p), el("span", {}, items[p])]));
+}
+
+function viewStock() {
+  const wait = sectionState("stock"); if (wait) return wait;
+  const s = S.cache.stock;
+  const wrap = el("div", {});
+  if (s.error) wrap.append(el("div", { class: "list" }, el("div", { class: "card badge warn" }, plain(s.error))));
+  wrap.append(el("div", { class: "h2" }, "📦 Box", refreshBtn("stock")));
+  wrap.append(el("div", { class: "list" }, s.boxes.map((b) => el("div", { class: "card" }, el("b", {}, b.name), el("div", { style: "margin-top:6px" }, itemsGrid(b.items))))));
+  wrap.append(el("div", { class: "h2" }, "🛵 Chez les livreurs"));
+  wrap.append(el("div", { class: "list" }, s.livreurs.map((l) => el("div", { class: "card" }, el("b", {}, who(l)), el("div", { style: "margin-top:6px" }, itemsGrid(l.items))))));
+  wrap.append(el("div", { class: "muted small", style: "text-align:center;margin:14px" }, "Tableau Rechargement + mouvements du bot pas encore écrits."));
+  return wrap;
+}
+
+function viewProducts() {
+  const wait = sectionState("products"); if (wait) return wait;
+  const q = S.q.toLowerCase();
+  const items = S.cache.products.products.filter((p) => !q || p.name.toLowerCase().includes(q));
+  const search = el("input", { class: "search", placeholder: "Rechercher un produit", value: S.q });
+  search.addEventListener("input", () => { S.q = search.value; const pos = search.selectionStart; render();
+    const s2 = document.querySelector(".search"); s2.focus(); s2.setSelectionRange(pos, pos); });
+  return el("div", {}, search, el("div", { class: "list" }, el("div", { class: "card" },
+    items.length ? items.map((p) => el("div", { class: "kv" }, el("span", {}, p.name),
+      el("span", { class: "muted small", style: "text-align:right" }, p.variants.length ? p.variants.join(", ") : ""))) : el("div", { class: "muted" }, "Aucun produit."))),
+    el("div", { class: "muted small", style: "text-align:center;margin:14px" }, "Ajouter ou retirer un produit : /produits dans le chat (dispatch)."));
+}
+
+function viewCash() {
+  const wait = sectionState("cash"); if (wait) return wait;
+  const s = S.cache.cash;
+  const wrap = el("div", {});
+  wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, el("div", { class: "muted" }, "Cash à récupérer chez les livreurs"),
+    el("div", { class: "big" }, eur(s.total)),
+    s.ravitailleur !== null && s.ravitailleur !== undefined ? el("div", { class: "muted small" }, `Reste chez le ravitailleur : ${eur(s.ravitailleur)}`) : null)));
+  wrap.append(el("div", { class: "h2" }, "Par livreur", refreshBtn("cash")));
+  wrap.append(el("div", { class: "list" }, s.livreurs.map((r) => el("div", { class: "card" },
+    el("div", { class: "row" }, el("b", { class: "grow" }, who(r)), el("b", {}, eur(r.cash))),
+    el("div", { class: "small muted", style: "margin-top:4px" },
+      `💵 ventes ${eur(r.especes)} · 💳 ${eur(r.virement)} · 🧾 dépenses ${eur(r.depenses)} · récupéré ${eur(r.recupere)}`)))));
+  wrap.append(el("div", { class: "list", style: "margin-top:10px" }, el("button", { class: "btn full", onclick: () => doAction({ type: "run", cmd: "caisse" }) }, "💶 Récupérer du cash (dans le chat)")));
+  return wrap;
+}
+
+function viewBilan() {
+  const t = S.data.totals;
+  const wrap = el("div", { class: "list", style: "margin-top:4px" });
+  wrap.append(el("div", { class: "card" },
+    el("div", { class: "muted" }, `Nuit du ${S.data.night}`),
+    el("div", { class: "big" }, eur(t.total)),
+    el("div", {}, plural(t.n, "course") + " livrée" + (t.n > 1 ? "s" : "") + (S.data.cancelled ? ` · ${S.data.cancelled} annulée${S.data.cancelled > 1 ? "s" : ""}` : "")),
+    el("div", { class: "kv", style: "margin-top:8px" }, el("span", {}, "💵 Espèces"), el("b", {}, eur(t.pay.especes))),
+    el("div", { class: "kv" }, el("span", {}, "💳 Virement"), el("b", {}, eur(t.pay.virement)))));
+  const per = el("div", { class: "card" }, el("div", { class: "muted", style: "margin-bottom:4px" }, "Par livreur"));
+  if (!t.per.length) per.append(el("div", { class: "muted" }, "—"));
+  t.per.forEach((r) => per.append(el("div", { class: "kv" }, el("span", {}, who(r)), el("b", {}, `${r.n} · ${eur(r.total)}`))));
+  wrap.append(per);
+  wrap.append(el("div", { class: "card" },
+    el("button", { class: "cmd", onclick: () => doAction({ type: "run", cmd: "journal" }) }, el("span", {}, "📒"), el("span", { class: "grow" }, "Journal détaillé (fichier)"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "cmd", onclick: () => doAction({ type: "run", cmd: "recap" }) }, el("span", {}, "📊"), el("span", { class: "grow" }, "Récap dans le chat"), el("span", { class: "muted" }, "›"))));
+  return wrap;
+}
+
+const ALLOWED = new Set(["B", "STRONG", "I", "EM", "U", "S", "CODE", "PRE", "BR"]);
+function safeHtml(html) {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const clean = (node) => {
+    const out = document.createDocumentFragment();
+    node.childNodes.forEach((ch) => {
+      if (ch.nodeType === 3) out.append(ch.textContent);
+      else if (ch.nodeType === 1) {
+        if (!ALLOWED.has(ch.tagName)) { out.append(clean(ch)); return; }
+        const n = document.createElement(ch.tagName); n.append(clean(ch)); out.append(n);
+      }
+    });
+    return out;
+  };
+  return clean(doc.body.firstChild);
+}
+
+function viewFeed() {
+  const wrap = el("div", {});
+  wrap.append(el("div", { class: "seg" },
+    el("button", { class: S.feedImportant ? "" : "on", onclick: () => { S.feedImportant = false; render(); } }, "Tout"),
+    el("button", { class: S.feedImportant ? "on" : "", onclick: () => { S.feedImportant = true; render(); } }, "Important")));
+  const items = S.feed.filter((i) => !S.feedImportant || i.important);
+  const card = el("div", { class: "card feed", style: "margin:0 12px" });
+  if (!items.length) card.append(el("div", { class: "empty" }, el("b", {}, "🔔"), "Rien pour l'instant."));
+  items.forEach((i) => card.append(el("div", { class: "item" + (i.important ? " imp" : "") },
+    el("div", { class: "at" }, i.at || ""), el("div", { class: "txt" }, safeHtml(i.text)))));
+  wrap.append(card);
+  if (!S.feedEnd && S.feed.length) wrap.append(el("div", { style: "padding:0 12px" },
+    el("button", { class: "btn full", onclick: () => loadFeed(true) }, "Voir plus ancien")));
+  return wrap;
+}
+
+function viewTeam() {
+  const wait = sectionState("team"); if (wait) return wait;
+  const groups = {};
+  S.cache.team.users.forEach((u) => { (groups[u.role] = groups[u.role] || []).push(u); });
+  const wrap = el("div", {});
+  Object.entries(groups).forEach(([role, users]) => {
+    wrap.append(el("div", { class: "h2" }, `${role}s · ${users.length}`));
+    wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, users.map((u) => el("div", { class: "kv" },
+      el("span", {}, (u.status === "banned" ? "⛔ " : u.status === "pending" ? "⏳ " : u.on_duty ? "🟢 " : "") + who(u),
+         u.real_name ? el("div", { class: "small muted" }, u.real_name + (u.username ? ` · @${u.username}` : "")) : null),
+      el("span", { class: "small muted" }, u.status === "pending" ? "à valider" : u.status === "banned" ? "banni" : ""))))));
+  });
+  wrap.append(el("div", { class: "list", style: "margin-top:10px" }, el("button", { class: "btn full", onclick: () => doAction({ type: "run", cmd: "users" }) }, "👥 Modifier une fiche (dans le chat)")));
+  return wrap;
+}
+
+function viewPlus() {
+  const d = S.data;
+  const wrap = el("div", {});
+  wrap.append(el("div", { class: "h2" }, "🔔 Notifications en messages"));
+  wrap.append(el("div", { class: "seg" },
+    el("button", { class: d.me.notify_level === "essentiel" ? "on" : "", onclick: () => doAction({ type: "notify_level", value: "essentiel" }) }, "L'essentiel"),
+    el("button", { class: d.me.notify_level === "tout" ? "on" : "", onclick: () => doAction({ type: "notify_level", value: "tout" }) }, "Tout")));
+  wrap.append(el("div", { class: "muted small", style: "margin:0 16px" },
+    d.me.notify_level === "tout" ? "Chaque avis arrive en message Telegram."
+      : "Seuls les problèmes et ce qui attend une action arrivent en message. Tout le reste est dans 🔔 Activité."));
+  d.chapters.forEach((ch) => {
+    wrap.append(el("div", { class: "h2" }, ch.title));
+    wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, ch.items.map((it) =>
+      el("button", { class: "cmd", onclick: () => doAction({ type: "run", cmd: it.cmd }) },
+        el("span", { style: "font-size:20px" }, it.label.split(" ")[0]),
+        el("span", { class: "grow" }, it.label.split(" ").slice(1).join(" "), el("small", {}, plain(it.about))),
+        el("span", { class: "muted" }, "›"))))));
+  });
+  wrap.append(el("div", { class: "muted small", style: "text-align:center; margin:18px 0" }, "Ces commandes répondent dans le chat du bot."));
+  return wrap;
+}
+
+// ------------------------------------------------------------------ fenêtres du bas
+function openSheet(...kids) {
+  $("sheet-body").replaceChildren(...nodes(kids));
+  $("sheet-bg").style.display = "block";
+  requestAnimationFrame(() => $("sheet").classList.add("open"));
+  if (tg) tg.BackButton.show();
+}
+function closeSheet() {
+  $("sheet").classList.remove("open"); $("sheet-bg").style.display = "none";
+  if (tg) tg.BackButton.hide();
+  render();
+}
+$("sheet-bg").addEventListener("click", closeSheet);
+if (tg) tg.BackButton.onClick(() => { if ($("drawer").classList.contains("open")) closeDrawer(); else closeSheet(); });
+
+function pickLivreur(c) {
+  const lvs = S.data.livreurs.filter((lv) => !c.livreur || lv.id !== c.livreur.id);
+  openSheet(
+    el("h3", {}, c.status === "pending" ? `Attribuer la #${c.id}` : `Changer le livreur de la #${c.id}`),
+    el("p", {}, `${c.district || ""} · ${eur(c.price)}` + (c.livreur ? ` · aujourd'hui : ${who(c.livreur)}` : "")),
+    lvs.map((lv) => el("button", { class: "choice", onclick: () => { closeSheet(); doAction({ type: "assign", course_id: c.id, livreur_id: lv.id }); } },
+      el("span", {}, lv.on_duty ? "🟢" : "⏸"),
+      el("span", { class: "grow" }, who(lv), el("div", { class: "muted small" },
+        lv.on_duty ? (lv.courses ? plural(lv.courses, "course") + " en cours" : "libre") : "en pause")),
+      el("span", { class: "muted" }, "›"))),
+    c.status === "assigned" ? el("button", { class: "choice", onclick: () => { closeSheet(); doAction({ type: "release", course_id: c.id }); } },
+      el("span", {}, "🔁"), el("span", { class: "grow" }, "Remettre en diffusion"), el("span", { class: "muted" }, "›")) : null);
+}
+function deliverSheet(c) {
+  openSheet(el("h3", {}, `#${c.id} livrée`), el("p", {}, `Le client a payé comment ? (${eur(c.price)})`),
+    el("button", { class: "btn main full", onclick: () => { closeSheet(); doAction({ type: "deliver", course_id: c.id, payment: "e" }); } }, "💵 Espèces"),
+    el("button", { class: "btn full", onclick: () => { closeSheet(); doAction({ type: "deliver", course_id: c.id, payment: "v" }); } }, "💳 Virement"));
+}
+function timeSheet(c) {
+  const input = el("input", { placeholder: "ex. 23h30, vers minuit", value: c.requested_time || "", maxlength: "40" });
+  openSheet(el("h3", {}, `Heure souhaitée · #${c.id}`), el("p", {}, "Le livreur et le franchisé sont prévenus."), input,
+    el("button", { class: "btn main full", onclick: () => { closeSheet(); doAction({ type: "time", course_id: c.id, value: input.value }); } }, "Enregistrer"),
+    c.requested_time ? el("button", { class: "btn full danger", onclick: () => { closeSheet(); doAction({ type: "time", course_id: c.id, value: "" }); } }, "Enlever l'heure") : null);
+  setTimeout(() => input.focus(), 250);
+}
+function addressSheet(c) {
+  const input = el("textarea", { placeholder: "Nouvelle adresse avec le code postal\n(2e ligne facultative : digicode, étage…)" });
+  const out = el("div", { style: "margin-top:10px" });
+  const check = async () => {
+    out.replaceChildren(el("div", { class: "muted" }, "Recherche…"));
+    const r = await api("/api/action", { type: "address_preview", course_id: c.id, text: input.value });
+    if (!r.ok) { out.replaceChildren(el("div", { class: "badge warn" }, plain(r.message))); return; }
+    out.replaceChildren(el("div", { class: "card", style: "background:var(--soft)" }, el("b", {}, "📍 " + r.preview),
+      r.detail ? el("div", { class: "muted" }, "🔑 " + r.detail) : null),
+      el("button", { class: "btn main full", onclick: () => { closeSheet(); doAction({ type: "address_apply", course_id: c.id, text: input.value }); } }, "✅ Changer l'adresse"));
+  };
+  openSheet(el("h3", {}, `Nouvelle adresse · #${c.id}`), el("p", {}, `Aujourd'hui : ${c.address || ""}`), input,
+    el("button", { class: "btn full", onclick: check }, "Vérifier l'adresse"), out);
+  setTimeout(() => input.focus(), 250);
+}
+
+async function doAction(body, question) {
+  if (S.busy) return;
+  if (question && !(await confirmBox(question))) return;
+  S.busy = true; tap();
+  try {
+    const r = await api("/api/action", body);
+    haptic(r.ok ? "success" : "error");
+    if (r.message) toast(r.message);
+    if (r.close && r.ok && tg) setTimeout(() => tg.close(), 800);
+    await load(true);
+    render();
+  } catch (e) {
+    haptic("error"); toast("Erreur : " + e.message);
+  } finally { S.busy = false; }
+}
+
+drawer();
+load(false);
+setInterval(() => { if (!document.hidden) { load(true); if (S.screen === "feed") loadFeed(false); } }, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(true); });
+</script>
+</body>
+</html>

@@ -3440,3 +3440,109 @@ async def test_franchises_get_every_notification(h, test_config):
     # Livrée par le dispatch : les franchisés sont prévenus.
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"fy:deliver:{course['id']}:e")
     assert any(f"#{course['id']}" in t and "livr" in t for t in h.tg.texts(F2)[-3:])
+
+
+# ================================================================ mini-application
+
+def _init_data(tg_id: int, token: str = "123:test", age: int = 0) -> str:
+    import hashlib
+    import hmac
+    import json
+    import time
+    from urllib.parse import urlencode
+
+    fields = {"auth_date": str(int(time.time()) - age), "query_id": "q1",
+              "user": json.dumps({"id": tg_id, "first_name": "X"}, separators=(",", ":"))}
+    check = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+    fields["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    return urlencode(fields)
+
+
+def test_webapp_init_data_signature():
+    from bot import web
+
+    assert web.check_init_data(_init_data(42), "123:test")["id"] == 42
+    assert web.check_init_data(_init_data(42), "999:autre") is None                # autre bot
+    assert web.check_init_data(_init_data(42, age=2 * 86400), "123:test") is None  # trop vieux
+    assert web.check_init_data(_init_data(42).replace("q1", "q2"), "123:test") is None   # modifié
+    assert web.check_init_data("", "123:test") is None
+
+
+async def test_webapp_board_and_actions(h):
+    """L'appli : chaque livreur sur la route n'a qu'une adresse en cours (les autres « à suivre ») avec son
+    heure d'arrivée ; actions = mêmes effets que les boutons du chat ; réservée aux admins."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import web
+
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    c1 = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await h.text(L1, "47")                                     # il écrit son temps
+    c2 = await order(h, F2, "oberkampf")
+    await h.press(L1, h.tg.find(L1, f"🆕 Course #{c2['id']}"), "course_take:")
+    c3 = await order(h, F1, "rivoli")
+
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        async def post(path, tg_id, body=None):
+            return await client.post(path, json=body or {}, headers={"X-Init-Data": _init_data(tg_id)})
+
+        assert (await client.post("/api/board", json={})).status == 401
+        assert (await post("/api/board", L1)).status == 403                   # un livreur n'y a pas accès
+        assert (await client.get("/")).status == 200
+
+        board = await (await post("/api/board", DISPATCH)).json()
+        assert [c["id"] for c in board["pending"]] == [c3["id"]]
+        route = next(r for r in board["routes"] if r["livreur"]["id"] == l1["id"])
+        assert route["current"]["id"] == c1["id"] and [q["id"] for q in route["queue"]] == [c2["id"]]
+        assert route["arrival"]["source"] == "livreur" and 45 <= route["arrival"]["in"] <= 47
+        assert board["me"]["dispatch"] is True and board["chapters"]
+
+        # Franchisé : même appli ; attribue la 3e au livreur 2 (en pause : l'admin force).
+        r = await (await post("/api/action", F2, {"type": "assign", "course_id": c3["id"], "livreur_id": l2["id"]})).json()
+        assert r["ok"] and (await db.get_course(c3["id"]))["livreur_id"] == l2["id"]
+        h.tg.find(L2, f"Course #{c3['id']} — c'est pour toi")
+        r = await (await post("/api/action", DISPATCH, {"type": "time", "course_id": c2["id"], "value": "vers 23h"})).json()
+        assert r["ok"] and (await db.get_course(c2["id"]))["requested_time"] == "vers 23h"
+        r = await (await post("/api/action", DISPATCH, {"type": "duty", "livreur_id": l2["id"], "on": True})).json()
+        assert r["ok"] and (await db.get_user(l2["id"]))["on_duty"] is True
+        r = await (await post("/api/action", DISPATCH, {"type": "deliver", "course_id": c1["id"], "payment": "e"})).json()
+        assert r["ok"] and (await db.get_course(c1["id"]))["status"] == "delivered"
+        r = await (await post("/api/action", DISPATCH, {"type": "cancel", "course_id": c2["id"]})).json()
+        assert r["ok"] and (await db.get_course(c2["id"]))["status"] in db.CANCELLED_STATUSES
+        r = await (await post("/api/action", F1, {"type": "run", "cmd": "reset"})).json()
+        assert not r["ok"] and r["message"] == texts.DISPATCH_ONLY
+        r = await (await post("/api/action", DISPATCH, {"type": "run", "cmd": "encours"})).json()
+        assert r["ok"] and "En ce moment" in h.tg.last(DISPATCH).text
+        r = await (await post("/api/action", DISPATCH, {"type": "open_chat", "course_id": c3["id"]})).json()
+        assert r["ok"] and h.tg.last(DISPATCH).text.startswith(f"🚴 Course #{c3['id']}")
+
+        board = await (await post("/api/board", DISPATCH)).json()
+        assert board["totals"]["n"] == 1 and board["totals"]["pay"]["especes"] == 60.0
+        team = await (await post("/api/section", DISPATCH, {"name": "team"})).json()
+        assert {u["name"] for u in team["users"]} >= {"Franchisé 1", "Livreur 1"}
+        r = await (await post("/api/action", F1, {"type": "notify_level", "value": "tout"})).json()
+        assert r["ok"] and (await db.get_user(f1["id"]))["notify_level"] == "tout"
+
+
+async def test_quiet_notifications_go_to_the_feed(h, test_config):
+    """Niveau « essentiel » : les avis de routine ne sont plus envoyés en message, ils sont dans le fil ;
+    les avis importants partent toujours ; « tout » : tout en message."""
+    import dataclasses
+
+    from bot import config, messaging
+
+    config.set_config(dataclasses.replace(test_config, quiet_notifications=True, notify_franchises=True))
+    f1, f2, _ = await setup_network(h, livreurs=())
+    n_dispatch, n_f2 = len(h.tg.inbox(DISPATCH)), len(h.tg.inbox(F2))
+    await messaging.notify_dispatch(h.app.bot, "🆕 routine")
+    await messaging.notify_dispatch(h.app.bot, "⚠️ problème", important=True)
+    assert [m.text for m in h.tg.inbox(DISPATCH)[n_dispatch:]] == ["⚠️ problème"]
+    assert [m.text for m in h.tg.inbox(F2)[n_f2:]] == ["⚠️ problème"]
+    feed = await db.list_feed(5)
+    assert [(r["text"], r["important"]) for r in feed[:2]] == [("⚠️ problème", True), ("🆕 routine", False)]
+    await db.update_user(f2["id"], {"notify_level": "tout"})
+    await messaging.notify_dispatch(h.app.bot, "🆕 routine 2")
+    assert h.tg.last(F2).text == "🆕 routine 2" and h.tg.last(DISPATCH).text == "⚠️ problème"

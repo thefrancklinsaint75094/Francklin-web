@@ -659,3 +659,16 @@ simple qui respecte le mur de confidentialité (§12).
      actifs (`team`), sans l'auteur ni le franchisé de la course (`skip`) ; les actions du dispatch, qui ne lui
      envoyaient rien, partent maintenant aux franchisés (`dispatch=False`). Exclus : messages relayés, erreurs et
      alertes techniques, inscriptions, accès. Les boutons restent au dispatch.
+
+159. **Appli Dispatch (mini-application Telegram)** (l'exploitant : « ça doit ressembler à une application, pas une
+     messagerie… un menu déroulant sur la gauche… le livreur A a 4 adresses mais il n'est en cours que pour une »).
+     Servie par le bot lui-même (aiohttp à côté du polling, `PORT`, domaine Railway) : pas de second service à
+     déployer. Page unique sans framework (`bot/static/app.html`), API `bot/web.py` authentifiée par la signature
+     `initData` de Telegram. Écran principal : une seule adresse par livreur (sa plus ancienne course, comme pour
+     « OK »), heure écrite par le livreur sinon estimée (distance + moyen de déplacement). Les actions réutilisent
+     `dispatch.apply_override`, `dispatch.assign_course`, `course_time.apply`, `address.lookup/apply`,
+     `dispatch.set_duty` ; le reste ouvre la commande dans le chat. Admins et franchisés : même menu.
+
+160. **Avis : l'essentiel en message, le reste dans le fil** (« trop d'informations envoyées »). Table `feed` ;
+     `notify_dispatch(important=…)` ; `users.notify_level` (« essentiel » par défaut, « tout » au choix dans l'appli).
+     « Bot démarré » et les avis de routine (créée, prise, délai, arrivée, livrée…) ne sonnent plus.

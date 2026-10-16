@@ -134,7 +134,7 @@ async def _broadcast(context, course: dict, livreur: dict, text: str) -> None:
     recipients = await _recipients(course, livreur)
     for user in recipients:
         await messaging.send(context.bot, user, text)
-    await messaging.notify_dispatch(context.bot, text, skip=[u["id"] for u in recipients])
+    await messaging.notify_dispatch(context.bot, text, skip=[u["id"] for u in recipients], important=True)
 
 
 async def check_assignment(context, course: dict, livreur: dict) -> None:
@@ -357,7 +357,7 @@ async def _alert_no_stock(context, course: dict, eligible, avail, waiting: bool 
                        payload={"livreurs": [lv["id"] for lv, _ in short]})
     for user in await db.list_users(role="ravitailleur", status="active"):
         await messaging.send(context.bot, user, text)
-    await messaging.notify_dispatch(context.bot, text)
+    await messaging.notify_dispatch(context.bot, text, important=True)
 
 
 def push_restock_later(restock: dict) -> None:

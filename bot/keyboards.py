@@ -550,8 +550,14 @@ def user_roles(user: dict) -> M:
 def menu_chapters() -> M:
     from bot.handlers.menu import CHAPTERS
 
+    from telegram import WebAppInfo
+
+    from bot import config
+
     buttons = [B(title, callback_data=f"mn:{key}") for key, (title, _) in CHAPTERS.items()]
-    return M([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    url = config.get().webapp_url
+    return M(([[B("📱 Ouvrir l'appli Dispatch", web_app=WebAppInfo(url))]] if url else []) + rows)
 
 
 def menu_chapter(items) -> M:

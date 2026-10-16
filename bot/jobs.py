@@ -53,7 +53,7 @@ async def stale_positions(context) -> None:
             await db.update_user(lv["id"], {"on_duty": False, "soon_free": False})
             await db.log_event("position_stale", user_id=lv["id"])
             await messaging.send(context.bot, lv, texts.POSITION_LOST)
-            await messaging.notify_dispatch(context.bot, texts.d_position_lost(lv, cfg.position_stale_minutes))
+            await messaging.notify_dispatch(context.bot, texts.d_position_lost(lv, cfg.position_stale_minutes), important=True)
         elif 0 < cfg.position_alert_minutes < cfg.position_stale_minutes and at < alert:
             key = (lv["id"], pos["updated_at"])
             if key in _silence_alerted:
@@ -63,7 +63,7 @@ async def stale_positions(context) -> None:
             minutes = (now - at).total_seconds() / 60
             await db.log_event("position_silent", user_id=lv["id"], payload={"minutes": int(minutes)})
             await messaging.notify_dispatch(context.bot, texts.d_position_silent(
-                lv, minutes, address, cfg.position_stale_minutes))
+                lv, minutes, address, cfg.position_stale_minutes), important=True)
             await messaging.send(context.bot, lv, texts.POSITION_SILENT)
 
 
@@ -90,7 +90,7 @@ async def stuck_courses(context) -> None:
             continue
         await db.log_event("stuck_alert", course["id"], livreur["id"], {"assigned_at": course["assigned_at"]})
         await messaging.send(context.bot, livreur, texts.stuck_for_livreur(course["id"]))
-        await messaging.notify_dispatch(context.bot, texts.d_stuck(course["id"], minutes, livreur))
+        await messaging.notify_dispatch(context.bot, texts.d_stuck(course["id"], minutes, livreur), important=True)
 
 
 async def clear_states(context) -> None:
@@ -167,7 +167,7 @@ async def edit_reminders(context) -> None:
                                  keyboards.edit_decision(course["id"]))
         if n + 1 == EDIT_REMIND_MAX:
             await messaging.notify_dispatch(context.bot, texts.d_edit_waiting(course, franchise or {}, int(minutes)),
-                                            skip=[course["franchise_id"]])
+                                            skip=[course["franchise_id"]], important=True)
 
 
 async def refresh_menus(context) -> None:
@@ -196,7 +196,7 @@ async def sheet_errors(context) -> None:
     if not events:
         return
     _sheet_error_seen = events[-1]["id"]
-    await messaging.notify_dispatch(context.bot, texts.d_sheet_errors(events), team=False)
+    await messaging.notify_dispatch(context.bot, texts.d_sheet_errors(events), team=False, important=True)
 
 
 def _safe(job):

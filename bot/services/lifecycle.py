@@ -65,7 +65,7 @@ async def mark_no_livreur(context, course: dict) -> None:
     _no_livreur[course["id"]] = "none_on_duty" if not on_duty else "none_eligible"
     await refresh_franchise_message(context, course)
     await messaging.notify_dispatch(context.bot, texts.d_no_livreur(course["id"]),
-                                    skip=[course["franchise_id"]])
+                                    skip=[course["franchise_id"]], important=True)
     await db.log_event("no_livreur", course["id"])
 
 
@@ -263,7 +263,7 @@ async def release(context, course: dict, reason: str) -> dict | None:
 
     if reason == "livreur_cancel" and livreur:
         await messaging.notify_dispatch(context.bot, texts.d_livreur_cancel(course["id"], livreur),
-                                        skip=[course["franchise_id"]])
+                                        skip=[course["franchise_id"]], important=True)
         await db.log_event("livreur_cancelled", course["id"], livreur["id"],
                            {"cancel_count": livreur.get("cancel_count")})
     else:
@@ -322,7 +322,7 @@ async def cancel(context, course: dict, by: str) -> dict | None:
                                             skip=[course["franchise_id"]])
         else:
             await messaging.notify_dispatch(context.bot, texts.d_cancelled_on_site(course["id"], franchise, livreur),
-                                            skip=[course["franchise_id"]])
+                                            skip=[course["franchise_id"]], important=True)
     await db.log_event(
         "course_withdrawn" if status == "pending" else "cancelled_on_site",
         course["id"], franchise["id"] if franchise else None, {"by": by},

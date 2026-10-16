@@ -531,6 +531,21 @@ async def events_after(type_: str, after_id: int, limit: int = 20) -> list[dict]
     return res.data
 
 
+# ---------------------------------------------------------------- fil d'activité (mini-application)
+
+async def add_feed(text: str, team: bool, important: bool) -> None:
+    await _t("feed").insert({"text": text, "team": team, "important": important}).execute()
+
+
+async def list_feed(limit: int = 80, team_only: bool = False, before_id: int | None = None) -> list[dict]:
+    q = _t("feed").select("*").order("id", desc=True).limit(limit)
+    if team_only:
+        q = q.eq("team", True)
+    if before_id:
+        q = q.lt("id", before_id)
+    return (await q.execute()).data
+
+
 async def last_event(type_: str) -> dict | None:
     return _first(await _t("events").select("*").eq("type", type_).order("id", desc=True).limit(1).execute())
 
