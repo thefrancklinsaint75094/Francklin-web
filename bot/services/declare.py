@@ -74,3 +74,17 @@ def differences(items: dict[str, int], expected: dict[str, int] | None) -> list[
         if mine != theirs:
             out.append((name, mine, theirs))
     return out
+
+
+async def blocked_ids() -> set[str]:
+    """Livreurs qui ne reçoivent pas de course : stock de début de service demandé, pas encore confirmé."""
+    from bot import config, db
+    from bot.timeutil import night_start_date, now_utc
+
+    if not config.get().stock_declaration:
+        return set()
+    try:
+        return await db.unconfirmed_start_ids(night_start_date(now_utc(), config.get().night_end_hour))
+    except Exception:  # noqa: BLE001 — en cas de doute, on ne bloque personne
+        return set()
+

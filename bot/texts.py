@@ -306,6 +306,10 @@ def franchise_course_status(course: dict, livreur: dict | None, no_livreur: bool
             head = f"✅ Course #{cid} envoyée aux livreurs."
     elif status == "assigned":
         head = f"🚴 Course #{cid} — prise par {esc(livreur['display_name'] if livreur else 'un livreur')}"
+        if course.get("eta_at"):
+            from bot.timeutil import hhmm, parse_ts
+
+            head += f"\n⏱ Arrivée prévue vers {hhmm(parse_ts(course['eta_at']))}"
     elif status == "delivered":
         from bot.timeutil import hhmm, parse_ts
 
@@ -1953,6 +1957,8 @@ def declare_prompt(kind: str, expected: dict | None, reminder: bool = False) -> 
     what = "ton stock" if kind == "start" else "ce qu'il te reste"
     lines = [f"{head}{DECLARE_KIND[kind]} : {what}</b>", "",
              "Écris ce que tu as <b>sur toi</b>, par exemple : <code>3 US, 2 DIV</code> (ou « rien »)."]
+    if kind == "start":
+        lines.append("⛔ Pas de course tant que ce n'est pas confirmé.")
     if expected is not None:
         lines += ["", f"D'après le tableau : <b>{_declared(expected)}</b>",
                   "Si c'est exact, touche ✅ C'est exact."]
@@ -1996,5 +2002,35 @@ def d_declared(livreur: dict, kind: str, items: dict, expected: dict | None) -> 
 
 
 def d_declare_missing(livreur: dict, kind: str, minutes: int) -> str:
+    blocked = " Il ne reçoit pas de course en attendant." if kind == "start" else ""
     return (f"⏳ {esc(livreur.get('display_name') or '?')} n'a pas confirmé son stock ({DECLARE_KIND[kind].lower()}) "
-            f"depuis {minutes} min — il vient d'être relancé.")
+            f"depuis {minutes} min — il vient d'être relancé.{blocked}")
+
+
+# ================================================================ délai annoncé par le livreur
+
+def _eta(minutes: int) -> str:
+    return "1 h" if minutes == 60 else f"{minutes} min"
+
+
+def eta_ask(course: dict) -> str:
+    return (f"⏱ <b>Course #{course['id']}</b> — tu y es dans combien de temps ?\n"
+            f"📍 {esc(course.get('district') or course.get('address') or '')} · le franchisé sera prévenu")
+
+
+def eta_set(course: dict, minutes: int, at: str) -> str:
+    return (f"⏱ <b>Course #{course['id']}</b> — arrivée prévue dans ~{_eta(minutes)} (vers {at}). Le franchisé est prévenu.\n"
+            "En retard ? Touche un autre temps.")
+
+
+def eta_for_franchise(course: dict, livreur: dict, minutes: int, at: str, update: bool = False) -> str:
+    head = "⏱ <b>Nouveau délai</b> — " if update else "⏱ "
+    return (f"{head}{esc(livreur.get('display_name') or 'Le livreur')} sera chez ton client dans ~{_eta(minutes)} "
+            f"(vers {at}) — course #{course['id']}\n📍 {esc(course.get('address') or '')}")
+
+
+def d_eta(course: dict, livreur: dict, minutes: int, at: str, update: bool = False) -> str:
+    what = "nouveau délai" if update else "y sera"
+    return (f"⏱ #{course['id']} — {esc(livreur.get('display_name') or '?')} {what} dans ~{_eta(minutes)} (vers {at}) — "
+            f"{esc(course.get('district') or '')}")
+

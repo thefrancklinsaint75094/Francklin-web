@@ -1,4 +1,6 @@
 """Stock déclaré par le livreur : au début de son service (une fois par nuit) et à sa fin de service.
+Tant que son stock de début de service n'est pas confirmé, il ne reçoit aucune course (services/declare.py,
+blocked_ids) ; dès qu'il confirme, les courses en attente lui sont proposées.
 
 Le bot lui montre le stock du tableau et lui demande ce qu'il a vraiment sur lui : il touche ✅ si c'est
 exact, sinon il l'écrit (« 3 US, 2 DIV », « rien ») puis confirme. Le dispatch reçoit la déclaration et
@@ -51,6 +53,8 @@ async def ask(bot, livreur: dict, kind: str, night: date | None = None) -> None:
     """Demande au livreur son stock (kind : « start » ou « end »), une fois par nuit. Déjà confirmé : rien ;
     demandé mais pas confirmé : la question est reposée. Ne lève jamais d'exception."""
     try:
+        if not config.get().stock_declaration:
+            return
         if not livreur or livreur.get("role") != "livreur" or not livreur.get("telegram_id"):
             return
         night = night or current_night()
@@ -121,6 +125,10 @@ async def action(update: Update, context):
     await db.log_event("stock_declared", user_id=user["id"], payload={"id": decl["id"], "kind": decl["kind"]})
     await messaging.edit(context.bot, chat_id, msg_id, texts.declare_done(decl["kind"], items))
     await messaging.notify_dispatch(context.bot, texts.d_declared(user, decl["kind"], items, decl.get("expected")))
+    if decl["kind"] == "start":                       # il peut maintenant recevoir les courses en attente
+        from bot.services import broadcast
+
+        await broadcast.kick_pending(context)
     return "Noté ✅"
 
 

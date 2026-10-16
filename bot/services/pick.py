@@ -15,7 +15,7 @@ from datetime import timedelta
 
 from bot import config, db, keyboards
 from bot.services import catalog as catalog_svc
-from bot.services import transport, variants
+from bot.services import declare, transport, variants
 from bot.services.distance import haversine_m
 from bot.timeutil import now_utc, parse_ts
 
@@ -55,7 +55,8 @@ async def options(course: dict) -> list[dict]:
     """Livreurs en service, à proposer au franchisé : {"user", "km", "busy"} ; libres d'abord (temps de
     trajet), puis ceux déjà en livraison."""
     cfg = config.get()
-    livreurs = [lv for lv in await db.list_on_duty_livreurs() if lv.get("status") == "active"]
+    blocked = await declare.blocked_ids()                  # stock de début de service pas confirmé
+    livreurs = [lv for lv in await db.list_on_duty_livreurs() if lv.get("status") == "active" and lv["id"] not in blocked]
     if not livreurs:
         return []
     ids = [lv["id"] for lv in livreurs]

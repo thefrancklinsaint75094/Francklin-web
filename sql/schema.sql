@@ -60,7 +60,9 @@ create table courses (
   closed_at       timestamptz,
   payment         text check (payment in ('especes','virement')),  -- mode de paiement à la livraison
   detected_mode   text check (detected_mode in ('metro','vehicule','pied')),  -- déplacement détecté pendant la course
-  pending_edit    jsonb           -- « Modif » du livreur en attente du franchisé : {products, price, by, at}
+  pending_edit    jsonb,          -- « Modif » du livreur en attente du franchisé : {products, price, by, at}
+  eta_minutes   integer,                               -- délai annoncé par le livreur (migration 020)
+  eta_at        timestamptz                            -- heure d'arrivée prévue
 );
 
 create table livreur_positions (
