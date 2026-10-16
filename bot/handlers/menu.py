@@ -89,6 +89,11 @@ async def open_app(update: Update, context) -> None:
         return
     url = config.get().webapp_url
     livreur = user["role"] == "livreur"
+    if user["role"] == "ravitailleur" and url:
+        await common.set_menu_button(context.bot, user)
+        await messaging.reply(update, texts.APP_OPEN_RAVI, InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📱 Ouvrir Ravitaillement", web_app=WebAppInfo(f"{url}/ravi"))]]))
+        return
     if not (common.is_admin(user) or livreur) or not url:
         await messaging.reply(update, texts.APP_UNAVAILABLE if url is None else texts.NOT_FOR_YOU)
         return

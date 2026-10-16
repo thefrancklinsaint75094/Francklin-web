@@ -3732,3 +3732,73 @@ async def test_livreur_app_full_night(h, test_config):
         r = await act(L1, type="declare_fix", id=decl["id"], items=[{"p": "DIV", "q": 2}])
         assert r["ok"] and (await db.get_declaration(decl["id"]))["status"] == "confirmed"
         assert (await board(L1))["declaration"] is None
+
+
+async def test_ravitailleur_app(h, monkeypatch):
+    """Appli des ravitailleurs : livreurs avec stock et cash, charger (box + compteurs), reprendre, cash,
+    donner à un autre livreur — récap puis enregistrement, comme /ravi et /swipe. Réservée aux ravitailleurs."""
+    import asyncio
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import web
+    from bot.services import sheets, stock as stock_service
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    async def fake_action(action, client=None, **kw):
+        return {
+            "stock_livreurs": {"ok": True, "livreurs": {"Livreur 1": {"DIV": 4, "US": 0}, "Livreur 2": {"DIV": 0}}},
+            "cash_livreurs": {"ok": True, "livreurs": {"Livreur 1": {"especes": 120, "cash": 120}}, "ravitailleur": 30},
+            "stock_box": {"ok": True, "boxes": {"Box 1": {"DIV": 20, "US": 6}}, "totals": []},
+        }[action]
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    stock_service._sheet_cache = None
+    for name in ("DIV", "US"):
+        await db.create_product(name, name.lower(), [])
+    f1, f2, (l1, l2) = await setup_network(h)
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        async def post(path, tg_id, **body):
+            return await client.post(path, json=body, headers={"X-Init-Data": _init_data(tg_id)})
+
+        assert (await client.get("/ravi")).status == 200
+        assert (await post("/api/ravi/board", L1)).status == 403
+        board = await (await post("/api/ravi/board", R1)).json()
+        lv1 = next(lv for lv in board["livreurs"] if lv["name"] == "Livreur 1")
+        assert lv1["items"] == {"DIV": 4} and lv1["cash"] == 120 and board["ravitailleur_cash"] == 30
+        assert board["boxes"][0] == {"name": "Box 1", "items": {"DIV": 20, "US": 6}}
+
+        async def act(**body):
+            return await (await post("/api/ravi/action", R1, **body)).json()
+
+        r = await act(type="prepare", mode="load", livreur="Livreur 1", box="Box 1", items=[{"p": "US", "q": 3}], cash="50")
+        assert r["ok"] and "+3 US" in r["html"] and "50" in r["html"]
+        r = await act(type="commit", mode="load", livreur="Livreur 1", box="Box 1", items=[{"p": "US", "q": 3}], cash="50")
+        assert r["ok"] and "Rechargement enregistré" in r["html"]
+        r = await act(type="commit", mode="unload", livreur="Livreur 1", box="Box 1", items=[{"p": "DIV", "q": 2}])
+        assert r["ok"]
+        r = await act(type="commit", mode="cash", livreur="Livreur 1", cash="70")
+        assert r["ok"]
+        assert (await act(type="prepare", mode="load", livreur="Livreur 1", box="Box 1", items=[]))["ok"] is False
+        r = await act(type="commit", mode="swipe", livreur="Livreur 1", to="Livreur 2", items=[{"p": "DIV", "q": 1}])
+        assert r["ok"]
+        rows = (await db._t("restocks").select("*").order("id").execute()).data
+        assert [(x["kind"], x["livreur_id"], x["by_user_id"], x.get("ravitailleur_name")) for x in rows][:3] == [
+            ("load", l1["id"], r1["id"], "Ravitailleur 1"), ("unload", l1["id"], r1["id"], "Ravitailleur 1"),
+            ("cash", l1["id"], r1["id"], "Ravitailleur 1")]
+        assert rows[3]["kind"] == "swipe" and rows[3]["to_livreur_id"] == l2["id"]
+        assert any("Chargement reçu" in t for t in h.tg.texts(L1))
+        await asyncio.gather(*list(sheets._tasks))
+        assert sent
+        flavors = await (await post("/api/ravi/flavors", R1)).json()
+        assert flavors["ok"]

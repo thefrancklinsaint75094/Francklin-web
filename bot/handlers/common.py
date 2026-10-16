@@ -47,7 +47,7 @@ COMMANDS = {
                 ("macaisse", "Mon cash à remettre"), ("gouts", "Mes goûts (ce qu'il me reste)"),
                 ("close", "Fin de service : mon récap")],
     "dispatch": _ADMIN_COMMANDS + [("recap", "Totaux par livreur")],
-    "ravitailleur": [("recharge", "Charger / reprendre un livreur, cash"), ("ravi", "Rechargement en texte"), ("swipe", "Transfert entre livreurs"), ("stock", "Stock des box et des livreurs"),
+    "ravitailleur": [("app", "📱 Mon appli Ravitaillement"), ("recharge", "Charger / reprendre un livreur, cash"), ("ravi", "Rechargement en texte"), ("swipe", "Transfert entre livreurs"), ("stock", "Stock des box et des livreurs"),
                      ("caisse", "Cash à récupérer chez les livreurs"), ("gouts", "Goûts chez les livreurs")],
 }
 COMMON_COMMANDS = [("start", "Démarrer"), ("aide", "Aide")]
@@ -135,6 +135,8 @@ async def set_menu_button(bot, user: dict) -> None:
         button = MenuButtonWebApp("Dispatch", WebAppInfo(url))
     elif user.get("role") == "livreur" and user.get("status") == "active":
         button = MenuButtonWebApp("Mes courses", WebAppInfo(f"{url}/livreur"))
+    elif user.get("role") == "ravitailleur" and user.get("status") == "active":
+        button = MenuButtonWebApp("Ravitaillement", WebAppInfo(f"{url}/ravi"))
     else:
         button = MenuButtonCommands()
     try:

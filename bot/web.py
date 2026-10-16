@@ -665,12 +665,13 @@ async def _action(request: web.Request) -> web.Response:
 
 
 def build(ptb_app) -> web.Application:
-    from bot import web_livreur
+    from bot import web_livreur, web_ravi
 
     app = web.Application(client_max_size=64 * 1024)
     app[PTB] = ptb_app
     app.router.add_get("/", _index)
     web_livreur.routes(app)
+    web_ravi.routes(app)
     app.router.add_get("/health", _health)
     app.router.add_post("/api/board", _board)
     app.router.add_post("/api/feed", _feed)
