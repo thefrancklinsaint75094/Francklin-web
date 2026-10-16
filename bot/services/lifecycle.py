@@ -92,8 +92,9 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
     )
     if new is not None:
         msg_id = new.message_id
-    await db.update_course(course["id"], {"livreur_message_id": msg_id})
-    course["livreur_message_id"] = msg_id
+    # Délai annoncé : celui d'un livreur précédent (course réattribuée) ne vaut plus.
+    await db.update_course(course["id"], {"livreur_message_id": msg_id, "eta_minutes": None, "eta_at": None})
+    course.update({"livreur_message_id": msg_id, "eta_minutes": None, "eta_at": None})
 
     await refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)
     # Une fiche modifiée ne sonne pas sur le téléphone : un vrai message prévient le franchisé.
@@ -101,6 +102,8 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
         await messaging.send(context.bot, franchise, texts.taken_for_franchise(course, livreur))
     await messaging.notify_dispatch(context.bot, texts.d_taken(course, franchise or {"display_name": "?"}, livreur))
     await db.log_event("course_taken", course["id"], livreur["id"])
+    # Un appui pour annoncer son délai : le franchisé sait quand le livreur arrive.
+    await messaging.send(context.bot, livreur, texts.eta_ask(course), keyboards.eta_choice(course["id"]))
     stock.after_assignment_later(context, course, livreur)
 
 

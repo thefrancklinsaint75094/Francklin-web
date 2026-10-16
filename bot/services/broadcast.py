@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from bot import config, db, keyboards, messaging, texts
-from bot.services import lifecycle, pick, stock, transport
+from bot.services import declare, lifecycle, pick, stock, transport
 from bot.services.distance import format_distance, haversine_m
 from bot.timeutil import now_utc, parse_ts
 
@@ -69,7 +69,8 @@ def select_eligible(
 
 async def eligible_for(course: dict, already: set[str], context=None) -> list[tuple[dict, float]]:
     cfg = config.get()
-    livreurs = await db.list_on_duty_livreurs()
+    blocked = await declare.blocked_ids()                  # stock de début de service pas confirmé
+    livreurs = [lv for lv in await db.list_on_duty_livreurs() if lv["id"] not in blocked]
     if not livreurs:
         return []
     ids = [lv["id"] for lv in livreurs]

@@ -569,3 +569,10 @@ async def list_unconfirmed_declarations(asked_before: datetime) -> list[dict]:
                  .lt("asked_at", iso(asked_before)).order("id").execute())
     return res.data
 
+
+async def unconfirmed_start_ids(night: date) -> set[str]:
+    """Livreurs à qui on a demandé leur stock de début de service cette nuit et qui ne l'ont pas confirmé."""
+    res = await (_t("stock_declarations").select("livreur_id").eq("kind", "start").eq("status", "asked")
+                 .eq("night", night.isoformat()).execute())
+    return {r["livreur_id"] for r in res.data}
+

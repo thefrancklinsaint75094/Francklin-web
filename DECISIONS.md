@@ -582,3 +582,14 @@ simple qui respecte le mur de confidentialité (§12).
      blocage des courses (un livreur en service doit pouvoir recevoir ses courses) : à la place, relance et
      dispatch prévenu au bout de 10 min. Les déclarations ne modifient pas les tableaux : elles servent à repérer
      les écarts.
+
+145. **Pas de course avant le stock confirmé** (demande de l'exploitant, qui revient sur le « pas de blocage » de
+     la 144). Un livreur dont la déclaration de début de service est demandée et pas confirmée cette nuit est
+     retiré de la diffusion et du choix du franchisé (`declare.blocked_ids`) ; à la confirmation, `kick_pending`.
+     Sans question posée (feuille illisible, livreur mis en service par un admin), personne n'est bloqué.
+     L'attribution manuelle par un admin reste possible. `STOCK_DECLARATION=0` coupe la fonction.
+
+146. **Délai annoncé par le livreur** (demande de l'exploitant : « renseigner le temps qu'il met… pour que les
+     franchisés soient au courant », sans que ce soit lourd). Après la prise : un message avec 7 boutons (5 min à
+     1 h), un appui → franchisé et dispatch prévenus avec l'heure prévue, fiche du franchisé mise à jour ; un
+     autre appui = nouveau délai. Remis à zéro si la course est réattribuée. Migration 020.

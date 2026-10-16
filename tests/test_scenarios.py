@@ -331,8 +331,7 @@ async def test_dispo_broadcast_take_and_deliver(h):
     await h.text(L1, "/dispo")
     assert h.tg.texts(L1)[-2:] == [texts.DISPO_PROMPT, texts.TRANSPORT_QUESTION]   # position, puis transport
     await h.location(L1, *BASTILLE, message_id=L1)
-    assert h.tg.texts(L1)[-2] == texts.ON_DUTY                  # puis la question du stock
-    assert h.tg.last(L1).text.startswith("📦 <b>Début de service : ton stock</b>")
+    assert h.tg.last(L1).text == texts.ON_DUTY
     await go_on_duty(h, L2, REPUBLIQUE)
 
     course = await order(h, F1, "rivoli")
@@ -514,7 +513,7 @@ async def test_static_position_and_stale(h):
     from bot import jobs
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await h.location(L1, *BASTILLE, live=False)
-    assert h.tg.texts(L1)[-3:-1] == [texts.ON_DUTY, texts.STATIC_POSITION_WARNING]   # puis le stock
+    assert h.tg.texts(L1)[-2:] == [texts.ON_DUTY, texts.STATIC_POSITION_WARNING]
     await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(minutes=31))}).eq(
         "livreur_id", l1["id"]).execute()
     await jobs.stale_positions(h.context)
@@ -1883,8 +1882,7 @@ async def test_close_day_debrief(h, monkeypatch):
     await asyncio.gather(*list(sheets._tasks))
 
     await h.text(L1, "/close")                                    # un livreur : sa propre fin de service
-    assert h.tg.texts(L1)[-2].startswith("🏁 <b>Fin de service — Livreur 1</b>")      # puis ce qu'il lui reste
-    assert h.tg.last(L1).text.startswith("🏁 <b>Fin de service : ce qu'il te reste</b>")
+    assert h.tg.last(L1).text.startswith("🏁 <b>Fin de service — Livreur 1</b>")
 
     await h.text(F1, "/close")
     text = h.tg.last(F1).text.replace("\xa0", " ")
@@ -2520,7 +2518,7 @@ async def test_sheet_error_alerts_dispatch(h):
     assert len(h.tg.texts(DISPATCH)) == count
 
 
-async def test_livreur_declares_stock_at_start_and_end(h, monkeypatch):
+async def test_livreur_declares_stock_at_start_and_end(h, monkeypatch, test_config):
     """Début de service : le livreur déclare son stock (ou ✅ si le tableau est exact) et confirme ; une seule
     fois par nuit. Fin de service (/close) : ce qu'il lui reste. Le dispatch voit les écarts ; sans réponse,
     une relance et le dispatch est prévenu."""
@@ -2530,6 +2528,11 @@ async def test_livreur_declares_stock_at_start_and_end(h, monkeypatch):
     from bot.services import sheets, stock
     from bot.timeutil import iso, now_utc
 
+    import dataclasses
+
+    from bot import config
+
+    config.set_config(dataclasses.replace(test_config, stock_declaration=True))
     for name in ("US", "DIV"):
         await db.create_product(name, name.lower(), [])
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
@@ -2591,6 +2594,58 @@ async def test_livreur_declares_stock_at_start_and_end(h, monkeypatch):
     n = len(h.tg.inbox(DISPATCH))
     await declare_h.remind(h.context)
     assert len(h.tg.inbox(DISPATCH)) == n
+
+
+async def test_no_course_until_start_stock_confirmed(h, test_config):
+    """Stock de début de service pas confirmé : aucune course proposée ; dès la confirmation, la course
+    en attente lui est proposée."""
+    import dataclasses
+
+    from bot import config
+
+    config.set_config(dataclasses.replace(test_config, stock_declaration=True))
+    await db.create_product("US", "us", [])
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    assert "⛔ Pas de course tant que ce n'est pas confirmé." in h.tg.find(L1, "📦 <b>Début de service").text
+    course = await order(h, F1, "rivoli")
+    assert not any("course_take:" in d for m in h.tg.inbox(L1) for _, d in m.buttons)
+    assert (await db.get_course(course["id"]))["status"] == "pending"
+
+    await h.text(L1, "rien")
+    preview = h.tg.last(L1)
+    assert "tu déclares :</b> rien" in preview.text
+    await h.press_data(L1, preview, preview.buttons[0][1])
+    assert any(d.startswith("course_take:") for m in h.tg.inbox(L1) for _, d in m.buttons)   # proposée
+
+
+async def test_livreur_announces_eta(h):
+    """Course prise : un appui (5 min … 1 h) et le franchisé sait quand le livreur arrive ; il peut corriger."""
+    f1, f2, (l1, l2) = await setup_network(h)
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    ask = h.tg.find(L1, f"⏱ <b>Course #{course['id']}</b> — tu y es dans combien de temps ?")
+    assert [b for b, _ in ask.buttons] == ["5 min", "10 min", "15 min", "20 min", "30 min", "45 min", "1 h"]
+
+    await h.press_data(L1, ask, f"eta:{course['id']}:15")
+    now_ask = h.tg.messages[(L1, ask.message_id)]
+    assert "arrivée prévue dans ~15 min" in now_ask.text and "✅ 15 min" in [b for b, _ in now_ask.buttons]
+    to_f1 = h.tg.last(F1).text
+    assert to_f1.startswith("⏱ Livreur 1 sera chez ton client dans ~15 min (vers ") and f"course #{course['id']}" in to_f1
+    assert any(t.startswith(f"⏱ #{course['id']} — Livreur 1 y sera dans ~15 min") for t in h.tg.texts(DISPATCH))
+    c = await db.get_course(course["id"])
+    assert c["eta_minutes"] == 15 and c["eta_at"]
+    card = h.tg.messages[(F1, c["franchise_message_id"])].text
+    assert "⏱ Arrivée prévue vers " in card
+
+    await h.press_data(L1, now_ask, f"eta:{course['id']}:30")          # retard : nouveau délai
+    assert h.tg.last(F1).text.startswith("⏱ <b>Nouveau délai</b> — Livreur 1 sera chez ton client dans ~30 min")
+    n = len(h.tg.inbox(F1))
+    await h.press_data(L1, now_ask, f"eta:{course['id']}:30")          # même choix : rien de plus
+    assert len(h.tg.inbox(F1)) == n
+    await h.press_data(L2, now_ask, f"eta:{course['id']}:5")           # pas sa course
+    assert h.tg.answers()[-1]["text"] == texts.ALREADY_HANDLED
 
 
 def _decl_id(msg) -> int:

@@ -12,7 +12,7 @@ from telegram import Update
 from bot import config, db, keyboards, messaging, texts
 from bot.handlers import common, declare, relay
 from bot.services import broadcast, catalog, lifecycle, order_edit, sales
-from bot.timeutil import iso, now_utc, parse_ts
+from bot.timeutil import hhmm, iso, now_utc, parse_ts
 
 log = logging.getLogger(__name__)
 
@@ -308,6 +308,40 @@ async def pay(update: Update, context):
     if updated is None:
         return "Déjà livrée."
     return "Livrée ✅"
+
+
+@common.callback
+async def eta(update: Update, context):
+    """eta:<course>:<minutes> — le livreur annonce dans combien de temps il est chez le client (ou corrige)."""
+    user = await _livreur(update)
+    if user is None:
+        return None
+    try:
+        _, cid, minutes = (update.callback_query.data or "").split(":")
+        cid, minutes = int(cid), int(minutes)
+    except ValueError:
+        return None
+    course = await db.get_course(cid)
+    chat_id, msg_id = update.effective_chat.id, update.callback_query.message.message_id
+    if course is None or course.get("livreur_id") != user["id"] or course["status"] != "assigned":
+        await messaging.edit_markup(context.bot, chat_id, msg_id, None)
+        return texts.ALREADY_HANDLED, True
+    if course.get("eta_minutes") == minutes:
+        return "Déjà noté ✅"
+    update_ = course.get("eta_at") is not None
+    at_dt = now_utc() + timedelta(minutes=minutes)
+    course = await db.update_course(cid, {"eta_minutes": minutes, "eta_at": iso(at_dt)}) or {**course, "eta_minutes": minutes,
+                                                                                           "eta_at": iso(at_dt)}
+    at = hhmm(at_dt)
+    await db.log_event("eta_set", cid, user["id"], {"minutes": minutes})
+    await messaging.edit(context.bot, chat_id, msg_id, texts.eta_set(course, minutes, at),
+                         keyboards.eta_choice(cid, minutes))
+    franchise = await db.get_user(course["franchise_id"])
+    if franchise and franchise["role"] != "dispatch":
+        await messaging.send(context.bot, franchise, texts.eta_for_franchise(course, user, minutes, at, update_))
+    await messaging.notify_dispatch(context.bot, texts.d_eta(course, user, minutes, at, update_))
+    await lifecycle.refresh_franchise_message(context, course, livreur=user, franchise=franchise)
+    return f"Noté : ~{minutes} min ✅" if minutes < 60 else "Noté : ~1 h ✅"
 
 
 @common.callback

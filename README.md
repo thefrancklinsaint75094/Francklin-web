@@ -100,6 +100,7 @@ Au démarrage, le dispatch reçoit « 🟢 Bot démarré ».
 | `ARRIVAL_NOTIFY_METERS` | non | `500` | alerte « le livreur arrive » sous cette distance (0 = désactivé) |
 | `ARRIVAL_NOTIFY_MINUTES` | non | `5` | … ou sous ce nombre de minutes estimées (0 = désactivé) |
 | `ARRIVAL_ONSITE_METERS` | non | `80` | alerte « le livreur est sur place » sous cette distance (0 = désactivé) |
+| `STOCK_DECLARATION` | non | `1` | stock déclaré au début / à la fin du service, pas de course avant (0 = désactivé) |
 | `LIVREUR_NAMES` | non | `Livreur A,Livreur B,Livreur C,Livreur D,Livreur R,Livreur X` | noms des livreurs dans les feuilles (`-` : « Livreur 1 », « Livreur 2 »…) |
 | `RAVITAILLEUR_NAMES` | non | `Ravitailleur 1,Ravitailleur 2` | idem pour les ravitailleurs |
 | `STOCK_ALERTS` | non | `1` | alertes de stock du livreur (lu dans SOLDES du tableau Rechargement) ; `0` pour couper |
@@ -544,6 +545,18 @@ déclaration et les écarts avec le tableau. Sans confirmation au bout de 10 min
 dispatch est prévenu (une fois). Une pause puis une reprise la même nuit ne redemandent rien. « OK » / « Modif »
 valident toujours la course pendant la question ; un texte sans chiffre (« ok merci ») n'est pas pris pour un
 stock. Table `stock_declarations` (migration 019).
+
+**Pas de course avant la confirmation** : tant que son stock de début de service n'est pas confirmé, le livreur
+n'est ni dans la diffusion ni dans le choix du franchisé ; dès qu'il confirme, les courses en attente lui sont
+proposées. (Un admin peut toujours lui attribuer une course à la main.) `STOCK_DECLARATION=0` désactive tout.
+
+### Délai annoncé par le livreur
+
+Quand il prend une course, le livreur reçoit « ⏱ Course #12 — tu y es dans combien de temps ? » avec des boutons
+5 min · 10 · 15 · 20 · 30 · 45 · 1 h : **un appui**, et le franchisé reçoit « ⏱ Livreur A sera chez ton client
+dans ~15 min (vers 22h45) », le dispatch aussi, et la fiche de la course du franchisé affiche l'heure prévue.
+En retard ? Il touche un autre temps : « ⏱ Nouveau délai ». Colonnes `courses.eta_minutes` / `eta_at`
+(migration 020).
 
 ### Débrief de la journée (`/close`)
 
