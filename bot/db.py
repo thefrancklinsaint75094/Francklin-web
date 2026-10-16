@@ -6,7 +6,7 @@ bruts tels que renvoyés par PostgREST.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Iterable
 
 from bot.timeutil import iso, now_utc
@@ -538,3 +538,34 @@ async def last_event_id(type_: str) -> int:
 
 async def list_events(course_id: int, type_: str) -> list[dict]:
     return (await _t("events").select("*").eq("course_id", course_id).eq("type", type_).execute()).data
+
+
+# ---------------------------------------------------------------- stock déclaré par le livreur
+
+async def find_declaration(livreur_id: str, kind: str, night: date) -> dict | None:
+    return _first(await _t("stock_declarations").select("*").eq("livreur_id", livreur_id).eq("kind", kind)
+                  .eq("night", night.isoformat()).limit(1).execute())
+
+
+async def create_declaration(fields: dict) -> dict | None:
+    return _first(await _t("stock_declarations").insert(fields).execute())
+
+
+async def get_declaration(decl_id: int) -> dict | None:
+    return _first(await _t("stock_declarations").select("*").eq("id", decl_id).limit(1).execute())
+
+
+async def update_declaration(decl_id: int, fields: dict, only_if_asked: bool = False) -> dict | None:
+    """only_if_asked : ne touche que si la déclaration n'est pas encore confirmée (deux appuis sur ✅)."""
+    q = _t("stock_declarations").update(fields).eq("id", decl_id)
+    if only_if_asked:
+        q = q.eq("status", "asked")
+    return _first(await q.execute())
+
+
+async def list_unconfirmed_declarations(asked_before: datetime) -> list[dict]:
+    """Déclarations demandées avant cette heure, ni confirmées ni encore relancées."""
+    res = await (_t("stock_declarations").select("*").eq("status", "asked").eq("reminded", False)
+                 .lt("asked_at", iso(asked_before)).order("id").execute())
+    return res.data
+

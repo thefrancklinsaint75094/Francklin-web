@@ -202,3 +202,20 @@ alter table restocks enable row level security;
 alter table expenses enable row level security;
 alter table bot_messages enable row level security;
 alter table sales enable row level security;
+
+-- Stock déclaré par le livreur (début et fin de service), migration 019.
+create table stock_declarations (
+  id            serial primary key,
+  livreur_id    uuid not null references users(id) on delete cascade,
+  livreur_name  text,                                    -- nom de la feuille au moment de la déclaration
+  kind          text not null check (kind in ('start','end')),
+  night         date not null,                           -- nuit « du D au D+1 »
+  status        text not null default 'asked' check (status in ('asked','confirmed')),
+  expected      jsonb,                                   -- stock d'après le tableau quand on lui a demandé
+  items         jsonb,                                   -- ce qu'il a confirmé avoir sur lui
+  reminded      boolean not null default false,          -- relance (livreur + dispatch) déjà faite
+  asked_at      timestamptz not null default now(),
+  confirmed_at  timestamptz
+);
+create unique index stock_declarations_once on stock_declarations (livreur_id, kind, night);
+alter table stock_declarations enable row level security;

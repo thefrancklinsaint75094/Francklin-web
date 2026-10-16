@@ -534,6 +534,17 @@ livreur et au dispatch — chaque course livrée (heure, numéro, franchisé, qu
 le total (💵 / 💳), une course encore en cours s'il y en a, ses dépenses, le **stock encore sur lui** et le
 **cash à récupérer** (d'après les tableaux, comme `/stock` et `/caisse`).
 
+### Stock déclaré par le livreur (début et fin de service)
+
+À sa **première prise de service de la nuit** (🟢 Je commence, `/dispo` ou partage de position) et à sa **fin
+de service** (🏁, `/close`, ou `/close Livreur A` par un admin), le bot demande au livreur ce qu'il a sur lui,
+en lui montrant le stock du tableau : **✅ C'est exact**, ou il écrit son stock (`3 US, 2 DIV`, une ligne par
+produit, `US 3`, ou « rien »), voit l'aperçu (avec les écarts) et **confirme**. Le dispatch reçoit la
+déclaration et les écarts avec le tableau. Sans confirmation au bout de 10 min : une relance au livreur et le
+dispatch est prévenu (une fois). Une pause puis une reprise la même nuit ne redemandent rien. « OK » / « Modif »
+valident toujours la course pendant la question ; un texte sans chiffre (« ok merci ») n'est pas pris pour un
+stock. Table `stock_declarations` (migration 019).
+
 ### Débrief de la journée (`/close`)
 
 Pour les admins, en fin de nuit : un message « 🔒 Journée close » qui résume la nuit, sans rien changer —

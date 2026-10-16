@@ -1935,3 +1935,66 @@ def livreur_close(name: str, label: str, rows: list, still: list[dict], expenses
             lines.append(f"   {detail}")
     return "\n".join(lines)
 
+
+
+# ================================================================ stock déclaré par le livreur
+
+DECLARE_KIND = {"start": "Début de service", "end": "Fin de service"}
+DECLARE_DONE_ALREADY = "Déjà noté ✅"
+DECLARE_WRITE_IT = "Écris ce que tu as sur toi (ex. 3 US, 2 DIV), ou « rien »."
+
+
+def _declared(items: dict) -> str:
+    return _qty_text(items) if any(items.values()) else "rien"
+
+
+def declare_prompt(kind: str, expected: dict | None, reminder: bool = False) -> str:
+    head = "⏳ <b>Rappel — " if reminder else ("📦 <b>" if kind == "start" else "🏁 <b>")
+    what = "ton stock" if kind == "start" else "ce qu'il te reste"
+    lines = [f"{head}{DECLARE_KIND[kind]} : {what}</b>", "",
+             "Écris ce que tu as <b>sur toi</b>, par exemple : <code>3 US, 2 DIV</code> (ou « rien »)."]
+    if expected is not None:
+        lines += ["", f"D'après le tableau : <b>{_declared(expected)}</b>",
+                  "Si c'est exact, touche ✅ C'est exact."]
+    return "\n".join(lines)
+
+
+def declare_errors(errors: list[str]) -> str:
+    return "\n".join(["⚠️ Je n'ai pas tout compris :"] + [f"• {esc(e)}" for e in errors[:8]]
+                     + ["", "Réécris ton stock en entier, par exemple : <code>3 US, 2 DIV</code> (ou « rien »)."])
+
+
+def _gaps(items: dict, expected: dict | None) -> list[str]:
+    from bot.services import declare
+
+    return [f"{esc(p)} : {_n(mine)} au lieu de {_n(theirs)}" for p, mine, theirs in declare.differences(items, expected)]
+
+
+def declare_preview(kind: str, items: dict, expected: dict | None) -> str:
+    lines = [f"📦 <b>{DECLARE_KIND[kind]} — tu déclares :</b> {_declared(items)}"]
+    gaps = _gaps(items, expected)
+    if gaps:
+        lines += ["", "⚠️ Différent du tableau :"] + [f"• {g}" for g in gaps]
+    lines += ["", "C'est bien ça ?"]
+    return "\n".join(lines)
+
+
+def declare_done(kind: str, items: dict) -> str:
+    return f"✅ <b>{DECLARE_KIND[kind]} — stock noté :</b> {_declared(items)}"
+
+
+def d_declared(livreur: dict, kind: str, items: dict, expected: dict | None) -> str:
+    icon = "📦" if kind == "start" else "🏁"
+    lines = [f"{icon} {esc(livreur.get('display_name') or '?')} — {DECLARE_KIND[kind].lower()}, stock déclaré : "
+             f"<b>{_declared(items)}</b>"]
+    gaps = _gaps(items, expected)
+    if gaps:
+        lines += ["⚠️ Écart avec le tableau :"] + [f"• {g}" for g in gaps]
+    elif expected is not None:
+        lines.append("✅ Conforme au tableau.")
+    return "\n".join(lines)
+
+
+def d_declare_missing(livreur: dict, kind: str, minutes: int) -> str:
+    return (f"⏳ {esc(livreur.get('display_name') or '?')} n'a pas confirmé son stock ({DECLARE_KIND[kind].lower()}) "
+            f"depuis {minutes} min — il vient d'être relancé.")

@@ -574,3 +574,11 @@ simple qui respecte le mur de confidentialité (§12).
      « il arrive » (500 m ou 5 min), une alerte au franchisé et au dispatch quand le livreur est à moins de
      `ARRIVAL_ONSITE_METERS` (80 m par défaut : en dessous, le GPS en ville n'est plus fiable) de l'adresse, une
      fois par course (événement `onsite_notified`). Arrivé directement sur place, « il arrive » n'est plus envoyé.
+
+144. **Stock déclaré par le livreur** (demande de l'exploitant : au début du service il écrit ce qu'il a et
+     confirme ; à la fin, il confirme ce qu'il lui reste). Une déclaration par nuit et par moment (début, fin),
+     table `stock_declarations` (migration 019) : stock du tableau au moment de la question (`expected`), stock
+     confirmé (`items`). Le bouton « ✅ C'est exact » évite de tout retaper quand le tableau est juste. Pas de
+     blocage des courses (un livreur en service doit pouvoir recevoir ses courses) : à la place, relance et
+     dispatch prévenu au bout de 10 min. Les déclarations ne modifient pas les tableaux : elles servent à repérer
+     les écarts.

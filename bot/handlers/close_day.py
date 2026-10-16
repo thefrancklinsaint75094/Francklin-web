@@ -166,4 +166,8 @@ async def close_livreur(update: Update, context, actor: dict, name: str, livreur
         await messaging.send(context.bot, livreur, text + "\n\n" + texts.CLOSE_FOR_LIVREUR, keyboards.livreur_menu())
     if actor["role"] != "dispatch":
         await messaging.notify_dispatch(context.bot, f"{text}\n\n(par {texts.esc(actor['display_name'])})")
+    if livreur:
+        from bot.handlers import declare
+
+        await declare.ask(context.bot, livreur, "end", night)   # ce qu'il lui reste, à confirmer
 

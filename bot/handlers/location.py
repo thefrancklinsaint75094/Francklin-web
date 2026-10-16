@@ -7,7 +7,7 @@ import logging
 from telegram import Update
 
 from bot import config, db, keyboards, messaging, texts
-from bot.handlers import common
+from bot.handlers import common, declare
 from bot.services import arrival, broadcast, transport
 from bot.services.distance import haversine_m
 from datetime import timedelta
@@ -60,6 +60,8 @@ async def on_location(update: Update, context) -> None:
         if not loc.live_period:
             await messaging.reply(update, texts.STATIC_POSITION_WARNING)
             await messaging.notify_dispatch(context.bot, texts.d_static_position(user))
+        if became_available:
+            await declare.ask(context.bot, user, "start")      # stock sur lui, une fois par nuit
 
     # Détection automatique « bientôt libre » (§10).
     if not user.get("soon_free"):

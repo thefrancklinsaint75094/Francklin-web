@@ -6,7 +6,7 @@ from datetime import time, timedelta
 
 from bot import config, db, keyboards, messaging, texts
 from bot.config import PARIS
-from bot.handlers import cloture, dispatch
+from bot.handlers import cloture, declare, dispatch
 from bot.services import broadcast, names
 from bot.timeutil import minutes_since, night_start_date, now_utc, parse_ts
 
@@ -220,6 +220,7 @@ def register(job_queue) -> None:
     job_queue.run_once(_safe(refresh_menus), when=10, name="refresh_menus")
     job_queue.run_repeating(_safe(edit_reminders), interval=120, first=150, name="edit_reminders")
     job_queue.run_repeating(_safe(sheet_errors), interval=60, first=20, name="sheet_errors")
+    job_queue.run_repeating(_safe(declare.remind), interval=120, first=100, name="declare_remind")
     job_queue.run_repeating(_safe(stale_positions), interval=120, first=60, name="stale_positions")
     job_queue.run_repeating(_safe(stuck_courses), interval=300, first=90, name="stuck_courses")
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")
