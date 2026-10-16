@@ -65,8 +65,10 @@ async def start(update: Update, context) -> None:
 
 
 def _menu(user: dict):
-    """Livreur : le menu de gros boutons en bas de l'écran."""
-    return keyboards.livreur_menu() if user.get("role") == "livreur" else None
+    """Livreur : le menu de gros boutons en bas de l'écran ; admins : les chapitres de /menu."""
+    if user.get("role") == "livreur":
+        return keyboards.livreur_menu()
+    return keyboards.menu_chapters() if common.is_admin(user) else None
 
 
 async def aide(update: Update, context) -> None:

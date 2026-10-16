@@ -3200,3 +3200,56 @@ async def test_user_card_edit_from_users(h):
 
     await h.press_data(F1, mine, "uc_list")
     assert "touche une personne" in h.tg.messages[(F1, mine.message_id)].text
+
+
+async def test_admin_menu_by_chapters(h):
+    """/menu : six chapitres ; un bouton lance la commande comme si elle était tapée."""
+    from bot.handlers import menu as menu_h
+
+    for _, items in menu_h.CHAPTERS.values():       # chaque bouton a sa commande
+        for cmd, _, _ in items:
+            assert cmd.startswith("@") or cmd in menu_h._runners()
+
+    await setup_network(h, livreurs=(L1,))
+    await h.text(DISPATCH, "/menu")
+    home = h.tg.last(DISPATCH)
+    assert home.text == texts.MENU_HOME
+    assert len([b for row in home.markup["inline_keyboard"] for b in row]) == 6
+
+    await h.press_data(DISPATCH, home, "mn:users")
+    chapter = h.tg.messages[(DISPATCH, home.message_id)]
+    assert "👥 Utilisateurs" in chapter.text and "/bannir" in chapter.text
+    await h.press_data(DISPATCH, chapter, "mn_run:users")
+    assert "touche une personne" in h.tg.last(DISPATCH).text
+
+    await h.press_data(DISPATCH, chapter, "mn:livreurs")
+    await h.press_data(DISPATCH, chapter, "mn_run:livreurs")
+    assert "Livreur 1" in h.tg.last(DISPATCH).text
+
+    await h.press_data(DISPATCH, chapter, "mn")
+    assert h.tg.messages[(DISPATCH, home.message_id)].text == texts.MENU_HOME
+
+    await h.text(F1, "/menu")                        # franchisé : admin aussi
+    assert h.tg.last(F1).text == texts.MENU_HOME
+    await h.text(L1, "/menu")
+    assert h.tg.last(L1).text == texts.NOT_FOR_YOU
+    n = len(h.tg.inbox(L1))
+    await h.press_data(L1, home, "mn_run:users")     # bouton d'admin pressé par un livreur : rien
+    assert len(h.tg.inbox(L1)) == n
+
+
+async def test_admin_menu_every_button_runs(h):
+    from bot.handlers import menu as menu_h
+
+    await setup_network(h, livreurs=(L1,))
+    await h.text(DISPATCH, "/menu")
+    home = h.tg.last(DISPATCH)
+    for _, items in menu_h.CHAPTERS.values():
+        for cmd, _, _ in items:
+            if cmd.startswith("@") or cmd == "synchro":
+                continue
+            before = len(h.tg.inbox(DISPATCH))
+            await h.press_data(DISPATCH, home, f"mn_run:{cmd}")
+            assert len(h.tg.inbox(DISPATCH)) > before, cmd
+            assert not any("Erreur technique" in t for t in h.tg.texts(DISPATCH)), cmd
+            await h.text(DISPATCH, "/aide")              # sort d'une éventuelle saisie en cours

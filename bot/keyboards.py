@@ -524,3 +524,19 @@ def user_roles(user: dict) -> M:
                for r in ("franchise", "livreur", "ravitailleur")]
     return M([choices, [B("↩️ Fiche", callback_data=f"uc:{uid}")]])
 
+
+
+# ---------------------------------------------------------------- /menu des admins (chapitres)
+
+def menu_chapters() -> M:
+    from bot.handlers.menu import CHAPTERS
+
+    buttons = [B(title, callback_data=f"mn:{key}") for key, (title, _) in CHAPTERS.items()]
+    return M([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+
+
+def menu_chapter(items) -> M:
+    buttons = [B(label, callback_data=cmd[1:] if cmd.startswith("@") else f"mn_run:{cmd}")
+               for cmd, label, _ in items]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    return M(rows + [[B("↩️ Chapitres", callback_data="mn")]])

@@ -611,3 +611,9 @@ simple qui respecte le mur de confidentialité (§12).
      réutilisent les écrans de confirmation existants). Changer de rôle suit l'inscription : premier nom de
      feuille libre sinon « Rôle N », courses d'un livreur relâchées, commandes et menu renvoyés. Un admin ne
      modifie pas sa propre fiche (évite de se retirer ses droits).
+
+150. **Menu admin par chapitres** (l'exploitant : « organisés par chapitre »). Le ☰ admin passait à 23
+     entrées à plat ; il en garde 4 à 6, le reste est rangé dans `/menu` (`handlers/menu.py`) : 🚚 Courses,
+     🛵 Livreurs, 👥 Utilisateurs, 📦 Stock, 💶 Argent, 📊 Bilans. Un bouton construit un message « /commande »
+     et appelle le handler de la commande : aucun comportement en double à maintenir. Le menu du livreur et
+     celui du ravitailleur ne changent pas.
