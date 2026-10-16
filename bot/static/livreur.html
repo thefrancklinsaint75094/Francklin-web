@@ -356,11 +356,15 @@ function viewMoney() {
   if (!s || s.loading) out.push(el("div", { class: "card empty" }, el("div", { class: "e" }, "⏳"), "Je calcule…"));
   else if (!s.ok) out.push(el("div", { class: "card empty" }, el("div", { class: "e" }, "😕"), plain(s.error), el("button", { class: "big grey", onclick: () => section("money") }, "Réessayer")));
   else out.push(el("div", { class: "card green" },
-    el("div", { class: "label" }, "💶 Tu dois remettre"), el("div", { class: "huge" }, eur(s.cash)),
-    el("div", { class: "kv", style: "margin-top:10px" }, el("span", {}, "Ventes en espèces"), el("b", {}, eur(s.especes))),
-    el("div", { class: "kv" }, el("span", {}, "− Tes dépenses"), el("b", {}, eur(s.depenses))),
-    el("div", { class: "kv" }, el("span", {}, "− Déjà récupéré"), el("b", {}, eur(s.recupere))),
-    el("div", { class: "muted small", style: "margin-top:6px" }, "Pour toute la semaine. Les ventes par carte ne comptent pas.")));
+    el("div", { class: "label" }, "💶 Ton argent aujourd'hui"),
+    el("div", { class: "kv", style: "margin-top:6px" }, el("span", {}, "📅 Reste d'avant, pas remis"), el("b", { style: "white-space:nowrap" }, eur(s.avant))),
+    el("div", { class: "kv" }, el("span", {}, "💵 + Encaissé aujourd'hui"), el("b", {}, eur(s.jour_especes))),
+    el("div", { class: "kv" }, el("span", {}, "🧾 − Charges"), el("b", {}, eur(s.jour_depenses))),
+    s.jour_remis ? el("div", { class: "kv" }, el("span", {}, "🤝 − Remis aujourd'hui"), el("b", {}, eur(s.jour_remis))) : null,
+    s.jour_recu ? el("div", { class: "kv" }, el("span", {}, "↔️ + Reçu d'un livreur"), el("b", {}, eur(s.jour_recu))) : null,
+    el("div", { class: "label", style: "margin-top:12px;border-top:1px solid rgba(0,0,0,.12);padding-top:10px" }, "= Il te reste"),
+    el("div", { class: "huge" }, eur(s.cash)),
+    el("div", { class: "muted small", style: "margin-top:6px" }, "C'est ce que tu dois remettre. Les ventes par carte ne comptent pas.")));
   out.push(el("div", { class: "card" }, el("div", { class: "label" }, "🌙 Ce soir"),
     el("div", { class: "title" }, `${n.n} course${n.n > 1 ? "s" : ""} livrée${n.n > 1 ? "s" : ""} · ${eur(n.total)}`),
     n.list.map((c) => el("div", { class: "kv" }, el("span", {}, `${c.at || ""} · ${c.district || ""}`), el("b", {}, eur(c.price) + (c.payment === "especes" ? " 💵" : " 💳"))))));

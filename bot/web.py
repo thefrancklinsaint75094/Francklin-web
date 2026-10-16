@@ -656,7 +656,8 @@ async def section(name: str, viewer: dict) -> dict:
         if not data["ok"]:
             return {"ok": False, "error": data["error"]}
         rows = [{"name": r["nom"], "prenom": names.prenom(r["nom"]),
-                 **{k: round(float(r[k]), 2) for k in ("cash", "especes", "virement", "depenses", "recupere")}}
+                 **{k: round(float(r.get(k) or 0), 2) for k in ("cash", "especes", "virement", "depenses", "recupere",
+                                                               "avant", *cash.DAY_FIELDS)}}
                 for r in data["livreurs"].values()]
         return {"ok": True, "livreurs": rows, "total": round(sum(r["cash"] for r in rows), 2),
                 "ravitailleur": data.get("ravitailleur")}

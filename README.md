@@ -579,7 +579,8 @@ courtes, une chose à la fois. Quatre onglets en bas : 🚴 Mes courses · 💶 
   franchisé + **💬 ÉCRIRE AU FRANCHISÉ** (phrases toutes prêtes), **✏️ Le client a pris autre chose**
   (compteurs, le franchisé valide), **❌ Je ne peux pas la faire**, **🏁 J'ai presque fini**.
 - **📋 Ensuite** : ses autres courses, dans l'ordre (une seule adresse à la fois).
-- **💶 Mon argent** : ce qu'il doit remettre (ventes en espèces − dépenses − déjà récupéré), ses courses de la nuit,
+- **💶 Mon argent** : son compte du jour — 📅 reste d'avant (pas encore remis) + 💵 encaissé aujourd'hui − 🧾 charges
+  (− cash remis aujourd'hui, + reçu d'un livreur) = **ce qui lui reste** ; ses courses de la nuit,
   **🧾 J'AI PAYÉ UNE DÉPENSE** (⛽ 🚕 🍔 🅿️ 🚇, pour le travail ou avance sur paye, montant).
 - **📦 Mon stock** : ce qu'il a d'après le tableau, et **🍬 ses goûts** à cocher.
 - **☰ Plus** : ⏸ pause, **🏁 J'AI FINI MA SOIRÉE** (le récap s'affiche, puis le stock de fin), moyen de
@@ -692,6 +693,11 @@ dispatch et dans le journal (colonne « paiement » du CSV), et écrit dans la c
   IMPORTRANGE), plus les mouvements du bot pas encore écrits. **💶 Récupérer** ouvre `/recharge` en « cash
   seulement », prérempli avec le montant dû.
 - **`/macaisse`** (livreur) : ce qu'il doit remettre, avec le détail.
+- **Compte du jour** (partout : appli livreur, Caisse de l'appli Dispatch, `/caisse`, `/macaisse`, fin de service) :
+  📅 **reste d'avant** (ce qu'il avait encore des jours d'avant, pas remis au ravitailleur) + 💵 **encaissé
+  aujourd'hui** (espèces) − 🧾 **charges** du jour (− 🤝 cash remis aujourd'hui, + ↔️ reçu d'un livreur par
+  transfert) = **ce qui lui reste**. « Aujourd'hui » = la nuit en cours (jusqu'à `NIGHT_END_HOUR`) ; les
+  mouvements du jour viennent de la base du bot, le reste d'avant = total de la semaine − mouvements du jour.
 
 ### Dispatch selon le stock
 

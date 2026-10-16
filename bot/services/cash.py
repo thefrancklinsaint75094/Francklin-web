@@ -5,11 +5,17 @@ avances sur paye) − cash déjà récupéré par un ravitailleur. Même calcul 
 tableau Rechargement, mais fait en direct par le script (action « cash_livreurs ») pour ne
 pas dépendre des IMPORTRANGE ; le bot y ajoute ses propres mouvements pas encore écrits
 dans les feuilles (livraisons en espèces, dépenses, cash récupéré : « en vol »).
+
+Compte du jour (la nuit en cours, jusqu'à NIGHT_END_HOUR) : ce que le livreur avait encore des jours
+d'avant (« avant », pas remis au ravitailleur) + encaissé aujourd'hui (espèces) − charges du jour
+(− cash remis aujourd'hui, + cash reçu d'un autre livreur) = ce qui lui reste. Les mouvements du jour
+viennent de la base du bot ; « avant » = total de la semaine − mouvements du jour.
 """
 from __future__ import annotations
 
-from bot import db
+from bot import config, db
 from bot.services import sheets, stock
+from bot.timeutil import night_bounds, night_start_date, now_utc
 
 KINDS = {"c": "charges", "p": "paye"}
 KIND_SHEET = {"charges": "Charges", "paye": "Paye"}   # valeurs de la liste « Type dépense » de la feuille
@@ -56,9 +62,47 @@ def delivery_amount(course: dict) -> float:
 
 # ---------------------------------------------------------------- lecture
 
+DAY_FIELDS = ("jour_especes", "jour_depenses", "jour_remis", "jour_recu")
+
+
 def _blank(name: str) -> dict:
     return {"nom": name, "especes": 0.0, "virement": 0.0, "depenses": 0.0, "recupere": 0.0, "cash": 0.0,
-            "en_vol": 0.0}
+            "en_vol": 0.0, "avant": 0.0, **{f: 0.0 for f in DAY_FIELDS}}
+
+
+async def today_moves() -> dict[str, dict[str, float]]:
+    """Nom du livreur (clé sans casse) → mouvements de cash de la nuit en cours, d'après la base."""
+    end_hour = config.get().night_end_hour
+    night = night_start_date(now_utc(), end_hour)
+    start, end = night_bounds(night, end_hour)
+    users = {u["id"]: u.get("display_name") or "" for u in await db.list_users(role="livreur")}
+    out: dict[str, dict[str, float]] = {}
+
+    def add(livreur_id, name, field: str, amount) -> None:
+        name = users.get(livreur_id) or name
+        if name and amount:
+            row = out.setdefault(stock._key(name), {f: 0.0 for f in DAY_FIELDS})
+            row[field] = round(row[field] + float(amount), 2)
+
+    for c in await db.list_delivered_between(start, end):
+        add(c.get("livreur_id"), None, "jour_especes", delivery_amount(c))
+    for r in await db.list_sales_for_night(night, start, end):
+        if r.get("payment") == "especes":
+            add(r.get("livreur_id"), r.get("livreur_name"), "jour_especes", r.get("price"))
+    for e in await db.list_expenses_for_night(night, start, end):
+        add(e.get("livreur_id"), e.get("livreur_name"), "jour_depenses", e.get("amount"))
+    for r in await db.list_restocks_between(start, end):
+        add(r.get("livreur_id"), r.get("livreur_name"), "jour_remis", r.get("cash"))
+        if r.get("kind") == "swipe":                     # le cash passe à celui qui reçoit
+            add(r.get("to_livreur_id"), r.get("to_livreur_name"), "jour_recu", r.get("cash"))
+    return out
+
+
+def _split_day(row: dict, moves: dict | None) -> None:
+    for f in DAY_FIELDS:
+        row[f] = float((moves or {}).get(f) or 0)
+    today = row["jour_especes"] + row["jour_recu"] - row["jour_depenses"] - row["jour_remis"]
+    row["avant"] = round(row["cash"] - today, 2)
 
 
 async def livreurs_now() -> dict:
@@ -85,6 +129,9 @@ async def livreurs_now() -> dict:
         row["user"] = user
         row["en_vol"] = inflight(user["id"])
         row["cash"] = round(row["cash"] + row["en_vol"], 2)
+    moves = await today_moves()
+    for k, row in rows.items():
+        _split_day(row, moves.get(k))
     ordered = sorted(rows.values(), key=lambda r: r["nom"].lower())
     ravi = data.get("ravitailleur")
     return {"ok": True, "livreurs": {r["nom"]: r for r in ordered},
@@ -101,6 +148,7 @@ async def livreur_now(livreur: dict) -> dict:
     if row is None:
         row = _blank(livreur.get("display_name") or "?")
         row["en_vol"] = row["cash"] = inflight(livreur["id"])
+        _split_day(row, (await today_moves()).get(wanted))
     return {"ok": True, "row": row}
 
 
