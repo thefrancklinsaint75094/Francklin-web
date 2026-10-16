@@ -492,17 +492,25 @@ async def _open_catalog_input(update: Update, user: dict) -> None:
 
 
 async def save_products(update: Update, user: dict, text: str) -> None:
-    entries = catalog_service.parse_input(text)
-    if not entries:
+    summary = await add_catalog_products(user, text)
+    if summary is None:
         await messaging.reply(update, texts.CATALOG_NOTHING)
         return
-    summary = await catalog_service.add_products(entries)
     if user.get("conversation_state") == "adding_products":
         await db.clear_state(user["id"])
-    await db.log_event("catalog_updated", user_id=user["id"],
-                       payload={k: v for k, v in summary.items() if k != "conflicts"})
     await messaging.reply(update, texts.catalog_summary(summary))
     await _send_catalog(update)
+
+
+async def add_catalog_products(user: dict, text: str) -> dict | None:
+    """Produits à ajouter (un par ligne, « Nom : surnom, surnom ») ; None si aucun produit lisible."""
+    entries = catalog_service.parse_input(text)
+    if not entries:
+        return None
+    summary = await catalog_service.add_products(entries)
+    await db.log_event("catalog_updated", user_id=user["id"],
+                       payload={k: v for k, v in summary.items() if k != "conflicts"})
+    return summary
 
 
 @common.callback
@@ -547,16 +555,28 @@ async def save_product_edit(update: Update, user: dict, text: str, payload: dict
         await db.clear_state(user["id"])
         await messaging.reply(update, texts.ALREADY_HANDLED)
         return
-    updated, error, extra = await catalog_service.edit_product(product, text)
+    updated, error, extra = await edit_catalog_product(user, product, text)
     if error:
         await messaging.reply(update, texts.catalog_edit_error(error, extra))   # l'état reste : il renvoie
         return
     await db.clear_state(user["id"])
-    await db.log_event("catalog_edited", user_id=user["id"], payload={
-        "before": {"name": product["name"], "aliases": product.get("aliases") or []},
-        "after": {"name": updated["name"], "aliases": updated.get("aliases") or []}})
     await messaging.reply(update, texts.catalog_edited(updated, extra))
     await _send_catalog(update)
+
+
+async def edit_catalog_product(user: dict, product: dict, text: str) -> tuple[dict | None, str | None, list]:
+    """« Nom : surnom, surnom » (ou « + surnom ») ; (produit à jour, erreur, conflits de surnoms)."""
+    updated, error, extra = await catalog_service.edit_product(product, text)
+    if not error:
+        await db.log_event("catalog_edited", user_id=user["id"], payload={
+            "before": {"name": product["name"], "aliases": product.get("aliases") or []},
+            "after": {"name": updated["name"], "aliases": updated.get("aliases") or []}})
+    return updated, error, extra
+
+
+async def delete_catalog_product(user: dict, product: dict) -> None:
+    await db.delete_product(product["id"])
+    await db.log_event("catalog_deleted", user_id=user["id"], payload={"name": product["name"]})
 
 
 @common.callback
@@ -567,8 +587,7 @@ async def catalog_delete(update: Update, context):
     product = await db.get_product(common.arg(update, int))
     if product is None:
         return texts.ALREADY_HANDLED
-    await db.delete_product(product["id"])
-    await db.log_event("catalog_deleted", user_id=user["id"], payload={"name": product["name"]})
+    await delete_catalog_product(user, product)
     products = await db.list_products()
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
                          texts.catalog_list(products, for_dispatch=True), keyboards.catalog(products))

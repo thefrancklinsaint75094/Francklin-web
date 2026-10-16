@@ -270,6 +270,8 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
         return await _expense(context, admin, body)
     if kind in USER_ACTIONS:
         return await _user(context, admin, kind, body)
+    if kind in CATALOG_ACTIONS:
+        return await _catalog(admin, kind, body)
     if kind in ("debrief", "close_livreur", "synchro", "recap"):
         cmd = {"debrief": "close", "close_livreur": "close", "synchro": "synchro", "recap": "recap"}[kind]
         out = await _capture(context, admin, cmd, str(body.get("arg") or "") if kind != "debrief" else "")
@@ -299,6 +301,7 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
 
 ORDER_ACTIONS = ("order_analyse", "order_send", "order_drop", "order_pick")
 TEXT_FORMS = ("ravi_prepare", "ravi_commit", "swipe_prepare", "swipe_commit", "sales_prepare", "sales_commit")
+CATALOG_ACTIONS = ("catalog_add", "catalog_edit", "catalog_delete")
 USER_ACTIONS = ("user_rename", "user_prenom", "user_role", "user_sheet_name", "user_ban", "user_unban",
                 "user_delete", "user_approve", "user_reject")
 
@@ -444,6 +447,37 @@ async def _text_form(context, admin: dict, kind: str, body: dict) -> dict:
         return {"ok": True, "html": texts.sales_preview(ready["blocks"], ready["tab"])}
     done, ok = await sales.commit(context, admin, ready)
     return {"ok": ok, "html": done}
+
+
+async def _catalog(admin: dict, kind: str, body: dict) -> dict:
+    """Catalogue (dispatch et franchisés, comme /produits) : ajouter des produits, nom, surnoms, goûts, supprimer."""
+    from bot.handlers import dispatch, variants as variants_h
+    from bot.services import catalog as catalog_service, variants
+
+    if kind == "catalog_add":
+        summary = await dispatch.add_catalog_products(admin, str(body.get("text") or "")[:6000])
+        if summary is None:
+            return {"ok": False, "message": texts.CATALOG_NOTHING}
+        return {"ok": True, "html": texts.catalog_summary(summary)}
+    product = await db.get_product(int(body.get("id") or 0)) if str(body.get("id") or "").isdigit() else None
+    if product is None:
+        return {"ok": False, "message": texts.ALREADY_HANDLED}
+    if kind == "catalog_delete":
+        await dispatch.delete_catalog_product(admin, product)
+        return {"ok": True, "message": f"{product['name']} supprimé"}
+    name = " ".join(str(body.get("name") or "").split())
+    aliases = [a for a in (" ".join(x.split()) for x in catalog_service.SPLIT_ALIASES_RE.split(str(body.get("aliases") or ""))) if a]
+    if not catalog_service.normalize(name):
+        return {"ok": False, "message": "Le nom ne peut pas être vide."}
+    line = f"{name} : {', '.join(aliases)}" if aliases else name
+    updated, error, extra = await dispatch.edit_catalog_product(admin, product, line)
+    if error:
+        return {"ok": False, "html": texts.catalog_edit_error(error, extra)}
+    raw = str(body.get("variants") or "").strip()
+    new = variants.parse_list(raw) if raw else []
+    if new != list(updated.get("variants") or []):
+        await variants_h.set_variants(admin, updated, new)
+    return {"ok": True, "html": texts.catalog_edited(updated, extra)}
 
 
 async def _expense(context, admin: dict, body: dict) -> dict:
@@ -619,8 +653,8 @@ async def section(name: str, viewer: dict) -> dict:
         return {"ok": True, "livreurs": rows, "total": round(sum(r["cash"] for r in rows), 2),
                 "ravitailleur": data.get("ravitailleur")}
     if name == "products":
-        return {"ok": True, "products": [{"name": p["name"], "variants": p.get("variants") or []}
-                                         for p in await db.list_products()]}
+        return {"ok": True, "products": [{"id": p["id"], "name": p["name"], "aliases": p.get("aliases") or [],
+                                          "variants": p.get("variants") or []} for p in await db.list_products()]}
     if name == "team":
         users = [u for u in await db.list_users() if u["status"] in ("active", "pending", "banned")]
         order = {"dispatch": 0, "franchise": 1, "livreur": 2, "ravitailleur": 3}

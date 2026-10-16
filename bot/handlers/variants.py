@@ -59,13 +59,17 @@ async def gouts(update: Update, context) -> None:
         await messaging.reply(update, texts.VARIANTS_HELP)
         return
     new = [] if rest.strip().lower() in CLEAR else variants.parse_list(rest)
+    await set_variants(user, product, new)
+    await messaging.reply(update, texts.variants_set(product["name"], new))
+
+
+async def set_variants(user: dict, product: dict, new: list[str]) -> None:
+    """Goûts d'un produit (catalogue) ; ceux retirés disparaissent aussi chez les livreurs."""
     await db.update_product(product["id"], {"variants": new})
-    # Les goûts retirés de la liste disparaissent aussi chez les livreurs.
     for row in await db.list_livreur_variants():
         if row["product"] == product["name"] and row["variant"] not in new:
             await db.remove_livreur_variant(row["livreur_name"], row["product"], row["variant"])
     await db.log_event("variants_set", user_id=user["id"], payload={"product": product["name"], "variants": new})
-    await messaging.reply(update, texts.variants_set(product["name"], new))
 
 
 @common.callback

@@ -3820,3 +3820,35 @@ async def test_franchises_share_every_address(h):
         r = await (await client.post("/api/action", json={"type": "time", "course_id": course["id"], "value": "vers minuit"},
                                      headers={"X-Init-Data": _init_data(F1)})).json()
         assert r["ok"] and (await db.get_course(course["id"]))["requested_time"] == "vers minuit"
+
+
+async def test_catalog_management_in_app(h):
+    """Catalogue dans l'appli (comme /produits et /gouts) : ajouter, nom, surnoms, goûts, supprimer."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import web
+
+    await setup_network(h, livreurs=())
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        async def act(tg_id, **body):
+            r = await client.post("/api/action", json=body, headers={"X-Init-Data": _init_data(tg_id)})
+            return await r.json()
+
+        r = await act(F1, type="catalog_add", text="Produit Test : pt, ptest\nAutre Test")
+        assert r["ok"] and "Produit Test" in r["html"]
+        assert (await act(F1, type="catalog_add", text=""))["ok"] is False
+        products = {p["name"]: p for p in await db.list_products()}
+        assert products["Produit Test"]["aliases"] == ["pt", "ptest"]
+        pid = products["Produit Test"]["id"]
+        section = await (await client.post("/api/section", json={"name": "products"},
+                                           headers={"X-Init-Data": _init_data(DISPATCH)})).json()
+        assert any(p["id"] == pid and p["aliases"] == ["pt", "ptest"] for p in section["products"])
+
+        r = await act(DISPATCH, type="catalog_edit", id=pid, name="Produit Test", aliases="pt, essai", variants="rouge, vert")
+        assert r["ok"]
+        p = await db.get_product(pid)
+        assert p["aliases"] == ["pt", "essai"] and p["variants"] == ["rouge", "vert"]
+        r = await act(DISPATCH, type="catalog_edit", id=pid, name="Autre Test", aliases="", variants="rouge, vert")
+        assert r["ok"] is False and (await db.get_product(pid))["name"] == "Produit Test"   # nom déjà pris
+        r = await act(DISPATCH, type="catalog_delete", id=pid)
+        assert r["ok"] and await db.get_product(pid) is None

@@ -702,3 +702,10 @@ simple qui respecte le mur de confidentialité (§12).
      pas envoyées… entre franchisés on s'entraide »). C'était déjà le cas dans l'appli Dispatch (toutes les
      courses, tous les détails, mêmes actions) ; ajout d'un repère ⭐ sur ses propres commandes et d'un filtre
      « Toutes / Les miennes » (par défaut : toutes) pour s'y retrouver.
+
+165. **Catalogue dans l'appli** (accord explicite de l'exploitant : « ajoute aussi la gestion du catalogue dans
+     l'appli », conformément à la règle du catalogue). Mêmes droits que `/produits` (dispatch et franchisés) et
+     même code : `dispatch.add_catalog_products`, `edit_catalog_product`, `delete_catalog_product`,
+     `variants.set_variants` (les goûts retirés disparaissent aussi chez les livreurs). Développé et testé
+     uniquement sur la base de test locale, avec des produits fictifs ; le catalogue de production n'a été ni
+     lu ni modifié.
