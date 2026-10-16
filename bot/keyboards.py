@@ -474,3 +474,53 @@ def address_cancel() -> M:
 def address_confirm() -> M:
     return M([[B("✅ Changer l'adresse", callback_data="addr_ok")], [B("❌ Annuler", callback_data="addr_x")]])
 
+
+ROLE_ICON = {"franchise": "🏪", "livreur": "🛵", "ravitailleur": "📦"}
+
+
+def users_overview(active: list[dict], pending: list[dict]) -> M:
+    """/users : un bouton par personne (deux par ligne), puis les inscriptions à valider."""
+    people = []
+    for u in active:
+        mark = "⛔ " if u["status"] == "banned" else ROLE_ICON.get(u["role"], "") + " "
+        people.append(B(f"{mark}{u.get('display_name') or ROLE_LABEL[u['role']]}"[:40], callback_data=f"uc:{u['id']}"))
+    rows = [people[i:i + 2] for i in range(0, len(people), 2)]
+    pend = pending_users(pending)
+    if pend:
+        rows += pend.inline_keyboard
+    return M(rows) if rows else None
+
+
+def user_card(user: dict, can_act: bool, sheet_names: bool) -> M:
+    uid = user["id"]
+    rows = [[B("↩️ Liste", callback_data="uc_list")]]
+    if not can_act:
+        return M(rows)
+    name = B("🏷 Nom de feuille", callback_data=f"sname:{uid}") if sheet_names else \
+        B("✏️ Nom", callback_data=f"uc_edit:{uid}:name")
+    first = [name]
+    if user["role"] == "livreur":
+        first.append(B("🙂 Prénom", callback_data=f"uc_edit:{uid}:prenom"))
+    first.append(B("🔄 Rôle", callback_data=f"uc_role:{uid}"))
+    out = [first]
+    if user["role"] == "livreur" and user["status"] == "active":
+        duty = B("⏸ Mettre en pause", callback_data=f"uc_duty:{uid}:off") if user.get("on_duty") else \
+            B("🟢 Mettre en service", callback_data=f"uc_duty:{uid}:on")
+        out.append([duty, B("📍 Position", callback_data=f"loc:{uid}")])
+    access = [B("⛔ Bannir", callback_data=f"ban:{uid}")] if user["status"] == "active" else \
+        [B("✅ Réactiver", callback_data=f"unban:{uid}")] if user["status"] == "banned" else []
+    access.append(B("🗑 Supprimer", callback_data=f"del:{uid}"))
+    out.append(access)
+    return M(out + rows)
+
+
+def user_edit_cancel(user_id: str) -> M:
+    return M([[B("❌ Annuler", callback_data=f"uc_x:{user_id}")]])
+
+
+def user_roles(user: dict) -> M:
+    uid = user["id"]
+    choices = [B(("✅ " if user["role"] == r else "") + f"{ROLE_ICON[r]} {ROLE_LABEL[r]}", callback_data=f"uc_role_set:{uid}:{r}")
+               for r in ("franchise", "livreur", "ravitailleur")]
+    return M([choices, [B("↩️ Fiche", callback_data=f"uc:{uid}")]])
+

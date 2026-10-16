@@ -267,46 +267,13 @@ async def op_cancel(update: Update, context):
 # ================================================================ /users
 
 async def users(update: Update, context) -> None:
+    """/users : un bouton par personne → sa fiche (handlers/user_card.py), inscriptions à valider en bas."""
     if not await _guard_command(update):
         return
-    all_users = await db.list_users()
-    on_site = defaultdict(int)
-    for c in await db.list_franchise_cancelled_on_site():
-        on_site[c["franchise_id"]] += 1
+    from bot.handlers import user_card
 
-    def status_label(u: dict) -> str:
-        return "⛔ banni" if u["status"] == "banned" else "actif"
-
-    def sort_key(u: dict):
-        name = u.get("display_name") or ""
-        digits = "".join(ch for ch in name if ch.isdigit())
-        return (int(digits) if digits else 10_000, name)
-
-    franchises, livreurs = [], []
-    for u in sorted((u for u in all_users if u["role"] == "franchise" and u["status"] != "pending"), key=sort_key):
-        line = f"{texts.user_who(u)} — {status_label(u)}"
-        if u["status"] != "banned" and on_site[u["id"]]:
-            line += f" — {texts.plural(on_site[u['id']], 'annulation')} sur place"
-        franchises.append(line)
-    for u in sorted((u for u in all_users if u["role"] == "livreur" and u["status"] != "pending"), key=sort_key):
-        if u["status"] == "banned":
-            livreurs.append(f"{texts.user_who(u)} — ⛔ banni")
-        else:
-            duty = "en service" if u.get("on_duty") else "pause"
-            n = u.get("cancel_count") or 0
-            livreurs.append(f"{texts.user_who(u)} — actif · {duty} — {n} annulation{'s' if n > 1 else ''}")
-    ravitailleurs = [f"{texts.user_who(u)} — {status_label(u)}"
-                     for u in sorted((u for u in all_users if u["role"] == "ravitailleur" and u["status"] != "pending"),
-                                     key=sort_key)]
-    pending_users = [u for u in all_users if u["status"] == "pending" and u["role"] != "dispatch"]
-    pending = []
-    for u in pending_users:
-        line = f"{texts.ROLE_LABEL[u['role']]} — {texts.esc(u.get('real_name') or '(nom pas encore donné)')}"
-        if u.get("telegram_username"):
-            line += f" (@{texts.esc(u['telegram_username'])})"
-        pending.append(line)
-    await messaging.reply(update, texts.users_list(franchises, livreurs, pending, ravitailleurs),
-                          keyboards.pending_users(pending_users))
+    text, markup = await user_card.list_view()
+    await messaging.reply(update, text, markup)
 
 
 # ================================================================ /bannir (ex-/exclure), /reactiver
@@ -683,6 +650,22 @@ async def livreurs(update: Update, context) -> None:
     await messaging.reply(update, text, markup)
 
 
+async def set_duty(context, admin: dict, livreur: dict, on: bool) -> str:
+    """Un admin met un livreur en service (on) ou en pause ; le livreur est prévenu."""
+    if on:
+        await db.update_user(livreur["id"], {"on_duty": True, "duty_forced": True})
+        await db.log_event("livreur_on_duty", user_id=livreur["id"], payload={"by": admin["id"]})
+        await messaging.send(context.bot, livreur, texts.duty_on_by_admin(admin))
+        from bot.services import broadcast
+
+        await broadcast.kick_pending(context)
+        return f"{livreur['display_name']} en service"
+    await db.update_user(livreur["id"], {"on_duty": False, "soon_free": False, "duty_forced": False})
+    await db.log_event("livreur_pause", user_id=livreur["id"], payload={"by": admin["id"]})
+    await messaging.send(context.bot, livreur, texts.duty_off_by_admin(admin))
+    return f"{livreur['display_name']} en pause"
+
+
 @common.callback
 async def duty(update: Update, context):
     """duty_on:<livreur> / duty_off:<livreur> : un admin met un livreur en service ou en pause."""
@@ -693,19 +676,7 @@ async def duty(update: Update, context):
     livreur = await db.get_user(livreur_id)
     if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
         return texts.ALREADY_HANDLED, True
-    if prefix == "duty_on":
-        await db.update_user(livreur["id"], {"on_duty": True, "duty_forced": True})
-        await db.log_event("livreur_on_duty", user_id=livreur["id"], payload={"by": admin["id"]})
-        await messaging.send(context.bot, livreur, texts.duty_on_by_admin(admin))
-        from bot.services import broadcast
-
-        await broadcast.kick_pending(context)
-        answer = f"{livreur['display_name']} en service"
-    else:
-        await db.update_user(livreur["id"], {"on_duty": False, "soon_free": False, "duty_forced": False})
-        await db.log_event("livreur_pause", user_id=livreur["id"], payload={"by": admin["id"]})
-        await messaging.send(context.bot, livreur, texts.duty_off_by_admin(admin))
-        answer = f"{livreur['display_name']} en pause"
+    answer = await set_duty(context, admin, livreur, prefix == "duty_on")
     text, markup = await _livreurs_view()
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id, text, markup)
     return answer

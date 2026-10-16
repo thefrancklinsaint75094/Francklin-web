@@ -429,6 +429,15 @@ Le dispatch **et les franchisés** ont les pleins pouvoirs :
 
 Base créée avant cette version : exécuter une fois `sql/migrations/004_duty_forced.sql`.
 
+### La fiche utilisateur (/users)
+
+`/users` garde la liste détaillée par rôle et ajoute **un bouton par personne**. Sa fiche montre nom, prénom
+(livreurs), rôle, statut, nom donné à l'inscription, @pseudo, service et moyen de déplacement, et l'activité de
+la nuit (courses livrées, total, en cours). Boutons : **✏️ Nom** (ou **🏷 Nom de feuille** pour livreurs et
+ravitailleurs) · **🙂 Prénom** · **🔄 Rôle** · **🟢 En service / ⏸ Pause** · **📍 Position** · **⛔ Bannir /
+✅ Réactiver** · **🗑 Supprimer** · **↩️ Liste**. Un admin ne modifie pas sa propre fiche. Changer de rôle : un
+livreur quitte le service (ses courses repartent aux autres), la personne reçoit son nouveau menu.
+
 ### Le menu du livreur (gros boutons, rien à taper)
 
 Dès sa validation, le livreur a un menu de gros boutons en bas de l'écran (clavier Telegram) :

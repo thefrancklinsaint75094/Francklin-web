@@ -1022,7 +1022,8 @@ def plural(n: int, word: str) -> str:
 
 def users_list(franchises: list[str], livreurs: list[str], pending: list[str],
                ravitailleurs: list[str] | None = None) -> str:
-    lines = ["👥 Utilisateurs", "", "<b>Franchisés</b>"]
+    lines = ["👥 Utilisateurs — touche une personne pour ouvrir sa fiche (nom, rôle, service, accès…)", "",
+             "<b>Franchisés</b>"]
     lines += franchises or ["—"]
     lines += ["", "<b>Livreurs</b>"]
     lines += livreurs or ["—"]
@@ -2089,4 +2090,60 @@ def address_for_franchise(course: dict, old: str, by: dict) -> str:
 def d_address_changed(course: dict, old: str, by: dict) -> str:
     return (f"📍 #{course['id']} — nouvelle adresse (par {esc(by.get('display_name') or '?')}) : "
             f"<b>{esc(course['address'])}</b> (au lieu de {esc(old)})")
+
+
+# ================================================================ fiche utilisateur (/users)
+
+USER_SELF = "C'est ton propre compte : demande à un autre admin."
+USER_NAME_INVALID = "Nom trop court ou trop long (2 à 40 caractères). Réécris-le."
+USER_STATUS_LABEL = {"active": "✅ actif", "banned": "⛔ banni", "pending": "⏳ en attente de validation",
+                     "deleted": "🗑 supprimé"}
+
+
+def user_card(user: dict, prenom: str | None, activity: dict) -> str:
+    role = user["role"]
+    lines = [f"👤 <b>{esc(user.get('display_name') or ROLE_LABEL.get(role, role))}</b>"]
+    if role == "livreur":
+        lines.append(f"Prénom : {esc(prenom) if prenom else '—'}")
+    lines += [f"Rôle : {ROLE_LABEL.get(role, role)}", f"Statut : {USER_STATUS_LABEL.get(user['status'], user['status'])}"]
+    if user.get("real_name"):
+        lines.append(f"Nom à l'inscription : {esc(user['real_name'])}")
+    if user.get("telegram_username"):
+        lines.append(f"Telegram : @{esc(user['telegram_username'])}")
+    if role == "livreur" and user["status"] == "active":
+        from bot.services import transport
+
+        duty = "🟢 en service" if user.get("on_duty") else "⏸ en pause"
+        mode = transport.LABEL.get(user.get("transport_mode") or "", "non précisé")
+        lines.append(f"Service : {duty} · {mode}")
+        n = user.get("cancel_count") or 0
+        if n:
+            lines.append(f"Annulations : {n}")
+    if role in ("livreur", "franchise"):
+        what = "livrée" if role == "livreur" else "livrée pour lui"
+        done = activity.get("delivered") or 0
+        night = f"{plural(done, 'course')} {what}{'s' if done > 1 and role == 'livreur' else ''}"
+        if done:
+            night += f" — {eur(activity.get('total') or 0)}"
+        if activity.get("ongoing"):
+            night += f" · {activity['ongoing']} en cours"
+        lines += ["", f"Cette nuit : {night}"]
+    return "\n".join(lines)
+
+
+def user_edit_ask(user: dict, field: str, prenom: str | None) -> str:
+    who = esc(user.get("display_name") or "?")
+    if field == "prenom":
+        now = f" (actuel : {esc(prenom)})" if prenom else ""
+        return f"🙂 Prénom de {who}{now} : écris-le (ou « - » pour l'enlever)."
+    return f"✏️ Nouveau nom pour {who} : écris-le."
+
+
+def user_role_ask(user: dict) -> str:
+    return (f"🔄 <b>Rôle de {esc(user.get('display_name') or '?')}</b> (actuellement {ROLE_LABEL.get(user['role'])})\n"
+            "Un livreur qui change de rôle quitte le service ; ses courses en cours repartent aux autres livreurs.")
+
+
+def role_changed_notice(role: str) -> str:
+    return f"🔄 Ton rôle a changé : tu es maintenant <b>{ROLE_LABEL.get(role, role)}</b>."
 
