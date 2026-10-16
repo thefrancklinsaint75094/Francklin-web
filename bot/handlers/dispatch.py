@@ -194,10 +194,10 @@ async def encours(update: Update, context) -> None:
     for c in assigned:
         per_livreur[c["livreur_id"]] += 1
     unknown = {"display_name": "?"}
-    pending_lines = [texts.encours_pending_line(c, users.get(c["franchise_id"], unknown)) for c in pending]
+    pending_lines = [texts.encours_pending_line(c) for c in pending]
     assigned_lines = [
         texts.encours_assigned_line(
-            c, users.get(c["franchise_id"], unknown), users.get(c["livreur_id"], unknown),
+            c, users.get(c["livreur_id"], unknown),
             minutes_since(parse_ts(c["assigned_at"])), per_livreur[c["livreur_id"]] >= 2,
         )
         for c in assigned

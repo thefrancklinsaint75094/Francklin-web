@@ -732,3 +732,8 @@ simple qui respecte le mur de confidentialité (§12).
      nuit — `night` choisie ou, sinon, date de création —, cash remis, transferts) et « reste d'avant » = total −
      mouvements du jour. Pas de changement du script Google à redéployer. Une saisie faite à la main dans la
      feuille pour aujourd'hui compte dans « reste d'avant ».
+
+169. **Adresses en cours : les produits, pas le franchisé** (l'exploitant : « le nom des franchisés… aucun
+     intérêt ; je préfère voir quels produits sont en cours de vente »). Appli Dispatch (Sur la route, Toutes les
+     livraisons en cours, cartes de courses) et `/encours` : le nom du franchisé est remplacé par les produits
+     de la commande (🛍). Les franchisés gardent « ⭐ ta commande » / « ⭐ Les miennes » pour reconnaître les leurs.
