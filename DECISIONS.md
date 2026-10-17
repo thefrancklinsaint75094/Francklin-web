@@ -738,7 +738,6 @@ simple qui respecte le mur de confidentialité (§12).
      livraisons en cours, cartes de courses) et `/encours` : le nom du franchisé est remplacé par les produits
      de la commande (🛍). Les franchisés gardent « ⭐ ta commande » / « ⭐ Les miennes » pour reconnaître les leurs.
 
-
 170. **Barres des tableaux au jour le jour** (l'exploitant : « lundi reste fixe sur lundi, mardi prend en compte
      lundi et se fixe sur mardi… » ; choix : un bloc par onglet du jour, recalculé si on corrige un jour passé,
      stock et argent des livreurs, SOLDES gardé). Nouvel onglet JOURS (Rechargement) en cascade : chaque jour =
