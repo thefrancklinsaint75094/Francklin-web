@@ -735,6 +735,24 @@ bot, depuis le départ) + 💰 ce que tu lui as donné − 🧾 charges − 📦
 - Le ravitailleur voit son solde et le détail dans son appli (onglet 💶), et peut noter une charge (le dispatch est
   prévenu).
 
+### Notifications des livreurs, sonnerie et raccourci (appli « Courses »)
+
+- **Carte « NOUVELLE COURSE »** : la 1re ligne (lisible sur l'écran verrouillé) donne le quartier et le prix ;
+  boutons **✅ JE LA PRENDS** et **📱 OUVRIR** (ouvre la course dans l'appli « Mes courses »).
+- **Seuls les messages importants sonnent** chez les livreurs (nouvelle course, relance, course retirée / modifiée /
+  annulée, heure ou adresse changée, message du franchisé ou du dispatch, mise en service par le dispatch, alertes) ;
+  le reste arrive sans bruit (`messaging.send(..., ring=True)`). Leur sonnerie dédiée veut donc dire « course ».
+- **Relance** : course pas prise au bout de `RELANCE_SECONDS` (45 s, 0 : jamais), 2e notification qui sonne chez
+  les livreurs encore en service de la vague, effacée dès que la course part.
+- **Appli ouverte** : une nouvelle course s'affiche en plein écran, sonne et vibre (30 s max) ; le son se débloque
+  au premier appui (🟢 JE SUIS PRÊT, règle d'iPhone).
+- **Guide** (`/installer`, bouton dans l'appli livreur, ou « Envoyer le guide à tous les livreurs » dans l'admin) :
+  icône scooter (`bot/static/media/icone-courses.png`), sonnerie à enregistrer pour les notifications
+  (`sonnerie-course.mp3`, 2,7 s), raccourci sur l'écran d'accueil (Raccourcis sur iPhone, bouton Telegram sur
+  Android) et réglages iPhone (bannières persistantes, Concentration).
+- **Lien direct** : `https://t.me/<bot>?startapp` ouvre l'appli du bot (BotFather → Bot Settings → Configure Mini
+  App → adresse `…/go`), qui envoie chacun vers la sienne (dispatch, livreur, ravitailleur). `APP_LINK` le remplace.
+
 ### Dispatch selon le stock
 
 Avec `STOCK_ALERTS=1`, une course part **d'abord aux livreurs qui ont tout en stock** (stock de la feuille +

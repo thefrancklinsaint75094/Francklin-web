@@ -296,9 +296,16 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
         text = " ".join(str(body.get("text") or "").split())[:1000]
         if not target or target["status"] != "active" or not text:
             return {"ok": False, "message": "Message vide ou destinataire inconnu."}
-        await messaging.send(context.bot, target, texts.admin_message(admin, text))
+        await messaging.send(context.bot, target, texts.admin_message(admin, text), ring=True)
         await db.log_event("admin_message", user_id=admin["id"], payload={"to": target["id"]})
         return {"ok": True, "message": f"Message envoyé à {target.get('display_name')}."}
+    if kind == "install_guide_all":                   # guide sonnerie + raccourci à tous les livreurs
+        if not common.is_dispatch(admin):
+            return {"ok": False, "message": texts.DISPATCH_ONLY}
+        from bot.services import install_guide
+
+        n = await install_guide.send_all(context.bot)
+        return {"ok": True, "message": f"Guide envoyé à {n} livreur{'s' if n > 1 else ''}."}
     if kind in RAVI_ACTIONS:
         return await _ravi(context, admin, kind, body)
     if kind == "notify_level":
@@ -637,6 +644,20 @@ async def _index(request: web.Request) -> web.Response:
                         headers={"Cache-Control": "no-store"})
 
 
+async def _go(request: web.Request) -> web.Response:
+    """Lien direct de l'appli (raccourci sur l'écran d'accueil) : renvoie chacun vers la sienne."""
+    return web.Response(text=(Path(__file__).parent / "static" / "go.html").read_text(encoding="utf-8"),
+                        content_type="text/html", headers={"Cache-Control": "no-store"})
+
+
+async def _whoami(request: web.Request) -> web.Response:
+    tg = check_init_data(request.headers.get("X-Init-Data", ""), config.get().telegram_bot_token)
+    user = await db.get_user_by_tg(int(tg["id"])) if tg and tg.get("id") else None
+    if not user or user["status"] != "active":
+        return web.json_response({"error": "Ouvre l'appli depuis Telegram, avec un compte validé."}, status=403)
+    return web.json_response({"role": "admin" if common.is_admin(user) else user["role"]})
+
+
 async def _health(request: web.Request) -> web.Response:
     return web.Response(text="ok")
 
@@ -749,6 +770,9 @@ def build(ptb_app) -> web.Application:
     web_livreur.routes(app)
     web_ravi.routes(app)
     app.router.add_get("/health", _health)
+    app.router.add_get("/go", _go)
+    app.router.add_post("/api/whoami", _whoami)
+    app.router.add_static("/media", Path(__file__).parent / "static" / "media")
     app.router.add_post("/api/board", _board)
     app.router.add_post("/api/feed", _feed)
     app.router.add_post("/api/section", _section)

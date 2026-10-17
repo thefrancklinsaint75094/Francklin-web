@@ -384,18 +384,20 @@ LIVREUR_CANCEL_CONFIRM = "Tu es sûr ? Ça sera compté dans tes annulations."
 
 
 def proposal(course: dict, distance_label: str | None) -> str:
-    where = f"📍 {esc(course['district'])}"
+    """Première ligne lisible sur l'écran verrouillé : c'est elle que montre la notification."""
+    lines = [f"🔔 <b>NOUVELLE COURSE</b> · {esc(course['district'])} · {eur(course['price'])}"]
     if distance_label:
-        where += f" · à {distance_label} de toi"
-    lines = [
-        f"🆕 Course #{course['id']}",
-        where,
-        f"🍾 {esc(course['products'])}",
-        f"💶 {eur(course['price'])}",
-    ]
+        lines.append(f"📍 à {distance_label} de toi")
+    lines.append(f"🍾 {esc(course['products'])}")
     if course.get("requested_time"):
         lines.append(f"🕐 {esc(course['requested_time'])}")
+    lines.append(f"Course #{course['id']}")
     return "\n".join(lines)
+
+
+def proposal_relance(course: dict) -> str:
+    return (f"⏰ <b>Toujours dispo</b> · {esc(course['district'])} · {eur(course['price'])}\n"
+            f"Course #{course['id']} — personne ne l'a encore prise.")
 
 
 def proposal_taken(course_id: int) -> str:
@@ -2276,3 +2278,36 @@ def d_ravi_charge(name: str, amount: float, motif: str | None, balance: float) -
 
 def cloture_ravi(lines: list[str]) -> str:
     return ("\n\n💼 Reporté chez les ravitailleurs :\n" + "\n".join(f"• {esc(x)}" for x in lines)) if lines else ""
+
+
+# ================================================================ appli « Courses » : sonnerie, raccourci, réglages
+
+GUIDE_ICON = "🛵 L'icône de ton appli « Courses » — appui long → <b>Enregistrer</b> (dans Photos)."
+GUIDE_SOUND = "🔔 La sonnerie des courses — appui long → <b>Enregistrer pour les notifications</b>."
+GUIDE_SENT = "📲 Guide envoyé dans le chat Telegram."
+
+
+def install_guide(link: str) -> str:
+    return "\n".join([
+        "📲 <b>Ton appli « Courses » : sonnerie et raccourci</b>",
+        "",
+        "<b>1. La sonnerie des courses</b> (une seule fois)",
+        "• Appui long sur le son ci-dessus → « Enregistrer pour les notifications ».",
+        "• Dans cette conversation, touche le nom du bot en haut → Notifications → Son → « Nouvelle course ».",
+        "Seules les courses et les messages importants sonnent ; le reste arrive sans bruit.",
+        "",
+        "<b>2. Le raccourci sur l'écran d'accueil</b>",
+        "<b>iPhone</b> :",
+        "• Enregistre l'image du scooter ci-dessus (appui long → Enregistrer).",
+        "• Ouvre l'appli <b>Raccourcis</b> → <b>＋</b> → Ajouter une action → « <b>Ouvrir les URL</b> ».",
+        f"• Colle ce lien : {esc(link)}",
+        "• Touche le nom du raccourci en haut → « <b>Sur l'écran d'accueil</b> » → nom : <b>Courses</b> → "
+        "touche l'icône → Choisir une photo → le scooter → <b>Ajouter</b>.",
+        "<b>Android</b> : ouvre l'appli Mes courses → ☰ Plus → « 📲 Ajouter à l'écran d'accueil ».",
+        "",
+        "<b>3. Ne rater aucune course (iPhone)</b>",
+        "• Réglages → Notifications → Telegram : Autoriser ✅, Sons ✅, style des bannières : <b>Persistant</b> "
+        "(la notification reste tant que tu ne l'as pas touchée).",
+        "• Réglages → Concentration (Ne pas déranger, Sommeil…) → Apps autorisées → ajoute <b>Telegram</b>.",
+        "• Pendant le service, laisse le bouton silencieux (sur le côté) désactivé, sinon ça vibre seulement.",
+    ])

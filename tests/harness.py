@@ -136,6 +136,10 @@ class FakeTelegram(BaseRequest):
             data["venue"] = {"location": {"latitude": float(params["latitude"]), "longitude": float(params["longitude"])},
                              "title": params["title"], "address": params["address"]}
             return self._ok(data)
+        if api in ("sendPhoto", "sendAudio"):
+            m = Msg(chat_id, next(self._ids), f"[{'photo' if api == 'sendPhoto' else 'son'}] {params.get('caption', '')}")
+            self.messages[(chat_id, m.message_id)] = m
+            return self._ok(self._message_json(m))
         if api == "sendDocument":
             m = Msg(chat_id, next(self._ids), "[document]")
             self.messages[(chat_id, m.message_id)] = m

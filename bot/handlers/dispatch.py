@@ -768,14 +768,14 @@ async def set_duty(context, admin: dict, livreur: dict, on: bool) -> str:
     if on:
         await db.update_user(livreur["id"], {"on_duty": True, "duty_forced": True})
         await db.log_event("livreur_on_duty", user_id=livreur["id"], payload={"by": admin["id"]})
-        await messaging.send(context.bot, livreur, texts.duty_on_by_admin(admin))
+        await messaging.send(context.bot, livreur, texts.duty_on_by_admin(admin), ring=True)
         from bot.services import broadcast
 
         await broadcast.kick_pending(context)
         return f"{livreur['display_name']} en service"
     await db.update_user(livreur["id"], {"on_duty": False, "soon_free": False, "duty_forced": False})
     await db.log_event("livreur_pause", user_id=livreur["id"], payload={"by": admin["id"]})
-    await messaging.send(context.bot, livreur, texts.duty_off_by_admin(admin))
+    await messaging.send(context.bot, livreur, texts.duty_off_by_admin(admin), ring=True)
     return f"{livreur['display_name']} en pause"
 
 

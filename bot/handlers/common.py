@@ -45,7 +45,7 @@ COMMANDS = {
     "livreur": [("dispo", "Me mettre en service"), ("pause", "Me retirer temporairement"),
                 ("app", "📱 Mon appli Mes courses"), ("macourse", "Revoir ma course en cours"), ("depense", "Noter une dépense"),
                 ("macaisse", "Mon cash à remettre"), ("gouts", "Mes goûts (ce qu'il me reste)"),
-                ("close", "Fin de service : mon récap")],
+                ("close", "Fin de service : mon récap"), ("installer", "📲 Sonnerie et raccourci de l'appli")],
     "dispatch": _ADMIN_COMMANDS + [("recap", "Totaux par livreur")],
     "ravitailleur": [("app", "📱 Mon appli Ravitaillement"), ("recharge", "Charger / reprendre un livreur, cash"), ("ravi", "Rechargement en texte"), ("swipe", "Transfert entre livreurs"), ("stock", "Stock des box et des livreurs"),
                      ("caisse", "Cash à récupérer chez les livreurs"), ("gouts", "Goûts chez les livreurs")],

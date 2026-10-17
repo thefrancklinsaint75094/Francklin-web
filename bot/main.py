@@ -153,6 +153,7 @@ def register_handlers(app: Application) -> None:
     cmd("depense", cash.depense)
     cmd("caisse", cash.caisse)
     cmd("macaisse", cash.macaisse)
+    cmd("installer", livreur.installer)
     cmd("reset", cloture.cloture)
     cmd("close", close_day.close)
     cmd("ventes", sales.ventes)

@@ -157,7 +157,7 @@ async def approve_user(context, user: dict) -> dict:
         fields["display_name"] = sheet_name or f"{texts.ROLE_LABEL[user['role']]} {n}"
     user = await db.update_user(user["id"], fields)
     await common.set_commands(context.bot, user)
-    await messaging.send(context.bot, user, texts.welcome(user["role"]), _menu(user))
+    await messaging.send(context.bot, user, texts.welcome(user["role"]), _menu(user), ring=True)
     await db.log_event("user_approved", user_id=user["id"], payload={"display_name": user["display_name"]})
     return user
 

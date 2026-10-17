@@ -52,7 +52,7 @@ async def stale_positions(context) -> None:
         if at is None or at < limit:
             await db.update_user(lv["id"], {"on_duty": False, "soon_free": False})
             await db.log_event("position_stale", user_id=lv["id"])
-            await messaging.send(context.bot, lv, texts.POSITION_LOST)
+            await messaging.send(context.bot, lv, texts.POSITION_LOST, ring=True)
             await messaging.notify_dispatch(context.bot, texts.d_position_lost(lv, cfg.position_stale_minutes), important=True)
         elif 0 < cfg.position_alert_minutes < cfg.position_stale_minutes and at < alert:
             key = (lv["id"], pos["updated_at"])
@@ -89,7 +89,7 @@ async def stuck_courses(context) -> None:
         if livreur is None:
             continue
         await db.log_event("stuck_alert", course["id"], livreur["id"], {"assigned_at": course["assigned_at"]})
-        await messaging.send(context.bot, livreur, texts.stuck_for_livreur(course["id"]))
+        await messaging.send(context.bot, livreur, texts.stuck_for_livreur(course["id"]), ring=True)
         await messaging.notify_dispatch(context.bot, texts.d_stuck(course["id"], minutes, livreur), important=True)
 
 

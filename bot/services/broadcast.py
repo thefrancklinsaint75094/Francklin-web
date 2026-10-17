@@ -158,7 +158,7 @@ async def run_wave(context, course_id: int, advance: bool = False) -> bool:
                 continue
             msg = await messaging.send(
                 context.bot, livreur, texts.proposal(course, format_distance(dist) if dist is not None else None),
-                keyboards.proposal(course_id)
+                keyboards.proposal(course_id), ring=True,
             )
             if msg is not None:
                 await db.set_broadcast_message(course_id, livreur["id"], msg.message_id)
@@ -166,7 +166,55 @@ async def run_wave(context, course_id: int, advance: bool = False) -> bool:
         await db.log_event("course_broadcast", course_id, payload={"round": round_, "livreurs": solicited})
         await lifecycle.clear_no_livreur(context, course)
         schedule_wave(context.job_queue, course_id, cfg.broadcast_wave_seconds)
+        if solicited:
+            schedule_relance(context.job_queue, course_id, round_)
         return True
+
+
+# ---------------------------------------------------------------- relance (2e notification)
+
+_relances: dict[int, list[tuple[int, int]]] = defaultdict(list)     # course → [(chat, message)]
+
+
+def schedule_relance(job_queue, course_id: int, round_: int) -> None:
+    delay = config.get().relance_seconds
+    if job_queue is None or delay <= 0:
+        return
+    job_queue.run_once(_relance_job, when=delay, data=(course_id, round_), name=f"relance:{course_id}")
+
+
+async def _relance_job(context) -> None:
+    course_id, round_ = context.job.data
+    await relance(context, course_id, round_)
+
+
+async def relance(context, course_id: int, round_: int) -> int:
+    """Course pas encore prise : les livreurs de cette vague, encore en service, reçoivent une 2e notification
+    qui sonne (effacée dès que la course part). Renvoie le nombre de relances envoyées."""
+    course = await db.get_course(course_id)
+    if not course or course["status"] != "pending" or course["broadcast_round"] != round_:
+        return 0
+    broadcasts = [b for b in await db.list_broadcasts(course_id) if b["round"] == round_]
+    users = await db.get_users(b["livreur_id"] for b in broadcasts)
+    sent = 0
+    for b in broadcasts:
+        lv = users.get(b["livreur_id"])
+        if not lv or lv["status"] != "active" or not lv.get("on_duty"):
+            continue
+        msg = await messaging.send(context.bot, lv, texts.proposal_relance(course), keyboards.proposal(course_id),
+                                   ring=True)
+        if msg is not None:
+            _relances[course_id].append((lv["telegram_id"], msg.message_id))
+            sent += 1
+    return sent
+
+
+async def clear_relances(bot, course_id: int) -> None:
+    for chat_id, message_id in _relances.pop(course_id, []):
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:  # noqa: BLE001 — déjà effacée, trop vieille : sans importance
+            pass
 
 
 def _round_has_sends(course: dict, broadcasts: list[dict]) -> bool:
@@ -227,7 +275,8 @@ async def pick_timeout(context) -> None:
 
 
 async def close_proposals(context, course_id: int, text: str, except_livreur: str | None = None) -> None:
-    """Retire le bouton « Je prends » chez tous les livreurs sollicités."""
+    """Retire le bouton « Je prends » chez tous les livreurs sollicités (et efface les relances)."""
+    await clear_relances(context.bot, course_id)
     broadcasts = await db.list_broadcasts(course_id)
     users = await db.get_users(b["livreur_id"] for b in broadcasts)
     for b in broadcasts:

@@ -78,7 +78,7 @@ async def relay_text(update: Update, context, user: dict, course_id: int | None,
     row = await db.add_message(course["id"], user["id"], content)
     sent = await messaging.send(
         context.bot, other, texts.relayed_message(course, user["display_name"], content),
-        keyboards.relay_reply(course["id"]),
+        keyboards.relay_reply(course["id"]), ring=True,
     )
     if sent is not None:
         await db.set_message_relayed_id(row["id"], sent.message_id)

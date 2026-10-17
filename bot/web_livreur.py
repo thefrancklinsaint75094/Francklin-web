@@ -164,6 +164,11 @@ async def act(context, user: dict, body: dict) -> dict:
         await admin_web.with_capture(context, user, "/dispo", lambda u: livreur_h.dispo(u, context))
         user = await db.get_user(user["id"]) or user
         return {"ok": True, "message": "C'est parti ! 🟢" if user.get("on_duty") else "Partage ta position 📍"}
+    if kind == "guide":                                # sonnerie + raccourci, envoyés dans le chat
+        from bot.services import install_guide
+
+        ok = await install_guide.send(context.bot, user)
+        return {"ok": ok, "message": texts.GUIDE_SENT if ok else texts.GENERIC_ERROR}
     if kind == "transport" and body.get("value") in transport.MODES.values():
         await db.update_user(user["id"], {"transport_mode": body["value"]})
         return {"ok": True, "message": "C'est noté ✅"}
