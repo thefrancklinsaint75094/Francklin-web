@@ -762,3 +762,11 @@ simple qui respecte le mur de confidentialité (§12).
      désormais toujours dans Lundi ; les lignes de la semaine en cours ont été déplacées de Dimanche à Lundi à la
      demande de l'exploitant.
 
+173. **Notifications « pro » des livreurs sans passer par les stores** (l'exploitant : « des vraies notifications
+     comme Uber Eats » ; la plupart des livreurs sont sur iPhone, pas d'App Store). Une appli web installable ne
+     ferait pas mieux sur iPhone (ni sonnerie ni boutons) : on reste sur Telegram, qui permet une sonnerie
+     personnalisée par conversation. Pour qu'elle veuille dire « course », les messages secondaires aux livreurs
+     partent sans bruit. Carte de course lisible sur l'écran verrouillé, relance à 45 s, écran plein qui sonne
+     quand l'appli est ouverte, raccourci sur l'écran d'accueil (icône scooter choisie par l'exploitant) via le lien
+     direct de l'appli. Limite assumée : sur iPhone, c'est un bandeau (persistant), jamais un écran d'appel.
+

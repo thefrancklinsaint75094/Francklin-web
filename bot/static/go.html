@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ouverture…</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font:600 18px -apple-system,Helvetica,Arial,sans-serif;
+background:var(--tg-theme-bg-color,#fff);color:var(--tg-theme-text-color,#111)}</style></head>
+<body><div id="msg">⏳ Ouverture…</div>
+<script>
+"use strict";
+// Lien direct (raccourci de l'écran d'accueil, t.me/…?startapp) : chacun arrive sur son appli.
+const tg = window.Telegram && window.Telegram.WebApp;
+(async () => {
+  if (tg) { tg.ready(); tg.expand(); }
+  try {
+    const r = await fetch("/api/whoami", { method: "POST", headers: { "X-Init-Data": tg ? tg.initData : "" } });
+    const me = await r.json();
+    if (!r.ok) throw new Error(me.error || "Accès refusé");
+    const start = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || "";
+    const course = /^course_(\d+)$/.exec(start);
+    const path = me.role === "livreur" ? "/livreur" + (course ? "?course=" + course[1] : "")
+      : me.role === "ravitailleur" ? "/ravi" : "/";
+    location.replace(path + location.hash);
+  } catch (e) { document.getElementById("msg").textContent = "⚠️ " + e.message; }
+})();
+</script></body></html>

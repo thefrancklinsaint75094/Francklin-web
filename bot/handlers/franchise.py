@@ -374,7 +374,7 @@ async def send_to_livreur(context, user: dict, course: dict, livreur: dict, mess
     await db.log_event("course_picked", won["id"], livreur["id"], {"by": user["id"], "busy": len(ongoing)})
     if ongoing:
         current = min(ongoing, key=lambda c: (c.get("assigned_at") or "", c["id"]))
-        await messaging.send(context.bot, livreur, texts.queued_for_livreur(won, current))
+        await messaging.send(context.bot, livreur, texts.queued_for_livreur(won, current), ring=True)
         franchise = await db.get_user(won["franchise_id"])
         if franchise:
             await messaging.send(context.bot, franchise, texts.livreur_busy_for_franchise(won, livreur, current))
@@ -577,7 +577,7 @@ async def edit_decision(update: Update, context):
     await messaging.edit(context.bot, chat_id, msg_id, text)
     livreur = await db.get_user(updated["livreur_id"]) if updated.get("livreur_id") else None
     if livreur:
-        await messaging.send(context.bot, livreur, text)
+        await messaging.send(context.bot, livreur, text, ring=True)
         if accepted and updated["status"] == "assigned":
             franchise = await db.get_user(updated["franchise_id"]) or {}
             await messaging.edit(context.bot, livreur["telegram_id"], updated.get("livreur_message_id"),

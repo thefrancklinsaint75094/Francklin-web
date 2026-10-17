@@ -44,7 +44,7 @@ async def _expected(livreur: dict) -> dict[str, int] | None:
 
 async def _prompt(bot, livreur: dict, decl: dict, reminder: bool = False) -> None:
     sent = await messaging.send(bot, livreur, texts.declare_prompt(decl["kind"], decl.get("expected"), reminder),
-                                keyboards.declare_prompt(decl["id"], decl.get("expected") is not None))
+                                keyboards.declare_prompt(decl["id"], decl.get("expected") is not None), ring=True)
     await db.set_state(livreur["id"], STATE, {"id": decl["id"], "msg": sent.message_id if sent else None},
                        now_utc() + timedelta(hours=STATE_HOURS))
 

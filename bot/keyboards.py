@@ -90,7 +90,16 @@ def withdraw_confirm(course_id: int) -> M:
 
 
 def proposal(course_id: int) -> M:
-    return M([[B("✅ Je prends", callback_data=f"course_take:{course_id}")]])
+    """✅ JE LA PRENDS en un appui ; 📱 OUVRIR ouvre la course dans l'appli « Mes courses »."""
+    from telegram import WebAppInfo
+
+    from bot import config
+
+    rows = [[B("✅ JE LA PRENDS", callback_data=f"course_take:{course_id}")]]
+    url = config.get().webapp_url
+    if url:
+        rows.append([B("📱 OUVRIR", web_app=WebAppInfo(f"{url}/livreur?course={course_id}"))])
+    return M(rows)
 
 
 def livreur_course(course_id: int) -> M:

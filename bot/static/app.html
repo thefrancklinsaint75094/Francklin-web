@@ -776,6 +776,14 @@ function viewPlus() {
   wrap.append(el("div", { class: "muted small", style: "margin:0 16px" },
     d.me.notify_level === "tout" ? "Chaque avis arrive en message Telegram."
       : "Seuls les problèmes et ce qui attend une action arrivent en message. Tout le reste est dans 🔔 Activité."));
+  if (d.me.dispatch) {
+    wrap.append(el("div", { class: "h2" }, "📲 Appli des livreurs"));
+    wrap.append(el("div", { class: "list" }, el("div", { class: "card" },
+      el("button", { class: "cmd", onclick: () => doAction({ type: "install_guide_all" }, "Envoyer à tous les livreurs le guide : icône, sonnerie des courses, raccourci sur l'écran d'accueil ?") },
+        el("span", { style: "font-size:20px" }, "📲"),
+        el("span", { class: "grow" }, "Envoyer le guide à tous les livreurs", el("small", {}, "icône scooter, sonnerie des courses, raccourci iPhone / Android, réglages")),
+        el("span", { class: "muted" }, "›")))));
+  }
   d.chapters.forEach((ch) => {
     wrap.append(el("div", { class: "h2" }, ch.title));
     wrap.append(el("div", { class: "list" }, el("div", { class: "card" }, ch.items.map((it) =>

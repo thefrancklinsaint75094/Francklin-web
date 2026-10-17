@@ -78,9 +78,15 @@ async def _handle_blocked(bot, user: dict) -> None:
 
 
 async def send(bot, user: dict, text: str, markup: InlineKeyboardMarkup | None = None,
-               even_if_removed: bool = False, **kwargs) -> Message | None:
+               even_if_removed: bool = False, ring: bool | None = None, **kwargs) -> Message | None:
+    """ring : le téléphone sonne. Chez les livreurs, seuls les messages importants sonnent (nouvelle course,
+    course retirée ou modifiée, message, alerte) : leur sonnerie dédiée veut dire « course »."""
     if user.get("status") in REMOVED and not even_if_removed:
         return None                       # accès retiré : plus rien ne lui est envoyé
+    if ring is None:
+        ring = user.get("role") != "livreur"
+    if not ring:
+        kwargs.setdefault("disable_notification", True)
     try:
         sent = await bot.send_message(user["telegram_id"], names.decorate(text),
                                       reply_markup=names.decorate_markup(markup), **kwargs)

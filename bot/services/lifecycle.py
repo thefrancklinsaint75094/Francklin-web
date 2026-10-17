@@ -125,7 +125,7 @@ async def reassign(context, course: dict, livreur: dict, by: dict) -> dict | Non
     if old:
         await db.update_user(old["id"], {"soon_free": False})
         await messaging.edit_markup(context.bot, old["telegram_id"], course.get("livreur_message_id"))
-        await messaging.send(context.bot, old, texts.reassigned_away_for_livreur(course["id"]))
+        await messaging.send(context.bot, old, texts.reassigned_away_for_livreur(course["id"]), ring=True)
     await db.log_event("course_reassigned", course["id"], livreur["id"], {"from": old_id, "by": by["id"]})
     await after_assignment(context, updated, livreur, None)
     if old:
@@ -210,7 +210,7 @@ async def remind_next(context, livreur: dict, done_id: int) -> None:
     nxt = min(others, key=lambda c: (c.get("assigned_at") or "", c["id"]))
     franchise = await db.get_user(nxt["franchise_id"]) or {}
     sent = await messaging.send(context.bot, livreur, texts.next_course_for_livreur(nxt, franchise),
-                                keyboards.livreur_course(nxt["id"]))
+                                keyboards.livreur_course(nxt["id"]), ring=True)
     fields = {"assigned_at": iso(now_utc())}
     if sent is not None:
         fields["livreur_message_id"] = sent.message_id
@@ -248,7 +248,7 @@ async def release(context, course: dict, reason: str) -> dict | None:
                                  sent_at=parse_ts(course.get("assigned_at")), user=livreur)
         elif reason == "dispatch":
             await messaging.edit_markup(context.bot, livreur["telegram_id"], course.get("livreur_message_id"))
-            await messaging.send(context.bot, livreur, texts.released_by_dispatch_for_livreur(course["id"]))
+            await messaging.send(context.bot, livreur, texts.released_by_dispatch_for_livreur(course["id"]), ring=True)
         else:  # ban : l'exclu reçoit uniquement « Ton accès a été retiré. »
             await messaging.edit_markup(context.bot, livreur["telegram_id"], course.get("livreur_message_id"))
 
@@ -312,7 +312,7 @@ async def cancel(context, course: dict, by: str) -> dict | None:
                     else texts.cancelled_by_franchise(course["id"]))
             await messaging.edit(context.bot, livreur["telegram_id"], course.get("livreur_message_id"), text,
                                  sent_at=parse_ts(course.get("assigned_at")), user=livreur, resend_if_old=False)
-            await messaging.send(context.bot, livreur, text)
+            await messaging.send(context.bot, livreur, text, ring=True)
     if by != "ban":
         await refresh_franchise_message(context, updated, livreur=livreur, franchise=franchise)
 

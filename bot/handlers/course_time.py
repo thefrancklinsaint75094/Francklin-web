@@ -72,7 +72,7 @@ async def apply(context, user: dict, course: dict, value: str | None) -> dict:
     franchise = await db.get_user(course["franchise_id"])
     livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
     if course["status"] == "assigned" and livreur:
-        await messaging.send(context.bot, livreur, texts.course_time_changed(course))
+        await messaging.send(context.bot, livreur, texts.course_time_changed(course), ring=True)
         await messaging.edit(context.bot, livreur["telegram_id"], course.get("livreur_message_id"),
                              texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"]),
                              user=livreur)

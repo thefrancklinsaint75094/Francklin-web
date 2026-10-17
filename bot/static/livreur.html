@@ -101,6 +101,16 @@ input, textarea { width: 100%; font: inherit; font-size: 20px; color: var(--text
 .toast.show { opacity: .96; }
 .result { white-space: pre-wrap; font-size: 16px; background: var(--soft); border-radius: 14px; padding: 14px; }
 .help li { margin: 8px 0; }
+.ring { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; justify-content: center; gap: 10px;
+  padding: 28px 22px; color: #fff; background: #15803d; animation: ringbg 1s ease-in-out infinite alternate; text-align: center; }
+.ring[hidden] { display: none; }
+@keyframes ringbg { from { background: #15803d; } to { background: #22c55e; } }
+.ring-l { font-size: 18px; font-weight: 900; letter-spacing: 1px; }
+.ring-d { font-size: 34px; font-weight: 900; line-height: 1.1; }
+.ring-p { font-size: 46px; font-weight: 900; }
+.ring-m { font-size: 18px; opacity: .95; }
+.ring .ring-go { background: #fff; color: #15803d; font-size: 24px; margin-top: 18px; }
+.ring-later { margin-top: 6px; color: #fff; font-size: 17px; font-weight: 700; opacity: .9; padding: 12px; }
 </style>
 </head>
 <body>
@@ -115,13 +125,15 @@ input, textarea { width: 100%; font: inherit; font-size: 20px; color: var(--text
 <div class="sheet-bg" id="sheet-bg"></div>
 <div class="sheet" id="sheet"><div class="grab"></div><div id="sheet-body"></div></div>
 <div class="toast" id="toast"></div>
+<div class="ring" id="ring" hidden></div>
 
 <script>
 "use strict";
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch (e) {} }
 const INIT = tg ? tg.initData : "";
-const S = { tab: "courses", d: null, cache: {}, busy: false, transport: null, fixing: null };
+const S = { tab: "courses", d: null, cache: {}, busy: false, transport: null, fixing: null, seen: null, ringId: null, home: null };
+const START_COURSE = new URLSearchParams(location.search).get("course");   // bouton 📱 OUVRIR d'une course
 const $ = (id) => document.getElementById(id);
 const nodes = (...k) => k.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false);
 function el(tag, attrs, ...kids) {
@@ -158,9 +170,73 @@ async function act(body, question) {
   } catch (e) { vibrate("error"); toast("Problème de connexion, réessaie."); return null; }
   finally { S.busy = false; }
 }
+// ------------------------------------------------------------------ nouvelle course : écran plein + sonnerie
+// Le son ne peut démarrer qu'après un premier appui sur l'écran (règle d'iPhone) : « JE SUIS PRÊT ».
+const SOUND = { ctx: null, timer: null, stopAt: 0 };
+function audioUnlock() {
+  try {
+    if (!SOUND.ctx) {
+      SOUND.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      SOUND.ctx.onstatechange = () => { if (S.d && !$("sheet").classList.contains("open")) render(); };
+    }
+    if (SOUND.ctx.state === "suspended") SOUND.ctx.resume();
+  } catch (e) {}
+}
+const soundOk = () => !!(SOUND.ctx && SOUND.ctx.state === "running");
+document.addEventListener("pointerdown", audioUnlock, { passive: true });
+function chime() {
+  const c = SOUND.ctx; if (!c || c.state !== "running") return;
+  const t0 = c.currentTime;
+  [1318.5, 1568, 2093].forEach((f, i) => {
+    const o = c.createOscillator(), g = c.createGain(), t = t0 + i * 0.19;
+    o.type = "sine"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.2);
+  });
+}
+function ringStart() {
+  ringStop(); SOUND.stopAt = Date.now() + 30000;
+  const beat = () => {
+    chime(); vibrate("warning");
+    try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
+    if (Date.now() > SOUND.stopAt) ringStop();
+  };
+  beat(); SOUND.timer = setInterval(beat, 1500);
+}
+function ringStop() { clearInterval(SOUND.timer); SOUND.timer = null; }
+function hideRing() { ringStop(); S.ringId = null; $("ring").hidden = true; }
+function showRing(p, quiet) {
+  S.ringId = p.id;
+  $("ring").replaceChildren(...nodes(
+    el("div", { class: "ring-l" }, "🔔 NOUVELLE COURSE"),
+    el("div", { class: "ring-d" }, p.district || ""),
+    el("div", { class: "ring-p" }, eur(p.price)),
+    p.km !== null ? el("div", { class: "ring-m" }, `📍 à ${p.km} km de toi`) : null,
+    el("div", { class: "ring-m" }, "🍾 " + (p.products || "")),
+    p.requested_time ? el("div", { class: "ring-m" }, "🕐 " + p.requested_time) : null,
+    el("button", { class: "big ring-go", onclick: async () => { hideRing(); await act({ type: "take", course_id: p.id }); } }, "✅ JE LA PRENDS"),
+    el("button", { class: "ring-later", onclick: hideRing }, "Plus tard")));
+  $("ring").hidden = false;
+  if (!quiet) ringStart();
+}
+function watchProposals() {
+  const ids = S.d.proposals.map((p) => p.id);
+  if (S.ringId && !ids.includes(S.ringId)) hideRing();          // prise par un autre ou retirée
+  if (S.seen === null) {                                        // 1re lecture : rien ne sonne
+    S.seen = new Set(ids);
+    const p = START_COURSE && S.d.proposals.find((x) => String(x.id) === START_COURSE);
+    if (p) showRing(p, true);
+    return;
+  }
+  const fresh = S.d.proposals.filter((p) => !S.seen.has(p.id));
+  ids.forEach((i) => S.seen.add(i));
+  if (fresh.length && !S.ringId) showRing(fresh[0], false);
+}
+
 async function load() {
   try { S.d = await api("/api/me/board"); }
   catch (e) { $("view").replaceChildren(el("div", { class: "card empty" }, el("div", { class: "e" }, "📶"), "Pas de connexion. Réessaie dans un instant.")); return; }
+  watchProposals();
   const me = S.d.me;
   $("hello").textContent = `Salut ${me.prenom || me.name} 👋`;
   $("state").textContent = me.on_duty ? "🟢 En service" : "⏸ En pause";
@@ -198,6 +274,10 @@ function viewCourses() {
   } else if (!me.position_ok) {
     out.push(positionCard());
   }
+  if (me.on_duty && !soundOk()) out.push(el("div", { class: "card blue" },
+    el("div", { class: "title" }, "🔊 Le son des courses"),
+    el("div", { class: "muted" }, "Appuie une fois : quand une course arrive et que l'appli est ouverte, ça sonne en grand."),
+    el("button", { class: "big go", onclick: () => { audioUnlock(); setTimeout(() => { chime(); render(); }, 150); } }, "🟢 JE SUIS PRÊT")));
   if (d.declaration) out.push(declarationCard(d.declaration));
   d.proposals.forEach((p) => out.push(el("div", { class: "card blue" },
     el("div", { class: "label" }, "🆕 Nouvelle course pour toi"),
@@ -419,14 +499,26 @@ function viewPlus() {
       el("button", { class: "big red-b", onclick: endNight }, "🏁 J'AI FINI MA SOIRÉE")),
     el("div", { class: "card" }, el("div", { class: "label" }, "🚗 Comment tu te déplaces"), transportTiles((v) => act({ type: "transport", value: v }))),
     positionCard(),
+    homeCard(),
     el("div", { class: "card" }, el("div", { class: "title" }, "❓ Comment ça marche"),
       el("ol", { class: "help" },
         el("li", {}, "Appuie sur ▶️ JE COMMENCE et partage ta position."),
-        el("li", {}, "Une course arrive : appuie sur ✋ JE LA PRENDS."),
+        el("li", {}, "Une course arrive : ça sonne. Appuie sur ✅ JE LA PRENDS."),
         el("li", {}, "Appuie sur 🗺 Y ALLER pour le GPS."),
         el("li", {}, "Écris ton temps (⏱) : le franchisé est prévenu."),
         el("li", {}, "Donne la commande, encaisse, puis ✅ C'EST LIVRÉ."),
         el("li", {}, "À la fin : 🏁 J'AI FINI MA SOIRÉE.")))];
+}
+// Raccourci sur l'écran d'accueil : bouton de Telegram quand il existe (surtout Android), sinon le guide.
+const canHome = () => !!(tg && tg.addToHomeScreen && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0"));
+if (canHome() && tg.checkHomeScreenStatus) { try { tg.checkHomeScreenStatus((st) => { S.home = st; }); } catch (e) {} }
+if (tg && tg.onEvent) { try { tg.onEvent("homeScreenAdded", () => { S.home = "added"; toast("Ajoutée à l'écran d'accueil ✅"); render(); }); } catch (e) {} }
+function homeCard() {
+  return el("div", { class: "card" }, el("div", { class: "title" }, "📲 L'appli sur ton écran d'accueil"),
+    S.home === "added" ? el("div", { class: "muted" }, "✅ Déjà sur ton écran d'accueil.") :
+      canHome() && S.home !== "unsupported" ? el("button", { class: "big go", onclick: () => { tap(); tg.addToHomeScreen(); } }, "📲 AJOUTER À L'ÉCRAN D'ACCUEIL") : null,
+    el("div", { class: "muted", style: "margin-top:8px" }, "Sur iPhone : reçois le guide (icône, sonnerie des courses, raccourci) dans Telegram."),
+    el("button", { class: "big grey", onclick: () => act({ type: "guide" }) }, "📩 RECEVOIR LE GUIDE"));
 }
 async function endNight() {
   const r = await act({ type: "close" }, "Tu as fini ta soirée ? Tu passes hors service.");
@@ -449,7 +541,7 @@ $("tabs").addEventListener("click", (e) => {
   render();
 });
 load();
-setInterval(() => { if (!document.hidden) load(); }, 8000);
+setInterval(() => { if (!document.hidden) load(); }, 5000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 </script>
 </body>

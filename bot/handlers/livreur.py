@@ -73,7 +73,7 @@ async def dispo_reminder(context) -> None:
     pos = await db.get_position(user["id"])
     if pos and parse_ts(pos["updated_at"]) >= parse_ts(data["asked_at"]):
         return
-    await messaging.send(context.bot, user, texts.DISPO_REMINDER)
+    await messaging.send(context.bot, user, texts.DISPO_REMINDER, ring=True)
     await messaging.notify_dispatch(context.bot, texts.d_dispo_without_position(user, DISPO_REMINDER_SECONDS // 60))
     await db.log_event("dispo_no_position", user_id=user["id"])
 
@@ -684,7 +684,7 @@ async def _notify_modified(context, editor: dict, before: dict, updated: dict) -
     franchise = await db.get_user(updated["franchise_id"])
     if livreur and livreur["id"] != editor["id"] and updated["status"] == "assigned":
         await messaging.send(context.bot, livreur,
-                             texts.order_modified_for_livreur(updated, before["price"], editor["display_name"]))
+                             texts.order_modified_for_livreur(updated, before["price"], editor["display_name"]), ring=True)
         await messaging.edit(context.bot, livreur["telegram_id"], updated.get("livreur_message_id"),
                              texts.full_fiche(updated, franchise or {}), keyboards.livreur_course(updated["id"]),
                              user=livreur, resend_if_old=False)
@@ -722,3 +722,13 @@ async def edit_typed_price(update: Update, context, user: dict) -> None:
         payload["sel"] = None
         await _save_edit(user, payload)
         await _render_edit(context, update.effective_chat.id, payload)
+
+
+async def installer(update: Update, context) -> None:
+    """/installer : icône, sonnerie des courses, raccourci sur l'écran d'accueil, réglages du téléphone."""
+    from bot.services import install_guide
+
+    user = await common.actor(update)
+    if not await common.require(update, user):
+        return
+    await install_guide.send(context.bot, user)
