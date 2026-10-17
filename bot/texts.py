@@ -1345,7 +1345,7 @@ def cloture_precheck(open_courses: int, livreurs_stock: dict, cash_rows: list[di
         lines += ["", "⚠️ Cash pas encore récupéré (remis à zéro — récupère-le avant avec /caisse) :"]
         lines += [f"• {esc(r['nom'])} : {eur(r['cash'])}" for r in unpaid]
     if ravi is not None and abs(ravi) >= 0.01:
-        lines += ["", f"⚠️ Reste chez le ravitailleur : {eur(ravi)} (remis à zéro, garde-en trace)"]
+        lines += ["", f"💼 Reste chez les ravitailleurs : {eur(ravi)} (reporté sur la nouvelle semaine, espace 💼 Ravi)"]
     if open_courses:
         lines += ["", f"⚠️ {plural(open_courses, 'course')} en attente ou en cours : elles seront écrites "
                       "dans la nouvelle semaine une fois livrées."]
@@ -2241,3 +2241,38 @@ def admin_message(admin: dict, text: str) -> str:
 def d_late_traffic(course: dict, livreur: dict, announced: str, traffic_at: str) -> str:
     return (f"🚦 #{course['id']} — {esc(livreur.get('display_name') or '?')} sera en retard : annoncé vers {announced}, "
             f"d'après le trafic plutôt vers {traffic_at} — {esc(course.get('district') or '')}")
+
+
+# ================================================================ argent du ravitailleur (espace 💼 Ravi)
+
+RAVI_UNKNOWN = "Ravitailleur inconnu."
+RAVI_AMOUNT = "Montant invalide."
+RAVI_DELETED = "Mouvement annulé ✅"
+RAVI_KIND_LABEL = {"depot": "💰 Dépôt (donné par le dispatch)", "charge": "🧾 Charge", "invest": "📦 Invest",
+                   "perso": "💸 Remis au dispatch"}
+
+
+def ravi_saved(name: str, balance: float) -> str:
+    return f"Enregistré ✅ — {name} doit avoir {eur(balance)}"
+
+
+def ravi_counted(name: str, counted: float, expected: float) -> str:
+    gap = round(counted - expected, 2)
+    if abs(gap) < 0.01:
+        return f"✅ Caisse juste : {name} a bien {eur(counted)}."
+    word = "manque" if gap < 0 else "en trop"
+    return f"⚠️ {name} : compté {eur(counted)}, attendu {eur(expected)} — {eur(abs(gap))} {word}."
+
+
+def ravi_move_for_ravi(kind: str, amount: float, motif: str | None, balance: float) -> str:
+    return (f"💼 <b>Ton argent</b> : {RAVI_KIND_LABEL.get(kind, kind)} {eur(amount)}"
+            + (f" — {esc(motif)}" if motif else "") + f"\nTu dois avoir sur toi : <b>{eur(balance)}</b>")
+
+
+def d_ravi_charge(name: str, amount: float, motif: str | None, balance: float) -> str:
+    return (f"💼 {esc(name)} a noté une charge : {eur(amount)}" + (f" — {esc(motif)}" if motif else "")
+            + f"\nIl doit avoir sur lui : {eur(balance)}")
+
+
+def cloture_ravi(lines: list[str]) -> str:
+    return ("\n\n💼 Reporté chez les ravitailleurs :\n" + "\n".join(f"• {esc(x)}" for x in lines)) if lines else ""

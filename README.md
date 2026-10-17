@@ -716,6 +716,25 @@ jamais l'onglet Mardi.
 - **Dispatch, IMPORT A10** : import de JOURS!A1:U63, lu par la barre des onglets du jour.
 - SOLDES ne change pas (total de la semaine) : le bot continue de s'en servir.
 
+### Argent du ravitailleur (espace 💼 Ravi de l'appli Dispatch, dispatch seulement)
+
+Ce que chaque ravitailleur **doit avoir sur lui** = départ + 💶 cash récupéré auprès des livreurs (rechargements du
+bot, depuis le départ) + 💰 ce que tu lui as donné − 🧾 charges − 📦 invest − 💸 ce qu'il t'a remis.
+
+- **➕ Mouvement** : je lui donne (dépôt), il m'a remis, charge, invest — montant et motif ; le ravitailleur est
+  prévenu ; chaque mouvement est recopié dans l'onglet RAVI du Compta (action `ravi_move` du script ; tant que le
+  script n'est pas à jour, ⏳ « pas encore dans RAVI », renvoyé toutes les 10 min). 🗑 annule un mouvement (sa ligne
+  RAVI est effacée).
+- **🧮 Compter sa caisse** : ce qu'il a vraiment → écart (manque / en trop) gardé avec la date ; le solde ne bouge
+  pas, **⚖️ Caler le solde sur le compté** en fait le nouveau départ.
+- **🏁 Solde de départ** : fixe le solde à partir de maintenant (reprise des comptes). Sans départ, le calcul part
+  du dernier reset.
+- **Reset de la semaine** : le solde de chacun devient le départ de la nouvelle semaine (le registre continue) et une
+  ligne Dépôt « Report semaine passée » est écrite dans RAVI.
+- ⚠️ Cash récupéré **sans ravitailleur** (rechargement saisi par le dispatch sans « /ravi 1 ») : listé à part.
+- Le ravitailleur voit son solde et le détail dans son appli (onglet 💶), et peut noter une charge (le dispatch est
+  prévenu).
+
 ### Dispatch selon le stock
 
 Avec `STOCK_ALERTS=1`, une course part **d'abord aux livreurs qui ont tout en stock** (stock de la feuille +

@@ -481,6 +481,31 @@ async def list_expenses_for_night(night: date, start: datetime, end: datetime) -
     return await _for_night("expenses", night, start, end)
 
 
+# ---------------------------------------------------------------- argent du ravitailleur
+
+async def create_ravi_move(fields: dict) -> dict | None:
+    return _first(await _t("ravi_moves").insert(fields).execute())
+
+
+async def get_ravi_move(move_id: int) -> dict | None:
+    return _first(await _t("ravi_moves").select("*").eq("id", move_id).limit(1).execute())
+
+
+async def update_ravi_move(move_id: int, fields: dict) -> dict | None:
+    return _first(await _t("ravi_moves").update(fields).eq("id", move_id).execute())
+
+
+async def list_ravi_moves() -> list[dict]:
+    """Mouvements non supprimés, du plus ancien au plus récent."""
+    res = await _t("ravi_moves").select("*").is_("deleted_at", "null").order("created_at").order("id").execute()
+    return res.data
+
+
+async def list_ravi_moves_to_sync() -> list[dict]:
+    res = await _t("ravi_moves").select("*").in_("sheet_state", ["pending", "remove"]).order("id").execute()
+    return res.data
+
+
 async def list_livreur_variants(livreur_name: str | None = None) -> list[dict]:
     q = _t("livreur_variants").select("*")
     if livreur_name:

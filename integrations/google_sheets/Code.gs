@@ -52,6 +52,10 @@
  * Ligne Swipe (box « Swipe ») : le cash de la colonne C passe du livreur de gauche (A) à celui de
  * la colonne T, qui doit le remettre à son tour ; le ravitailleur, lui, n'a rien reçu.
  *
+ * Argent du ravitailleur (« action: ravi_move », espace 💼 Ravi de l'appli) : chaque charge, invest, perso ou
+ * dépôt noté dans le bot est recopié dans COMPTA RAVI (lignes 5 à 14, note « Bot V#… » sur la Date) ; un mouvement
+ * annulé dans le bot efface sa ligne. Au reset, le bot écrit une ligne Dépôt « Report semaine passée ».
+ *
  * Clôture de la semaine (« action: cloture », commande /cloture du bot) :
  * 1. copie des 3 fichiers dans le dossier Drive « Archives bot » (si la copie échoue, rien n'est effacé) ;
  * 2. stock actuel des box (ORGA ④) → nouveau stock initial (COMPTA, onglet STOCK) ;
@@ -112,6 +116,10 @@ const C_STOCK_FIRST_ROW = 4;
 const C_STOCK_ROWS = 3;
 const C_MOVES = 'MOUVEMENTS!A3:P22';
 const C_RAVI = 'RAVI!A5:E15';
+const C_RAVI_SHEET = 'RAVI';     // mouvements du ravitailleur : lignes 5 à 14, A Date, B Type, C Montant, D Motif, E Ravitailleur
+const C_RAVI_FIRST = 5;
+const C_RAVI_LAST = 14;
+const RAVI_NOTE_PREFIX = 'Bot V#';
 const REPORT_LABEL = 'Report clôture';
 const SWIPE_BOX = 'Swipe';       // transfert entre livreurs : A donne, T (colonne Ravitailleur) reçoit
 const STOCK_ANTERIEUR = 'Stock antérieur';   // box du report de clôture : stock (et cash) de la semaine d'avant
@@ -127,6 +135,7 @@ function doPost(e) {
     if (data.action === 'stock_livreurs') return json_(livreursStock_());
     if (data.action === 'cash_livreurs') return json_(cashLivreurs_());
     if (data.action === 'cloture') return json_(cloture_(data));
+    if (data.action === 'ravi_move') return json_(raviMove_(data));
     const rows = data.rows || [];
     const courses = rows.filter(function (r) { return r.type !== 'recharge' && r.type !== 'depense'; });
     const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
@@ -338,14 +347,44 @@ function cashLivreurs_() {
     recupere += c.recupere;
     livreurs[c.nom] = c;
   });
-  // Reste chez le ravitailleur (comme COMPTA RAVI) : cash récupéré − ce qu'il a noté dans RAVI.
+  // Reste chez le ravitailleur (comme COMPTA RAVI) : cash récupéré + dépôts − charges, invest et perso.
   let ravi = null;
   if (COMPTA_SPREADSHEET_ID) {
     const used = SpreadsheetApp.openById(COMPTA_SPREADSHEET_ID).getRange(C_RAVI).getValues()
-      .reduce(function (s, row) { return s + num_(row[2]); }, 0);
+      .reduce(function (s, row) { return s + (key_(row[1]) === 'depot' ? -num_(row[2]) : num_(row[2])); }, 0);
     ravi = Math.round((recupere - used) * 100) / 100;
   }
   return { ok: true, livreurs: livreurs, ravitailleur: ravi };
+}
+
+// Mouvement d'argent du ravitailleur (espace « Ravi » du bot) dans COMPTA RAVI, lignes 5 à 14.
+// op « add » : écrit la ligne (repérée par la note « Bot V#numéro ») ; op « remove » : l'efface.
+function raviMove_(data) {
+  if (!COMPTA_SPREADSHEET_ID) return { ok: false, error: 'COMPTA_SPREADSHEET_ID vide dans le script' };
+  const sheet = SpreadsheetApp.openById(COMPTA_SPREADSHEET_ID).getSheetByName(C_RAVI_SHEET);
+  if (!sheet) return { ok: false, error: 'onglet « ' + C_RAVI_SHEET + ' » introuvable dans le COMPTA' };
+  const count = C_RAVI_LAST - C_RAVI_FIRST + 1;
+  const tag = RAVI_NOTE_PREFIX + data.numero;
+  const notes = sheet.getRange(C_RAVI_FIRST, 1, count, 1).getNotes();
+  let found = -1;
+  for (let i = 0; i < count; i++) if (notes[i][0] === tag) { found = C_RAVI_FIRST + i; break; }
+  if (data.op === 'remove') {
+    if (found < 0) return { ok: true, missing: true };
+    sheet.getRange(found, 1, 1, 5).clearContent();
+    sheet.getRange(found, 1).clearNote();
+    return { ok: true, removed: true };
+  }
+  if (found >= 0) return { ok: true, exists: true };
+  const values = sheet.getRange(C_RAVI_FIRST, 1, count, 5).getValues();
+  let rowNum = -1;
+  for (let i = 0; i < count; i++) {
+    if (values[i].every(function (v) { return v === ''; })) { rowNum = C_RAVI_FIRST + i; break; }
+  }
+  if (rowNum < 0) return { ok: false, error: 'RAVI plein (lignes ' + C_RAVI_FIRST + ' à ' + C_RAVI_LAST + ')' };
+  sheet.getRange(rowNum, 1, 1, 5).setValues([[data.date || '', data.type || '', Number(data.montant) || 0,
+                                               data.motif || '', data.ravitailleur || '']]);
+  sheet.getRange(rowNum, 1).setNote(tag);
+  return { ok: true, written: true };
 }
 
 // À exécuter une fois depuis l'éditeur (▶) pour autoriser l'accès à Google Drive (archives).

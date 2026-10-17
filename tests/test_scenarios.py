@@ -1841,7 +1841,8 @@ async def test_weekly_cloture(h, monkeypatch):
     answer = {"cloture": {"ok": True, "archive": "https://drive.google.com/drive/folders/abc",
                           "dossier": "Archives bot / Clôture du 2026-09-28 06h10",
                           "initial": {"Box 1": {"DIV": 28, "US": 112}, "Box 2": {}},
-                          "reports": {"Livreur 1": {"DIV": 4, "US": 4}}}}
+                          "reports": {"Livreur 1": {"DIV": 4, "US": 4}}},
+              "ravi_move": {"ok": True, "written": True}}
 
     async def fake_action(action, client=None, payload=None, timeout=None):
         calls.append((action, payload, timeout))
@@ -1854,6 +1855,9 @@ async def test_weekly_cloture(h, monkeypatch):
 
     monkeypatch.setattr(sheets, "fetch_action", fake_action)
     f1, f2, (l1, l2) = await setup_network(h)
+    r1 = await register(h, R1, "ravitailleur", "Sam")              # 70 € chez lui (registre de l'espace Ravi)
+    await db.create_ravi_move({"ravitailleur": r1["display_name"], "kind": "depart", "amount": 70,
+                               "by_user_id": (await db.get_user_by_tg(DISPATCH))["id"]})
 
     def txt(m):
         return m.text.replace("\xa0", " ")
@@ -1866,7 +1870,7 @@ async def test_weekly_cloture(h, monkeypatch):
     assert "🗓 <b>Reset de la semaine</b>" in check.text
     assert "• Livreur 1 : 4 DIV · 4 US" in txt(check) and "Livreur 2" not in txt(check).split("📦 Reporté")[1]
     assert "⚠️ Cash pas encore récupéré" in txt(check) and "• Livreur 1 : 50 €" in txt(check)
-    assert "Reste chez le ravitailleur : 70 €" in txt(check)
+    assert "💼 Reste chez les ravitailleurs : 70 € (reporté" in txt(check)
     assert [d for _, d in check.buttons] == ["cl_go", "cl_x"]
     await h.press_data(DISPATCH, check, "cl_x")
     assert h.tg.messages[(DISPATCH, check.message_id)].text == texts.CLOTURE_CANCELLED
@@ -1882,11 +1886,13 @@ async def test_weekly_cloture(h, monkeypatch):
     check = h.tg.last(DISPATCH)
     await h.press_data(DISPATCH, check, "cl_go")
     done = h.tg.messages[(DISPATCH, check.message_id)]
-    action, payload, timeout = calls[-1]
+    action, payload, timeout = next(c for c in reversed(calls) if c[0] == "cloture")
     assert action == "cloture" and payload["onglet"] in sheets.JOURS and payload["libelle"].startswith("Reset du ")
     assert timeout == cloture_h.TIMEOUT
     assert "✅ <b>Semaine remise à zéro</b>" in done.text and 'href="https://drive.google.com/drive/folders/abc"' in done.text
     assert "• Box 1 : 28 DIV · 112 US" in done.text and "• Box 2 : vide" in done.text
+    assert f"💼 Reporté chez les ravitailleurs :\n• {r1['display_name']} : 70" in txt(done)
+    assert any(a == "ravi_move" and p["motif"] == "Report semaine passée" and p["montant"] == 70 for a, p, _ in calls)
     assert "• Livreur 1 : 4 DIV · 4 US" in done.text
     assert stock_service.inflight_deltas(l1["id"]) == {}
     assert "✅ <b>Semaine remise à zéro</b>" in done.text
@@ -3778,7 +3784,7 @@ async def test_ravitailleur_app(h, monkeypatch):
         assert (await post("/api/ravi/board", L1)).status == 403
         board = await (await post("/api/ravi/board", R1)).json()
         lv1 = next(lv for lv in board["livreurs"] if lv["name"] == "Livreur 1")
-        assert lv1["items"] == {"DIV": 4} and lv1["cash"] == 120 and board["ravitailleur_cash"] == 30
+        assert lv1["items"] == {"DIV": 4} and lv1["cash"] == 120 and board["my_money"]["balance"] == 0
         assert board["boxes"][0] == {"name": "Box 1", "items": {"DIV": 20, "US": 6}}
 
         async def act(**body):
@@ -4018,3 +4024,96 @@ async def test_daily_cash_account(h, monkeypatch):
     assert mine.split("\n")[2:6] == ["📅 Reste d'avant (pas encore remis) : 370 €", "💵 + Encaissé aujourd'hui : 80 €",
                                      "🧾 − Charges : 20 €", "🤝 − Remis aujourd'hui : 130 €"]
     assert "<b>= Il te reste : 300 €</b>" in mine
+
+
+async def test_ravi_money_space(h, monkeypatch):
+    """Espace 💼 Ravi : cash récupéré (rechargements) + dépôts − charges − invest − remis = ce qu'il doit avoir ;
+    mouvements recopiés dans RAVI (ancien script : en attente), annulation, contrôle de caisse et calage,
+    report au reset ; le ravitailleur voit son solde et note ses charges ; réservé au dispatch."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import web
+    from bot.services import ravi, sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    calls, script = [], {"new": True}
+
+    async def fake_action(action, client=None, payload=None, **kw):
+        if action != "ravi_move":
+            return {"ok": False, "error": "pas de tableau dans ce test"}
+        if not script["new"]:
+            return {"ok": True, "added": 0}                  # ancien script : action inconnue
+        calls.append(payload)
+        return {"ok": True, "removed": True} if payload["op"] == "remove" else {"ok": True, "written": True}
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    f1, _, (l1,) = await setup_network(h, livreurs=(L1,))
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+    name = r1["display_name"]
+    dispatch_user = await db.get_user_by_tg(DISPATCH)
+    for fields in ({"by_user_id": r1["id"], "cash": 300},                                  # saisi par lui
+                   {"by_user_id": dispatch_user["id"], "ravitailleur_name": name, "cash": 100},  # /ravi 1 du dispatch
+                   {"by_user_id": dispatch_user["id"], "cash": 50}):                        # sans ravitailleur
+        await db._t("restocks").insert({"livreur_id": l1["id"], "kind": "cash", **fields}).execute()
+
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        async def post(path, tg_id, **body):
+            return await (await client.post(path, json=body, headers={"X-Init-Data": _init_data(tg_id)})).json()
+
+        async def mine():
+            return next(a for a in (await post("/api/section", DISPATCH, name="ravi"))["ravis"] if a["name"] == name)
+
+        assert (await post("/api/section", F1, name="ravi"))["ok"] is False          # dispatch seulement
+        assert (await post("/api/action", F1, type="rv_move", ravi=name, kind="depot", amount=10))["ok"] is False
+        section = await post("/api/section", DISPATCH, name="ravi")
+        assert section["unassigned"]["total"] == 50
+        acc = await mine()
+        assert acc["balance"] == 400 and acc["totals"]["recupere"] == 400 and not acc["start"]["set"]
+
+        r = await post("/api/action", DISPATCH, type="rv_move", ravi=name, kind="depot", amount="200", motif="fond")
+        assert r["ok"] and "600" in r["message"].replace("\xa0", " ")
+        assert "Tu dois avoir sur toi" in h.tg.last(R1).text
+        assert calls[-1]["op"] == "add" and calls[-1]["type"] == "Depot" and calls[-1]["ravitailleur"] == name
+        r = await post("/api/action", DISPATCH, type="rv_move", ravi=name, kind="perso", amount=500)
+        assert (await mine())["balance"] == 100
+        assert (await post("/api/action", DISPATCH, type="rv_move", ravi=name, kind="perso", amount=0))["ok"] is False
+
+        # Le ravitailleur voit son solde et note une charge (le dispatch est prévenu) ; rien d'autre.
+        board = await post("/api/ravi/board", R1)
+        assert board["my_money"]["balance"] == 100
+        assert (await post("/api/ravi/action", R1, type="charge", amount="30", motif="essence"))["ok"]
+        assert "a noté une charge" in h.tg.last(DISPATCH).text
+        assert (await ravi.add_move(h.app.bot, r1, name, "invest", 5, None))[0] is None
+        acc = await mine()
+        assert acc["balance"] == 70 and acc["totals"]["charge"] == 30
+
+        # Annuler le « remis » : sa ligne est effacée de RAVI.
+        perso = next(x for x in acc["history"] if x["kind"] == "perso")
+        assert (await post("/api/action", DISPATCH, type="rv_delete", id=perso["id"]))["ok"]
+        assert calls[-1] == {"op": "remove", "numero": perso["id"]}
+        assert (await mine())["balance"] == 570
+
+        # Contrôle de caisse : 10 € manquent ; caler le solde sur le compté.
+        r = await post("/api/action", DISPATCH, type="rv_count", ravi=name, amount="560")
+        assert "manque" in r["message"]
+        acc = await mine()
+        assert acc["balance"] == 570 and acc["control"]["gap"] == -10 and not acc["control"]["aligned"]
+        assert (await post("/api/action", DISPATCH, type="rv_align", id=acc["control"]["id"]))["ok"]
+        acc = await mine()
+        assert acc["balance"] == 560 and acc["start"]["set"] and acc["control"]["aligned"] and acc["history"] == []
+
+        # Ancien script Google : le mouvement attend, puis passe quand le script est à jour.
+        script["new"] = False
+        await post("/api/action", DISPATCH, type="rv_move", ravi=name, kind="invest", amount=60, motif="achat")
+        acc = await mine()
+        assert acc["pending_sheet"] == 1 and acc["balance"] == 500
+        script["new"] = True
+        assert await ravi.sync_sheet() == 1 and (await mine())["pending_sheet"] == 0
+
+        # Reset de la semaine : le solde devient le départ de la nouvelle semaine, et une ligne Report dans RAVI.
+        lines = await ravi.carry_over(dispatch_user, "Reset test")
+        assert any(name in x and "500" in x.replace("\xa0", " ") for x in lines)
+        assert calls[-1]["type"] == "Depot" and calls[-1]["montant"] == 500 and calls[-1]["motif"] == "Report semaine passée"
+        acc = await mine()
+        assert acc["balance"] == 500 and acc["start"]["amount"] == 500 and acc["history"] == []

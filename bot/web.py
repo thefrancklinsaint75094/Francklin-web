@@ -299,6 +299,8 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
         await messaging.send(context.bot, target, texts.admin_message(admin, text))
         await db.log_event("admin_message", user_id=admin["id"], payload={"to": target["id"]})
         return {"ok": True, "message": f"Message envoyé à {target.get('display_name')}."}
+    if kind in RAVI_ACTIONS:
+        return await _ravi(context, admin, kind, body)
     if kind == "notify_level":
         level = "tout" if body.get("value") == "tout" else "essentiel"
         await db.update_user(admin["id"], {"notify_level": level})
@@ -310,6 +312,7 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
 ORDER_ACTIONS = ("order_analyse", "order_send", "order_drop", "order_pick")
 TEXT_FORMS = ("ravi_prepare", "ravi_commit", "swipe_prepare", "swipe_commit", "sales_prepare", "sales_commit")
 CATALOG_ACTIONS = ("catalog_add", "catalog_edit", "catalog_delete")
+RAVI_ACTIONS = ("rv_move", "rv_start", "rv_count", "rv_align", "rv_delete")
 USER_ACTIONS = ("user_rename", "user_prenom", "user_role", "user_sheet_name", "user_ban", "user_unban",
                 "user_delete", "user_approve", "user_reject")
 
@@ -488,6 +491,28 @@ async def _catalog(admin: dict, kind: str, body: dict) -> dict:
     return {"ok": True, "html": texts.catalog_edited(updated, extra)}
 
 
+async def _ravi(context, admin: dict, kind: str, body: dict) -> dict:
+    """Argent du ravitailleur : mouvement, solde de départ, contrôle de caisse, calage, annulation (dispatch)."""
+    from bot.services import ravi
+
+    if not common.is_dispatch(admin):
+        return {"ok": False, "message": texts.DISPATCH_ONLY}
+    name = str(body.get("ravi") or "")
+    if kind == "rv_move":
+        move, text = await ravi.add_move(context.bot, admin, name, str(body.get("kind") or ""), body.get("amount"),
+                                         body.get("motif"))
+    elif kind == "rv_start":
+        move, text = await ravi.set_start(admin, name, body.get("amount"), body.get("motif"))
+    elif kind == "rv_count":
+        move, text = await ravi.count(admin, name, body.get("amount"))
+    elif kind == "rv_align":
+        move, text = await ravi.align(admin, body.get("id") or 0)
+    else:
+        ok, text = await ravi.delete(admin, body.get("id") or 0)
+        return {"ok": ok, "message": text}
+    return {"ok": move is not None, "message": text}
+
+
 async def _expense(context, admin: dict, body: dict) -> dict:
     from bot.handlers import cash as cash_h
     from bot.services.sales import resolve_livreur
@@ -659,8 +684,10 @@ async def section(name: str, viewer: dict) -> dict:
                  **{k: round(float(r.get(k) or 0), 2) for k in ("cash", "especes", "virement", "depenses", "recupere",
                                                                "avant", *cash.DAY_FIELDS)}}
                 for r in data["livreurs"].values()]
+        from bot.services import ravi
+
         return {"ok": True, "livreurs": rows, "total": round(sum(r["cash"] for r in rows), 2),
-                "ravitailleur": data.get("ravitailleur")}
+                "ravitailleur": await ravi.total_balance() if common.is_dispatch(viewer) else None}
     if name == "products":
         return {"ok": True, "products": [{"id": p["id"], "name": p["name"], "aliases": p.get("aliases") or [],
                                           "variants": p.get("variants") or []} for p in await db.list_products()]}
@@ -683,6 +710,12 @@ async def section(name: str, viewer: dict) -> dict:
                 "ravitailleurs": await restock_text._ravitailleurs(), "boxes": list(config.get().boxes),
                 "products": [p["name"] for p in await db.list_products()],
                 "can_order": common.can_order(viewer), "dispatch": common.is_dispatch(viewer)}
+    if name == "ravi":
+        if not common.is_dispatch(viewer):
+            return {"ok": False, "error": texts.DISPATCH_ONLY}
+        from bot.services import ravi
+
+        return {"ok": True, **await ravi.accounts()}
     return {"ok": False, "error": "Écran inconnu."}
 
 

@@ -1,7 +1,8 @@
 """Appli des ravitailleurs « Ravitaillement » (mini-application Telegram) : simple, gros boutons, tout y est.
 
 GET /ravi → bot/static/ravi.html. Les livreurs (en service d'abord) avec ce qu'ils ont sur eux et le cash à
-récupérer ; un livreur touché → 📦 CHARGER, ↩️ REPRENDRE, 💶 RÉCUPÉRER DU CASH, ↔️ DONNER À UN AUTRE LIVREUR, avec
+récupérer ; son argent (💼, lecture seule : ce qu'il doit avoir sur lui, il peut noter une charge) ; un livreur
+touché → 📦 CHARGER, ↩️ REPRENDRE, 💶 RÉCUPÉRER DU CASH, ↔️ DONNER À UN AUTRE LIVREUR, avec
 des compteurs − / + ; le stock des box ; le cash de chacun ; les goûts.
 
 Tout passe par le même code que /ravi et /swipe dans le chat (récap, puis ✅ ENREGISTRER) : rechargements en
@@ -64,9 +65,19 @@ async def board(user: dict) -> dict:
                   for b, v in (boxes.get("boxes") or {}).items()] if boxes["ok"] else [],
         "box_names": list(config.get().boxes),
         "products": [p["name"] for p in await db.list_products()],
-        "ravitailleur_cash": money.get("ravitailleur") if money["ok"] else None,
+        "my_money": await _my_money(user),
         "errors": [e for e in (stocks.get("error"), money.get("error"), boxes.get("error")) if e],
     }
+
+
+async def _my_money(user: dict) -> dict | None:
+    """Son argent (lecture seule) : ce qu'il doit avoir sur lui et le détail depuis le dernier départ."""
+    from bot.services import ravi
+
+    acc = await ravi.account(user.get("display_name") or "")
+    if acc is None:
+        return None
+    return {**acc, "history": [{k: h.get(k) for k in ("when", "icon", "label", "amount")} for h in acc["history"][:15]]}
 
 
 async def flavors() -> dict:
@@ -111,6 +122,12 @@ async def act(context, user: dict, body: dict) -> dict:
     from bot.services import restock_text as ravi_text
 
     kind = body.get("type")
+    if kind == "charge":                               # il note une charge payée avec l'argent récupéré
+        from bot.services import ravi
+
+        move, text = await ravi.add_move(context.bot, user, user.get("display_name") or "", "charge",
+                                         body.get("amount"), body.get("motif"))
+        return {"ok": move is not None, "message": text}
     if kind not in ("prepare", "commit"):
         return {"ok": False, "message": "Je n'ai pas compris."}
     text = _text(body)

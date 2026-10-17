@@ -204,6 +204,7 @@ const SCREENS = [
   { key: "stock", icon: "📦", label: "Stock" },
   { key: "products", icon: "🍾", label: "Produits" },
   { key: "cash", icon: "💶", label: "Caisse" },
+  { key: "ravi", icon: "💼", label: "Ravi (argent)", dispatch: true },
   { key: "bilan", icon: "📊", label: "Bilan de la nuit" },
   { key: "feed", icon: "🔔", label: "Activité" },
   { key: "team", icon: "👥", label: "Équipe" },
@@ -306,8 +307,8 @@ function drawer() {
   const counts = d ? { home: d.routes.length || "", courses: d.pending.length || "", livreurs: d.livreurs.filter((l) => l.on_duty).length || "" } : {};
   $("drawer").replaceChildren(...nodes(
     el("div", { class: "me" }, el("b", {}, "Dispatch"), el("span", {}, d ? `${d.me.name} · ${d.me.dispatch ? "dispatch" : "franchisé"}` : "")),
-    SCREENS.map((s, i) => [
-      i === 3 || i === 7 ? el("div", { class: "sep" }) : null,
+    SCREENS.filter((s) => !s.dispatch || (d && d.me.dispatch)).map((s) => [
+      s.key === "stock" || s.key === "bilan" ? el("div", { class: "sep" }) : null,
       el("button", { class: "nav" + (S.screen === s.key ? " on" : ""), onclick: () => go(s.key) },
         el("span", { class: "i" }, s.icon), s.label,
         counts[s.key] ? el("span", { class: "n" + (s.key === "courses" ? " red" : "") }, counts[s.key]) : null)])));
@@ -330,7 +331,7 @@ function go(key) {
   S.screen = key; S.open = null; S.q = ""; closeDrawer(); window.scrollTo(0, 0);
   $("title").textContent = SCREENS.find((s) => s.key === key).label;
   if (key === "feed") loadFeed(false);
-  if (["stock", "cash", "products", "team"].includes(key)) loadSection(key);
+  if (["stock", "cash", "products", "team", "ravi"].includes(key)) loadSection(key);
   drawer(); render();
 }
 
@@ -338,7 +339,7 @@ function go(key) {
 function render() {
   if (!S.data) return;
   const views = { home: viewHome, courses: viewCourses, livreurs: viewLivreurs, stock: viewStock, products: viewProducts,
-                  cash: viewCash, bilan: viewBilan, feed: viewFeed, team: viewTeam, plus: viewPlus };
+                  cash: viewCash, ravi: viewRavi, bilan: viewBilan, feed: viewFeed, team: viewTeam, plus: viewPlus };
   const v = views[S.screen]();
   const fab = ["home", "courses"].includes(S.screen) ? el("button", { class: "fab", onclick: newOrder }, "➕ Commande") : null;
   $("view").replaceChildren(...nodes(v, fab, el("div", { style: "height:70px" })));
@@ -606,6 +607,81 @@ function viewCash() {
     el("div", { class: "kv small" }, el("span", {}, "= Il lui reste"), el("b", {}, eur(r.cash))),
     r.virement ? el("div", { class: "small muted", style: "margin-top:4px" }, `💳 virements de la semaine : ${eur(r.virement)}`) : null))));
   return wrap;
+}
+
+// ------------------------------------------------------------------ 💼 Ravi : argent du ravitailleur (dispatch)
+function viewRavi() {
+  const wait = sectionState("ravi"); if (wait) return wait;
+  const s = S.cache.ravi;
+  const wrap = el("div", {}, el("div", { class: "h2" }, "Argent des ravitailleurs", refreshBtn("ravi")));
+  const list = el("div", { class: "list" });
+  if (s.unassigned.total) list.append(el("div", { class: "card" },
+    el("div", { class: "badge warn" }, `⚠️ ${eur(s.unassigned.total)} récupérés sans ravitailleur noté (cette semaine)`),
+    s.unassigned.items.map((u) => el("div", { class: "kv small" }, el("span", {}, `${u.when} · ${u.livreur}` + (u.by ? ` · saisi par ${u.by}` : "")), el("b", {}, eur(u.amount)))),
+    el("div", { class: "muted small" }, "Ce cash n'est compté chez aucun ravitailleur : note un dépôt ou un départ pour le bon ravitailleur si c'est lui qui l'a.")));
+  s.ravis.forEach((r) => list.append(raviCard(r)));
+  if (!s.ravis.length) list.append(el("div", { class: "card empty" }, el("b", {}, "💼"), "Aucun ravitailleur."));
+  wrap.append(list);
+  return wrap;
+}
+function raviCard(r) {
+  const t = r.totals;
+  const line = (label, v, sign) => v ? el("div", { class: "kv small" }, el("span", {}, label), el("b", {}, (sign < 0 ? "− " : "+ ") + eur(v))) : null;
+  const c = r.control;
+  return el("div", { class: "card" },
+    el("div", { class: "row" }, el("b", { class: "grow", style: "font-size:17px" }, "💼 " + r.name), r.account ? null : el("span", { class: "badge" }, "sans compte bot")),
+    el("div", { class: "muted small", style: "margin-top:6px" }, "Doit avoir sur lui"),
+    el("div", { class: "big" }, eur(r.balance)),
+    el("div", { class: "kv small", style: "margin-top:6px" }, el("span", {}, `Départ · ${r.start.when}` + (r.start.motif ? ` · ${r.start.motif}` : r.start.set ? "" : " (début de semaine)")), el("b", { style: "white-space:nowrap" }, eur(r.start.amount))),
+    line("💶 Récupéré chez les livreurs", t.recupere, 1), line("💰 Tu lui as donné", t.depot, 1),
+    line("🧾 Charges", t.charge, -1), line("📦 Invest", t.invest, -1), line("💸 Il t'a remis", t.perso, -1),
+    r.pending_sheet ? el("div", { class: "badge warn", style: "margin-top:6px" }, `⏳ ${plural(r.pending_sheet, "mouvement")} pas encore dans l'onglet RAVI (script Google à mettre à jour ?)`) : null,
+    c ? el("div", { class: "result" }, `🧮 Contrôle du ${c.when} : compté ${eur(c.counted)}, attendu ${eur(c.expected)} → `
+        + (Math.abs(c.gap) < 0.01 ? "juste ✅" : `${eur(Math.abs(c.gap))} ${c.gap < 0 ? "manquent" : "en trop"}` + (c.aligned ? " (solde calé)" : ""))) : null,
+    c && Math.abs(c.gap) >= 0.01 && !c.aligned ? el("button", { class: "btn full", style: "margin-top:8px", onclick: () => raviDo({ type: "rv_align", id: c.id }, `Caler le solde de ${r.name} sur ${eur(c.counted)} (le compté) ?`) }, "⚖️ Caler le solde sur le compté") : null,
+    el("div", { class: "tools", style: "padding:0; margin-top:10px" },
+      el("button", { class: "btn main", onclick: () => raviMoveSheet(r) }, "➕ Mouvement"),
+      el("button", { class: "btn", onclick: () => raviCountSheet(r) }, "🧮 Compter sa caisse")),
+    el("button", { class: "btn full", style: "margin-top:8px", onclick: () => raviStartSheet(r) }, "🏁 Solde de départ"),
+    r.history.length ? el("div", { style: "margin-top:10px" }, el("div", { class: "muted small" }, "Depuis le départ"),
+      r.history.map((h) => el("div", { class: "kv small" },
+        el("span", { class: "grow" }, `${h.icon} ${h.when} · ${h.label}` + (h.sheet === "pending" ? " ⏳" : "")),
+        el("b", {}, (h.amount < 0 ? "− " : "+ ") + eur(Math.abs(h.amount))),
+        h.id ? el("button", { class: "muted", style: "margin-left:6px", onclick: () => raviDo({ type: "rv_delete", id: h.id }, `Annuler ce mouvement (${h.label}, ${eur(Math.abs(h.amount))}) ?`) }, "🗑") : null)))
+      : el("div", { class: "muted small", style: "margin-top:8px" }, "Aucun mouvement depuis le départ."));
+}
+async function raviDo(body, question) {
+  if (question && !(await confirmBox(question))) return;
+  const r = await call(body);
+  toast(r.message || (r.ok ? "Enregistré" : "Erreur"));
+  if (r.ok) { closeSheet(); loadSection("ravi"); }
+}
+function raviMoveSheet(r) {
+  let kind = "depot";
+  const kinds = [["depot", "💰 Je lui donne"], ["perso", "💸 Il m'a remis"], ["charge", "🧾 Charge"], ["invest", "📦 Invest"]];
+  const toggle = el("div", { class: "toggle" });
+  const draw = () => toggle.replaceChildren(...kinds.map(([k, l]) => el("button", { class: kind === k ? "on" : "", onclick: () => { kind = k; draw(); } }, l)));
+  draw();
+  const amount = textInput({ type: "number", min: "0", placeholder: "Montant €", inputmode: "decimal" });
+  const motif = textInput({ placeholder: "Motif (facultatif)", maxlength: "80" });
+  openSheet(el("h3", {}, `💼 ${r.name} · un mouvement`), el("p", {}, "Recopié dans l'onglet RAVI du Compta. Le ravitailleur est prévenu."),
+    el("div", { class: "field" }, toggle), field("Montant (€)", amount), field("Motif", motif),
+    el("button", { class: "btn main full", onclick: () => raviDo({ type: "rv_move", ravi: r.name, kind, amount: amount.value, motif: motif.value }) }, "Enregistrer"));
+  setTimeout(() => amount.focus(), 250);
+}
+function raviCountSheet(r) {
+  const amount = textInput({ type: "number", min: "0", placeholder: "Ce qu'il a vraiment en main (€)", inputmode: "decimal" });
+  openSheet(el("h3", {}, `🧮 Compter la caisse de ${r.name}`), el("p", {}, `Il doit avoir ${eur(r.balance)}. Note ce qu'il a vraiment : l'écart est gardé, le solde ne change pas (tu peux ensuite le caler sur le compté).`),
+    field("Montant compté (€)", amount),
+    el("button", { class: "btn main full", onclick: () => raviDo({ type: "rv_count", ravi: r.name, amount: amount.value }) }, "Enregistrer le comptage"));
+  setTimeout(() => amount.focus(), 250);
+}
+function raviStartSheet(r) {
+  const amount = textInput({ type: "number", min: "0", placeholder: "Montant €", inputmode: "decimal", value: String(r.balance > 0 ? r.balance : 0) });
+  const motif = textInput({ placeholder: "Motif (ex. reprise des comptes)", maxlength: "80" });
+  openSheet(el("h3", {}, `🏁 Solde de départ · ${r.name}`), el("p", {}, "À partir de maintenant, son solde part de ce montant ; seuls les mouvements suivants comptent."),
+    field("Montant (€)", amount), field("Motif", motif),
+    el("button", { class: "btn main full", onclick: () => raviDo({ type: "rv_start", ravi: r.name, amount: amount.value, motif: motif.value }, `Fixer le départ de ${r.name} à ${eur(parseFloat(amount.value) || 0)} ?`) }, "Fixer le départ"));
 }
 
 function viewBilan() {
