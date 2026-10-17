@@ -230,6 +230,9 @@ def register(job_queue) -> None:
         job_queue.run_repeating(_safe(traffic.refresh), interval=cfg.traffic_refresh_minutes * 60, first=45,
                                 name="traffic")
     job_queue.run_repeating(_safe(clear_states), interval=300, first=120, name="clear_states")
+    from bot.services import ravi                   # mouvements du ravitailleur pas encore dans COMPTA RAVI
+
+    job_queue.run_repeating(_safe(ravi.sync_sheet), interval=600, first=180, name="ravi_sheet")
     job_queue.run_daily(_safe(daily_journal), time=time(cfg.night_end_hour, 0, tzinfo=PARIS), name="daily_journal")
     job_queue.run_daily(_safe(retention), time=time(7, 0, tzinfo=PARIS), name="retention")
     # Lundi (0 = dimanche pour run_daily) à 6h05, juste après la nuit de dimanche.

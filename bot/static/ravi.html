@@ -279,12 +279,39 @@ function viewBox() {
   return [errors(), S.d.boxes.map((b) => el("div", { class: "card" }, el("div", { class: "title" }, "📦 " + b.name),
     Object.keys(b.items).length ? Object.entries(b.items).map(([p, q]) => el("div", { class: "kv" }, el("span", {}, p), el("b", {}, q))) : el("div", { class: "muted" }, "vide")))];
 }
+function myMoney() {
+  const m = S.d.my_money;
+  if (!m) return null;
+  const t = m.totals, line = (label, v, sign) => v ? el("div", { class: "kv" }, el("span", {}, label), el("b", {}, (sign < 0 ? "− " : "+ ") + eur(v))) : null;
+  return el("div", { class: "card" },
+    el("div", { class: "label" }, "💼 Mon argent"),
+    el("div", { class: "muted" }, "Tu dois avoir sur toi"), el("div", { class: "huge" }, eur(m.balance)),
+    el("div", { class: "kv", style: "margin-top:8px" }, el("span", {}, `Au départ (${m.start.when})`), el("b", {}, eur(m.start.amount))),
+    line("💶 Récupéré chez les livreurs", t.recupere, 1), line("💰 Donné par le dispatch", t.depot, 1),
+    line("🧾 Tes charges", t.charge, -1), line("📦 Invest", t.invest, -1), line("💸 Remis au dispatch", t.perso, -1),
+    m.control ? el("div", { class: "muted small", style: "margin-top:8px" }, `🧮 Dernier comptage (${m.control.when}) : ${eur(m.control.counted)}` + (Math.abs(m.control.gap) >= 0.01 ? ` — écart ${eur(m.control.gap)}` : " — juste ✅")) : null,
+    el("button", { class: "big orange-b", onclick: chargeSheet }, "🧾 J'AI PAYÉ UNE CHARGE"),
+    m.history.length ? el("div", { style: "margin-top:10px" }, m.history.map((h) => el("div", { class: "kv" },
+      el("span", {}, `${h.icon} ${h.when} · ${h.label}`), el("b", {}, (h.amount < 0 ? "− " : "+ ") + eur(Math.abs(h.amount)))))) : null);
+}
+function chargeSheet() {
+  const amount = el("input", { type: "number", inputmode: "decimal", placeholder: "Combien ? (en €)" });
+  const motif = el("input", { placeholder: "C'était quoi ? (essence, colis…)", maxlength: "80" });
+  openSheet(el("div", { class: "title" }, "🧾 Une charge"), el("div", { class: "muted" }, "Payée avec l'argent récupéré. Le dispatch est prévenu."),
+    el("div", { style: "margin-top:12px" }, amount), el("div", { style: "margin-top:10px" }, motif),
+    el("button", { class: "big go", onclick: async () => {
+      if (S.busy) return; S.busy = true;
+      try { const r = await api("/api/ravi/action", { type: "charge", amount: amount.value, motif: motif.value }); vibrate(r.ok ? "success" : "error"); toast(r.message || ""); if (r.ok) { closeSheet(); load(); } }
+      catch (e) { toast("Erreur : " + e.message); } finally { S.busy = false; }
+    } }, "✅ ENREGISTRER"),
+    el("button", { class: "big grey", onclick: closeSheet }, "Annuler"));
+  setTimeout(() => amount.focus(), 250);
+}
 function viewCash() {
   const list = S.d.livreurs.filter((l) => l.cash).sort((a, b) => b.cash - a.cash);
   const total = list.reduce((t, l) => t + l.cash, 0);
-  return [errors(),
-    el("div", { class: "card green" }, el("div", { class: "label" }, "💶 À récupérer chez les livreurs"), el("div", { class: "huge" }, eur(total)),
-      S.d.ravitailleur_cash !== null && S.d.ravitailleur_cash !== undefined ? el("div", { class: "muted", style: "margin-top:6px" }, `💼 Chez le ravitailleur : ${eur(S.d.ravitailleur_cash)}`) : null),
+  return [errors(), myMoney(),
+    el("div", { class: "card green" }, el("div", { class: "label" }, "💶 À récupérer chez les livreurs"), el("div", { class: "huge" }, eur(total))),
     list.length ? list.map((lv) => el("div", { class: "card" }, el("div", { class: "row" }, el("div", { class: "title grow", style: "margin:0" }, who(lv)), el("b", { style: "font-size:22px" }, eur(lv.cash))),
       el("button", { class: "big orange-b", onclick: () => cashSheet(lv) }, "💶 RÉCUPÉRER"))) : el("div", { class: "card empty" }, el("div", { class: "e" }, "🎉"), "Personne ne doit de cash.")];
 }

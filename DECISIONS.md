@@ -746,3 +746,13 @@ simple qui respecte le mur de confidentialité (§12).
      onglets du jour des deux tableaux lisent leur bloc. Aucune formule existante hors des barres n'a changé ;
      contrôle : Dimanche de JOURS = SOLDES (stock ① et cash ④). Un stock négatif un jour donné signale une vente
      notée avant le rechargement correspondant (rechargement noté un jour plus tard).
+
+171. **Espace « 💼 Ravi » : registre d'argent du ravitailleur** (l'exploitant : « un vrai espace de gestion de ce
+     qu'il a récupéré, ce qu'il lui reste… souvent des problèmes »). Choix de l'exploitant : registre dans le bot
+     (table `ravi_moves`) recopié dans COMPTA RAVI, contrôle de caisse, solde visible (lecture seule) par le
+     ravitailleur, espace réservé au dispatch. Le cash récupéré vient des rechargements du bot (attribué au
+     ravitailleur nommé dans /ravi, sinon à celui qui a saisi s'il est ravitailleur ; sinon « sans ravitailleur »).
+     Le solde part du dernier « départ » (fixé, calé sur un contrôle, ou reporté au reset), ce qui garde le registre
+     d'une semaine à l'autre alors que RAVI est vidé au reset. Bug corrigé au passage : le reste chez le ravitailleur
+     calculé par le script retirait aussi les dépôts (qui s'ajoutent) ; le bot n'utilise plus ce chiffre.
+

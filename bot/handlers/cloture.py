@@ -31,8 +31,10 @@ async def _precheck() -> tuple[str, object]:
         error = (stock_data if not stock_data["ok"] else cash_data)["error"]
         return texts.cloture_unavailable(error), None
     tab = sheets.day_tab(now_utc())
+    from bot.services import ravi
+
     text = texts.cloture_precheck(open_courses, stock_data["livreurs"], list(cash_data["livreurs"].values()),
-                                  cash_data.get("ravitailleur"), tab)
+                                  await ravi.total_balance(), tab)
     return text, keyboards.cloture_confirm()
 
 
@@ -95,9 +97,14 @@ async def run(user: dict) -> tuple[bool, str]:
         # Nouvelle semaine : les mouvements pas encore écrits appartenaient à l'ancienne.
         stock._inflight.clear()
         stock._sheet_cache = None
+        # Argent des ravitailleurs : le solde devient le départ de la nouvelle semaine (avant l'événement
+        # « cloture », qui sert de début de semaine), et une ligne « Report » est écrite dans RAVI.
+        from bot.services import ravi
+
+        carried = await ravi.carry_over(user, label)
         await db.log_event("cloture", user_id=user["id"],
                            payload={"archive": result.get("archive"), "reports": result.get("reports")})
-        return True, texts.cloture_done(result, tab)
+        return True, texts.cloture_done(result, tab) + texts.cloture_ravi(carried)
 
 
 async def precheck() -> tuple[bool, str]:
