@@ -756,3 +756,9 @@ simple qui respecte le mur de confidentialité (§12).
      d'une semaine à l'autre alors que RAVI est vidé au reset. Bug corrigé au passage : le reste chez le ravitailleur
      calculé par le script retirait aussi les dépôts (qui s'ajoutent) ; le bot n'utilise plus ce chiffre.
 
+172. **Report du reset toujours dans Lundi.** Un reset fait avant 6h le lundi (encore la nuit de dimanche) écrivait
+     les lignes « Report clôture » dans l'onglet Dimanche ; les soldes jour par jour (JOURS, en cascade depuis
+     lundi) ne voyaient ce stock qu'en fin de semaine, d'où des stocks négatifs du lundi au samedi. Le report va
+     désormais toujours dans Lundi ; les lignes de la semaine en cours ont été déplacées de Dimanche à Lundi à la
+     demande de l'exploitant.
+
