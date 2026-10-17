@@ -1887,7 +1887,7 @@ async def test_weekly_cloture(h, monkeypatch):
     await h.press_data(DISPATCH, check, "cl_go")
     done = h.tg.messages[(DISPATCH, check.message_id)]
     action, payload, timeout = next(c for c in reversed(calls) if c[0] == "cloture")
-    assert action == "cloture" and payload["onglet"] in sheets.JOURS and payload["libelle"].startswith("Reset du ")
+    assert action == "cloture" and payload["onglet"] == "Lundi" and payload["libelle"].startswith("Reset du ")
     assert timeout == cloture_h.TIMEOUT
     assert "✅ <b>Semaine remise à zéro</b>" in done.text and 'href="https://drive.google.com/drive/folders/abc"' in done.text
     assert "• Box 1 : 28 DIV · 112 US" in done.text and "• Box 2 : vide" in done.text

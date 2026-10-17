@@ -21,6 +21,9 @@ from bot.timeutil import now_utc, to_paris
 TIMEOUT = 330.0            # copie des 3 fichiers : jusqu'à quelques minutes
 AGAIN_AFTER = 10 * 60      # deux clôtures à moins de 10 min : sûrement un double appui
 _lock = asyncio.Lock()
+# Le stock reporté va toujours dans Lundi, premier jour de la semaine : un reset fait avant 6h (encore la nuit
+# de dimanche) le mettait dans Dimanche, et les soldes jour par jour (onglet JOURS) étaient faux toute la semaine.
+REPORT_TAB = sheets.JOURS[0]
 _last_done: float | None = None
 
 
@@ -30,7 +33,7 @@ async def _precheck() -> tuple[str, object]:
     if not stock_data["ok"] or not cash_data["ok"]:
         error = (stock_data if not stock_data["ok"] else cash_data)["error"]
         return texts.cloture_unavailable(error), None
-    tab = sheets.day_tab(now_utc())
+    tab = REPORT_TAB
     from bot.services import ravi
 
     text = texts.cloture_precheck(open_courses, stock_data["livreurs"], list(cash_data["livreurs"].values()),
@@ -89,7 +92,7 @@ async def run(user: dict) -> tuple[bool, str]:
         if _last_done is not None and time.monotonic() - _last_done < AGAIN_AFTER:
             return False, texts.CLOTURE_ALREADY
         label = f"Reset du {to_paris(now_utc()):%Y-%m-%d %Hh%M}"
-        tab = sheets.day_tab(now_utc())
+        tab = REPORT_TAB
         result = await sheets.fetch_action("cloture", payload={"onglet": tab, "libelle": label}, timeout=TIMEOUT)
         if not result or not result.get("ok"):
             return False, texts.cloture_failed((result or {}).get("error") or "Google Sheets non relié")
