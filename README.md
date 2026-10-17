@@ -699,6 +699,23 @@ dispatch et dans le journal (colonne « paiement » du CSV), et écrit dans la c
   transfert) = **ce qui lui reste**. « Aujourd'hui » = la nuit en cours (jusqu'à `NIGHT_END_HOUR`) ; les
   mouvements du jour viennent de la base du bot, le reste d'avant = total de la semaine − mouvements du jour.
 
+### Soldes jour par jour dans les tableaux (barres intelligentes)
+
+La barre de chaque onglet du jour (Rechargement ligne 21, Dispatch ligne 43 : choisir un livreur) montre l'état
+**à la fin de cette nuit**, plus le cumul de la semaine : Lundi = fin de lundi, Mardi = lundi + mardi, …,
+Dimanche = toute la semaine (= SOLDES). Stock produit par produit, et argent : avant + encaissé − charges −
+remis = à récupérer. Tout est en formules : corriger lundi met à jour les jours suivants, mercredi ne change
+jamais l'onglet Mardi.
+
+- **Rechargement, onglet JOURS** : 7 blocs (lignes 3, 12, 21… : en-têtes, puis 6 livreurs). Stock = bloc de la
+  veille + chargé net du jour (même règle que SOLDES ②, Swipe compris) − ventes OK du jour (IMPORT, colonne Jour).
+  Argent : reste d'avant (= reste de la veille + cash « Stock antérieur » du jour), encaissé (espèces du jour),
+  charges (dépenses du jour), remis (colonne C du jour, Swipe déduit chez celui qui reçoit), reste.
+- **Dispatch, BASE O9:V16** : dépenses (charges + paye) par livreur et par jour, importées dans Rechargement
+  (IMPORT K10).
+- **Dispatch, IMPORT A10** : import de JOURS!A1:U63, lu par la barre des onglets du jour.
+- SOLDES ne change pas (total de la semaine) : le bot continue de s'en servir.
+
 ### Dispatch selon le stock
 
 Avec `STOCK_ALERTS=1`, une course part **d'abord aux livreurs qui ont tout en stock** (stock de la feuille +
