@@ -391,8 +391,25 @@ def proposal(course: dict, distance_label: str | None) -> str:
     lines.append(f"🍾 {esc(course['products'])}")
     if course.get("requested_time"):
         lines.append(f"🕐 {esc(course['requested_time'])}")
+    lines.append("⏱ <b>Pour la prendre, appuie sur ton temps</b> 👇")
     lines.append(f"Course #{course['id']}")
     return "\n".join(lines)
+
+
+TAKE_PICK_TIME = "⏱ Pour la prendre, choisis ton temps : appuie sur le temps qu'il te faut pour y être."
+ETA_FIRST = ("⏱ Donne d'abord ton temps (les boutons ⏱ de ta course) : le franchisé doit savoir quand tu "
+             "arrives. Ensuite tu pourras valider.")
+ETA_NOTED = "Temps noté ✅"
+GIVEN_UNCONFIRMED = "Confirme d'abord ce que tu as donné au client."
+
+
+def _eta_at(course: dict) -> str:
+    """« dans 20 min (vers 21:05) » si le livreur a donné son temps, sinon « »."""
+    from bot.timeutil import hhmm, parse_ts
+
+    if not course.get("eta_minutes") or not course.get("eta_at"):
+        return ""
+    return f"dans {_eta(int(course['eta_minutes']))} (vers {hhmm(parse_ts(course['eta_at']))})"
 
 
 def proposal_relance(course: dict) -> str:
@@ -414,7 +431,34 @@ def full_fiche(course: dict, franchise: dict) -> str:
     who = esc(franchise.get("display_name") or "Franchisé")
     if franchise.get("telegram_username"):
         who += f" — @{esc(franchise['telegram_username'])}"
-    lines += ["", who, "", "✅ Livrée : écris <b>OK</b> · ✏️ autre chose vendu : écris <b>Modif</b>"]
+    lines += ["", who, ""]
+    if not course.get("eta_at"):
+        lines.append("⏱ <b>Donne ton temps</b> avec les boutons ⏱ ci-dessous : obligatoire avant de valider.")
+    lines.append("✅ Livrée : écris <b>OK</b> · ✏️ autre chose vendu : écris <b>Modif</b>")
+    return "\n".join(lines)
+
+
+def given_left(left: int) -> str:
+    return f"Encore {left} fois ✅" if left > 1 else "Encore une fois ✅"
+
+
+def given_check(course: dict, done: int, total: int) -> str:
+    """Avant la livraison : le livreur relit ce qu'il a donné et confirme plusieurs fois (erreurs de produits).
+    Sa modification attend le franchisé : c'est elle qu'il confirme."""
+    pending = course.get("pending_edit")
+    if pending:
+        course = {**course, "products": pending["products"], "price": pending["price"]}
+    parts = [p.strip() for p in str(course["products"]).split(" + ") if p.strip()]
+    lines = [f"🧐 <b>Course #{course['id']} — vérifie bien !</b>", "", "<b>Tu es sûr d'avoir donné au client :</b>"]
+    lines += [f"   • <b>{esc(p)}</b>" for p in parts] or [f"   • {esc(course['products'])}"]
+    lines.append(f"💶 À encaisser : <b>{eur(course['price'])}</b>")
+    if pending:
+        lines.append("⏳ C'est ta modification : le franchisé doit encore la valider.")
+    lines.append("")
+    left = total - done
+    lines.append(f"C'est exactement ça ? Appuie <b>{left} fois</b> sur ✅ OUI." if done == 0 else
+                 f"Encore <b>{left} fois</b> sur ✅ OUI.")
+    lines.append("Tu t'es trompé ou le client a pris autre chose ? ✏️ <b>NON, je corrige</b>.")
     return "\n".join(lines)
 
 
@@ -638,7 +682,8 @@ def d_created(course: dict, franchise: dict) -> str:
 
 def d_taken(course: dict, franchise: dict, livreur: dict) -> str:
     return (
-        f"🚴 <b>Course #{course['id']} prise</b> par {esc(livreur['display_name'])}\n"
+        f"🚴 <b>Course #{course['id']} prise</b> par {esc(livreur['display_name'])}"
+        f"{' — y sera ' + _eta_at(course) if _eta_at(course) else ''}\n"
         f"Pour {esc(franchise['display_name'])} · 📍 {esc(course.get('address') or course['district'])} · "
         f"{eur(course['price'])}"
     )
@@ -653,8 +698,9 @@ def d_delivered(course: dict, livreur: dict, far_label: str | None = None) -> st
 
 
 def taken_for_franchise(course: dict, livreur: dict) -> str:
+    eta = _eta_at(course)
     return (f"🚴 <b>Ta course #{course['id']} est prise</b> par {esc(livreur.get('display_name') or 'un livreur')}"
-            f" — il est en route.\n📍 {esc(course['address'])} · {eur(course['price'])}")
+            f" — {f'il y sera {eta}' if eta else 'il est en route'}.\n📍 {esc(course['address'])} · {eur(course['price'])}")
 
 
 def delivered_for_franchise(course: dict, livreur: dict | None) -> str:

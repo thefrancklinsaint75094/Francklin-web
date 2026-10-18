@@ -3,6 +3,7 @@ remise en diffusion, annulation. Partagé par les handlers livreur, franchisé e
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from bot import config, db, keyboards, messaging, texts
 from bot.services import broadcast, pick, sheets, stock
@@ -76,26 +77,31 @@ async def clear_no_livreur(context, course: dict) -> None:
 
 # ---------------------------------------------------------------- attribution
 
-async def after_assignment(context, course: dict, livreur: dict, message) -> None:
-    """§9.4, dans l'ordre : autres livreurs, fiche complète, franchisé, dispatch, journal."""
+async def after_assignment(context, course: dict, livreur: dict, message, eta: int | None = None) -> None:
+    """§9.4, dans l'ordre : autres livreurs, fiche complète, franchisé, dispatch, journal.
+    eta : le temps choisi en prenant la course (minutes) ; sans lui (course attribuée par un admin ou un
+    franchisé), la fiche du livreur lui demande son temps, obligatoire avant de valider."""
     broadcast.cancel_wave(context.job_queue, course["id"])
     pick.forget(context.job_queue, course["id"])
     _forget(course["id"])
     await broadcast.close_proposals(context, course["id"], texts.proposal_taken(course["id"]), except_livreur=livreur["id"])
 
     franchise = await db.get_user(course["franchise_id"])
+    # Délai annoncé : celui d'un livreur précédent (course réattribuée) ne vaut plus.
+    eta_fields = ({"eta_minutes": eta, "eta_at": iso(now_utc() + timedelta(minutes=eta))} if eta
+                  else {"eta_minutes": None, "eta_at": None})
+    course.update(eta_fields)
     fiche = texts.full_fiche(course, franchise or {})
     bc = await db.get_broadcast(course["id"], livreur["id"])
     msg_id = message.message_id if message is not None else None
     new = await messaging.edit(
-        context.bot, livreur["telegram_id"], msg_id, fiche, keyboards.livreur_course(course["id"]),
+        context.bot, livreur["telegram_id"], msg_id, fiche, keyboards.livreur_course(course["id"], ask_eta=not eta),
         sent_at=parse_ts(bc["sent_at"]) if bc else None, user=livreur,
     )
     if new is not None:
         msg_id = new.message_id
-    # Délai annoncé : celui d'un livreur précédent (course réattribuée) ne vaut plus.
-    await db.update_course(course["id"], {"livreur_message_id": msg_id, "eta_minutes": None, "eta_at": None})
-    course.update({"livreur_message_id": msg_id, "eta_minutes": None, "eta_at": None})
+    await db.update_course(course["id"], {"livreur_message_id": msg_id, **eta_fields})
+    course["livreur_message_id"] = msg_id
 
     await refresh_franchise_message(context, course, livreur=livreur, franchise=franchise)
     # Une fiche modifiée ne sonne pas sur le téléphone : un vrai message prévient le franchisé.
@@ -104,8 +110,11 @@ async def after_assignment(context, course: dict, livreur: dict, message) -> Non
     await messaging.notify_dispatch(context.bot, texts.d_taken(course, franchise or {"display_name": "?"}, livreur),
                                     skip=[course["franchise_id"]])
     await db.log_event("course_taken", course["id"], livreur["id"])
-    # Il écrit son temps (« 47 ») : le franchisé sait quand le livreur arrive.
-    await messaging.send(context.bot, livreur, texts.eta_ask(course))
+    if eta:
+        await db.log_event("eta_set", course["id"], livreur["id"], {"minutes": eta, "at_take": True})
+    else:
+        # Il donne son temps (boutons ⏱ ou « 47 ») : le franchisé sait quand le livreur arrive.
+        await messaging.send(context.bot, livreur, texts.eta_ask(course))
     stock.after_assignment_later(context, course, livreur)
 
 
@@ -210,7 +219,7 @@ async def remind_next(context, livreur: dict, done_id: int) -> None:
     nxt = min(others, key=lambda c: (c.get("assigned_at") or "", c["id"]))
     franchise = await db.get_user(nxt["franchise_id"]) or {}
     sent = await messaging.send(context.bot, livreur, texts.next_course_for_livreur(nxt, franchise),
-                                keyboards.livreur_course(nxt["id"]), ring=True)
+                                keyboards.livreur_course(nxt["id"], ask_eta=not nxt.get("eta_at")), ring=True)
     fields = {"assigned_at": iso(now_utc())}
     if sent is not None:
         fields["livreur_message_id"] = sent.message_id

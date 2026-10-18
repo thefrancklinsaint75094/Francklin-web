@@ -117,7 +117,7 @@ async def ma_course(update: Update, context) -> None:
     franchises = await db.get_users(c["franchise_id"] for c in courses)
     for c in courses:
         sent = await messaging.reply(update, texts.full_fiche(c, franchises.get(c["franchise_id"], {})),
-                                     keyboards.livreur_course(c["id"]))
+                                     keyboards.livreur_course(c["id"], ask_eta=not c.get("eta_at")))
         if sent:
             await db.update_course(c["id"], {"livreur_message_id": sent.message_id})
 
@@ -175,7 +175,7 @@ async def on_menu(update: Update, context, user: dict, action: str) -> None:
         if course is None:
             await messaging.reply(update, texts.NO_ASSIGNED, keyboards.livreur_menu())
             return
-        await messaging.reply(update, texts.deliver_ask(course), keyboards.payment_choice(course["id"]))
+        await ask_given(update, course)
 
 
 def is_validation(text: str | None) -> bool:
@@ -203,18 +203,19 @@ async def current_course(user: dict) -> dict | None:
 
 
 async def validate_text(update: Update, context, user: dict, text: str) -> None:
-    """« OK » : la course en cours est livrée (espèces, ou virement avec « OK CB »).
-    « Modif » : l'éditeur s'ouvre ; la modification part au franchisé, puis le paiement valide la livraison."""
+    """« OK » : le récapitulatif de ce qu'il a donné, à confirmer, puis le paiement valide la livraison.
+    « Modif » : l'éditeur s'ouvre ; la modification part au franchisé, puis le paiement valide la livraison.
+    Sans temps donné, il le donne d'abord."""
     async with _livreur_locks[user["id"]]:
         course = await current_course(user)
         if course is None:
             await messaging.reply(update, texts.NO_ASSIGNED)
             return
-        payment = _ok_payment(text)
-        if payment:
-            updated = await lifecycle.deliver(context, course, payment=payment, ack=True)
-            if updated is None:
-                await messaging.reply(update, texts.COURSE_FINISHED)
+        if not course.get("eta_at"):
+            await messaging.reply(update, texts.ETA_FIRST, keyboards.eta_only(course["id"]))
+            return
+        if _ok_payment(text):
+            await ask_given(update, course)
             return
         cat = await catalog.load()
         lines = order_edit.lines_from_course(course, cat)
@@ -224,24 +225,42 @@ async def validate_text(update: Update, context, user: dict, text: str) -> None:
                                 "msg": sent.message_id if sent else None, "deliver": True})
 
 
+async def ask_given(update: Update, course: dict) -> None:
+    """Récapitulatif de ce qu'il a donné, à confirmer GIVEN_CONFIRMATIONS fois avant le paiement."""
+    await messaging.reply(update, texts.given_check(course, 0, keyboards.GIVEN_CONFIRMATIONS),
+                          keyboards.given_check(course["id"], 0))
+
+
 # ================================================================ prise de course
 
 @common.callback
 async def take(update: Update, context):
+    """course_take:<course>:<minutes> : prendre la course, c'est donner son temps (un appui). Un ancien
+    bouton sans temps (course_take:<course>) affiche les boutons de temps."""
     user = await _livreur(update)
     if user is None:
         return None
-    course_id = common.arg(update, int)
+    parts = (update.callback_query.data or "").split(":")
+    course_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
     message = update.callback_query.message
-    ok, answer = await take_course(context, user, course_id, message)
+    minutes = eta_minutes(parts[2]) if len(parts) > 2 else None
+    if minutes is None:
+        await messaging.edit_markup(context.bot, update.effective_chat.id, message.message_id,
+                                    keyboards.proposal(course_id))
+        return texts.TAKE_PICK_TIME, True
+    ok, answer = await take_course(context, user, course_id, message, eta=minutes)
     if ok is None:
         return None
     return answer if ok else (answer, True)
 
 
-async def take_course(context, user: dict, course_id: int, message=None) -> tuple[bool | None, str]:
+async def take_course(context, user: dict, course_id: int, message=None,
+                      eta: int | None = None) -> tuple[bool | None, str]:
     """« Je prends » : (pris ?, texte). None : course inconnue. Même verrou, mêmes règles (maximum de courses,
-    stock d'après le tableau) depuis le chat ou l'appli ; message : la proposition à changer en fiche."""
+    stock d'après le tableau) depuis le chat ou l'appli ; message : la proposition à changer en fiche.
+    eta : son temps en minutes, obligatoire (le franchisé sait tout de suite quand il arrive)."""
+    if not eta:
+        return False, texts.TAKE_PICK_TIME
     async with _livreur_locks[user["id"]]:
         user = await db.get_user(user["id"])
         course = await db.get_course(course_id)
@@ -277,29 +296,79 @@ async def take_course(context, user: dict, course_id: int, message=None) -> tupl
                 await messaging.edit(context.bot, user["telegram_id"], message.message_id,
                                      texts.proposal_taken(course_id))
             return False, texts.TOO_LATE
-    await lifecycle.after_assignment(context, won, user, message)
+    await lifecycle.after_assignment(context, won, user, message, eta=eta)
     return True, "C'est pour toi 🚴"
+
+
+async def _deliverable(update: Update, context, course_id: int) -> tuple[dict | None, dict | None, object]:
+    """(livreur, course, None) si le livreur peut valider cette course maintenant ; sinon (…, None, réponse
+    du bouton). Sans temps donné, les boutons ⏱ s'affichent : il le donne d'abord."""
+    user = await _livreur(update)
+    if user is None:
+        return None, None, None
+    course = await db.get_course(course_id)
+    if course is None or course.get("livreur_id") != user["id"]:
+        return user, None, (texts.COURSE_FINISHED, True)
+    if course["status"] == "delivered":
+        return user, None, "Déjà livrée."
+    if course["status"] != "assigned":
+        return user, None, (texts.COURSE_FINISHED, True)
+    current = await current_course(user)
+    if current and current["id"] != course["id"]:
+        return user, None, (texts.finish_first(current["id"]), True)
+    if not course.get("eta_at"):
+        await messaging.edit_markup(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                                    keyboards.livreur_course(course["id"], ask_eta=True))
+        return user, None, (texts.ETA_FIRST, True)
+    return user, course, None
 
 
 @common.callback
 async def deliver(update: Update, context):
-    user = await _livreur(update)
-    if user is None:
+    """📦 Livré : d'abord le récapitulatif de ce qu'il a donné, à confirmer ; le paiement vient après."""
+    user, course, answer = await _deliverable(update, context, common.arg(update, int))
+    if course is None:
+        return answer
+    await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
+                         texts.given_check(course, 0, keyboards.GIVEN_CONFIRMATIONS),
+                         keyboards.given_check(course["id"], 0))
+    return None
+
+
+@common.callback
+async def given(update: Update, context):
+    """dv:<course>:<n> : n-ième « OUI, J'AI DONNÉ ÇA ». Au dernier, le choix du paiement (qui valide)."""
+    parts = (update.callback_query.data or "").split(":")
+    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
         return None
-    course = await db.get_course(common.arg(update, int))
-    if course is None or course.get("livreur_id") != user["id"]:
-        return texts.COURSE_FINISHED, True
-    if course["status"] == "delivered":
-        return "Déjà livrée."
-    if course["status"] != "assigned":
-        return texts.COURSE_FINISHED, True
-    current = await current_course(user)
-    if current and current["id"] != course["id"]:
-        return texts.finish_first(current["id"]), True
-    # Le client a payé comment ? Le choix valide la livraison.
-    await messaging.edit_markup(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
-                                keyboards.payment_choice(course["id"]))
+    user, course, answer = await _deliverable(update, context, int(parts[1]))
+    if course is None:
+        return answer
+    done, total = int(parts[2]), keyboards.GIVEN_CONFIRMATIONS
+    chat_id, message_id = update.effective_chat.id, update.callback_query.message.message_id
+    if done < total:
+        await messaging.edit(context.bot, chat_id, message_id, texts.given_check(course, done, total),
+                             keyboards.given_check(course["id"], done))
+        return texts.given_left(total - done)
+    await messaging.edit(context.bot, chat_id, message_id, texts.deliver_ask(course),
+                         keyboards.payment_choice(course["id"]))
     return texts.PAYMENT_PROMPT
+
+
+@common.callback
+async def given_fix(update: Update, context):
+    """dv_fix:<course> : « NON, je corrige » → l'éditeur ; la modification part au franchisé, puis le
+    paiement valide la livraison."""
+    user, course, answer = await _deliverable(update, context, common.arg(update, int))
+    if course is None:
+        return answer
+    async with _livreur_locks[user["id"]]:
+        lines = order_edit.lines_from_course(course, await catalog.load())
+        payload = {"course_id": course["id"], "lines": lines, "orig": lines, "sel": None,
+                   "msg": update.callback_query.message.message_id, "deliver": True}
+        await _save_edit(user, payload)
+        await _render_edit(context, update.effective_chat.id, payload)
+    return None
 
 
 @common.callback
@@ -321,9 +390,14 @@ async def pay(update: Update, context):
     if parts[0] != "pay_back" and current and current["id"] != course["id"]:
         return texts.finish_first(current["id"]), True
     if parts[0] == "pay_back":
-        await messaging.edit_markup(context.bot, update.effective_chat.id, message_id,
-                                    keyboards.livreur_course(course["id"]))
+        franchise = await db.get_user(course["franchise_id"]) or {}
+        await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.full_fiche(course, franchise),
+                             keyboards.livreur_course(course["id"], ask_eta=not course.get("eta_at")))
         return None
+    if not course.get("eta_at"):
+        await messaging.edit_markup(context.bot, update.effective_chat.id, message_id,
+                                    keyboards.eta_only(course["id"]))
+        return texts.ETA_FIRST, True
     payment = lifecycle.PAYMENTS.get(parts[2] if len(parts) > 2 else "")
     if payment is None:
         return None
@@ -358,20 +432,49 @@ async def set_eta(update: Update, context, user: dict, minutes: int, course_id: 
     if not courses:
         return False
     course = next((c for c in reversed(courses) if not c.get("eta_at")), None) or courses[0]
+    course, at = await apply_eta(context, user, course, minutes)
+    await messaging.reply(update, texts.eta_set(course, minutes, at))
+    return True
+
+
+async def apply_eta(context, user: dict, course: dict, minutes: int) -> tuple[dict, str]:
+    """Enregistre le temps du livreur, prévient franchisé et dispatch. Premier temps donné : sa fiche perd
+    les boutons ⏱. Renvoie (course à jour, heure d'arrivée « HH:MM »)."""
     update_ = course.get("eta_at") is not None
     at_dt = now_utc() + timedelta(minutes=minutes)
     fields = {"eta_minutes": minutes, "eta_at": iso(at_dt)}
     course = await db.update_course(course["id"], fields) or {**course, **fields}
     at = hhmm(at_dt)
     await db.log_event("eta_set", course["id"], user["id"], {"minutes": minutes})
-    await messaging.reply(update, texts.eta_set(course, minutes, at))
     franchise = await db.get_user(course["franchise_id"])
     if franchise and franchise["role"] != "dispatch":
         await messaging.send(context.bot, franchise, texts.eta_for_franchise(course, user, minutes, at, update_))
     await messaging.notify_dispatch(context.bot, texts.d_eta(course, user, minutes, at, update_),
                                     skip=[course["franchise_id"]])
     await lifecycle.refresh_franchise_message(context, course, livreur=user, franchise=franchise)
-    return True
+    if not update_:
+        await messaging.edit(context.bot, user["telegram_id"], course.get("livreur_message_id"),
+                             texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"]),
+                             user=user, resend_if_old=False)
+    return course, at
+
+
+@common.callback
+async def eta_pick(update: Update, context):
+    """eta:<course>:<minutes> : bouton ⏱ de la fiche (course attribuée sans temps)."""
+    user = await _livreur(update)
+    if user is None:
+        return None
+    parts = (update.callback_query.data or "").split(":")
+    minutes = eta_minutes(parts[2]) if len(parts) == 3 else None
+    course = await db.get_course(int(parts[1])) if len(parts) == 3 and parts[1].isdigit() else None
+    if course is None or minutes is None or course.get("livreur_id") != user["id"] or course["status"] != "assigned":
+        return texts.COURSE_FINISHED, True
+    course, at = await apply_eta(context, user, course, minutes)
+    message_id = update.callback_query.message.message_id
+    if message_id != course.get("livreur_message_id"):     # bouton d'un rappel, pas de la fiche
+        await messaging.edit(context.bot, update.effective_chat.id, message_id, texts.eta_set(course, minutes, at))
+    return texts.ETA_NOTED
 
 
 @common.callback
@@ -422,7 +525,7 @@ async def cancel_no(update: Update, context):
         return (texts.COURSE_FINISHED, True) if user else None
     franchise = await db.get_user(course["franchise_id"])
     await messaging.edit(context.bot, update.effective_chat.id, update.callback_query.message.message_id,
-                         texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"]))
+                         texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"], ask_eta=not course.get("eta_at")))
     return None
 
 
@@ -480,7 +583,7 @@ async def _back_to_card(context, chat_id: int, message_id: int | None, course: d
     if course.get("livreur_id") == user["id"]:
         franchise = await db.get_user(course["franchise_id"])
         await messaging.edit(context.bot, chat_id, message_id, texts.full_fiche(course, franchise or {}),
-                             keyboards.livreur_course(course["id"]))
+                             keyboards.livreur_course(course["id"], ask_eta=not course.get("eta_at")))
         return
     livreur = await db.get_user(course["livreur_id"]) if course.get("livreur_id") else None
     text, markup = lifecycle.franchise_view(course, livreur)
@@ -608,9 +711,10 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
         return texts.ORDER_EDIT_EMPTY, True
     if order_edit.same(lines, payload.get("orig") or []):
         await db.clear_state(user["id"])
-        if payload.get("deliver"):              # « Modif » sans rien changer : il reste à valider le paiement
-            await messaging.edit(context.bot, chat_id, payload["msg"], texts.PAYMENT_PROMPT,
-                                 keyboards.payment_choice(course["id"]))
+        if payload.get("deliver"):              # rien changé : il confirme ce qu'il a donné, puis le paiement
+            await messaging.edit(context.bot, chat_id, payload["msg"],
+                                 texts.given_check(course, 0, keyboards.GIVEN_CONFIRMATIONS),
+                                 keyboards.given_check(course["id"], 0))
             return texts.ORDER_EDIT_UNCHANGED
         await _back_to_card(context, chat_id, payload["msg"], course, user)
         return texts.ORDER_EDIT_UNCHANGED
@@ -686,7 +790,7 @@ async def _notify_modified(context, editor: dict, before: dict, updated: dict) -
         await messaging.send(context.bot, livreur,
                              texts.order_modified_for_livreur(updated, before["price"], editor["display_name"]), ring=True)
         await messaging.edit(context.bot, livreur["telegram_id"], updated.get("livreur_message_id"),
-                             texts.full_fiche(updated, franchise or {}), keyboards.livreur_course(updated["id"]),
+                             texts.full_fiche(updated, franchise or {}), keyboards.livreur_course(updated["id"], ask_eta=not updated.get("eta_at")),
                              user=livreur, resend_if_old=False)
     if franchise and franchise["id"] != editor["id"]:
         await messaging.send(context.bot, franchise,

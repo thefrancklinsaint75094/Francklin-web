@@ -74,7 +74,7 @@ async def apply(context, user: dict, course: dict, value: str | None) -> dict:
     if course["status"] == "assigned" and livreur:
         await messaging.send(context.bot, livreur, texts.course_time_changed(course), ring=True)
         await messaging.edit(context.bot, livreur["telegram_id"], course.get("livreur_message_id"),
-                             texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"]),
+                             texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"], ask_eta=not course.get("eta_at")),
                              user=livreur)
     elif course["status"] == "pending":
         await address._refresh_proposals(context, course)

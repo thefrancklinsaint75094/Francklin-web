@@ -776,3 +776,12 @@ simple qui respecte le mur de confidentialité (§12).
      toutes les 10 minutes, chaque écriture signalée par un `sheet_error` et pas encore rattrapée (événement
      `sheet_resent`), et le dispatch voit ce qui a été rattrapé. Limité à 36 h et à la semaine en cours : une
      erreur ancienne et oubliée ne doit pas ressurgir d'un coup dans un tableau déjà corrigé à la main.
+
+175. **Le livreur donne son temps pour prendre une course, et confirme 3 fois ce qu'il a donné** (l'exploitant :
+     les livreurs ne mettent pas leur temps, et se trompent de produit, une bouteille plus chère donnée à la
+     place d'une autre ; « il faut vraiment les infantiliser », « qu'il appuie 3 fois sur valider »). Prendre une
+     course = choisir son temps (boutons ⏱, un appui : pas d'étape en plus dans la course à la prise) ; une course
+     attribuée par un admin ou un franchisé ne se valide pas sans temps. Avant le paiement, le récapitulatif
+     « Tu es sûr d'avoir donné : … » demande trois « OUI » (bouton grisé un instant dans l'appli, pour qu'il lise),
+     ou « NON, je corrige » qui ouvre la modification (le franchisé garde le dernier mot). « OK CB » ne saute plus
+     ces étapes. Les admins qui marquent une course livrée ne sont pas concernés.
