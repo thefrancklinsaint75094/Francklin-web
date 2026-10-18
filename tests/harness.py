@@ -152,7 +152,8 @@ class FakeTelegram(BaseRequest):
             if m is None:
                 return self._err(400, "Bad Request: message to edit not found")
             new_text = params.get("text", m.text)
-            new_markup = params.get("reply_markup") if api == "editMessageText" or "reply_markup" in params else m.markup
+            # Comme Telegram : editMessageReplyMarkup sans reply_markup retire les boutons.
+            new_markup = params.get("reply_markup")
             if api == "editMessageText" and "reply_markup" not in params:
                 new_markup = None
             if new_text == m.text and new_markup == m.markup:

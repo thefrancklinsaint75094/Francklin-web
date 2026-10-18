@@ -322,12 +322,18 @@ async def deliver_course(h, tg_id, msg, pay="e"):
     """(⏱ son temps s'il ne l'a pas donné,) 📦 Livré, ✅ OUI, J'AI DONNÉ ÇA ×3, puis le paiement
     (e : espèces, v : virement)."""
     course_id = msg.data("course_deliver:").split(":")[1]
-    if any(d and d.startswith("eta:") for _, d in msg.buttons):
-        await h.press(tg_id, msg, "eta:")
+    if not (await db.get_course(int(course_id)))["eta_at"]:      # course attribuée : son temps d'abord
+        await h.text(tg_id, "20")
     await h.press(tg_id, h.tg.messages[(tg_id, msg.message_id)], "course_deliver:")
     for n in range(1, 4):
         await h.press_data(tg_id, h.tg.messages[(tg_id, msg.message_id)], f"dv:{course_id}:{n}")
     await h.press_data(tg_id, h.tg.messages[(tg_id, msg.message_id)], f"pay:{course_id}:{pay}")
+
+
+async def take(h, tg_id, msg, minutes="20"):
+    """✅ JE LA PRENDS, puis son temps écrit : la course est à lui quand il l'a écrit."""
+    await h.press(tg_id, msg, "course_take:")
+    await h.text(tg_id, minutes)
 
 
 async def go_on_duty(h, tg_id, pos):
@@ -349,18 +355,24 @@ async def test_dispo_broadcast_take_and_deliver(h):
         assert p.text.endswith(f"\nCourse #{course['id']}")
         assert "· Paris 4e · " in p.text and "📍 à ~" in p.text
         assert "Rivoli" not in p.text and "45A32" not in p.text  # jamais l'adresse avant la prise
-        # Prendre la course, c'est donner son temps : un bouton ⏱ par durée, pas de « JE LA PRENDS » sans temps.
-        assert [d for _, d in p.buttons][:8] == [f"course_take:{course['id']}:{m}"
-                                                 for m in (10, 15, 20, 30, 45, 60, 90, 120)]
+        assert p.buttons[0] == ("✅ JE LA PRENDS", f"course_take:{course['id']}")
     assert "à ~900 m de toi" in prop1.text
 
-    await h.press_data(L1, prop1, f"course_take:{course['id']}:20")
-    fiche = h.tg.messages[(L1, prop1.message_id)]
+    # JE LA PRENDS : il écrit son temps précis ; la course n'est à lui qu'une fois le temps écrit.
+    await h.press(L1, prop1, "course_take:")
+    assert h.tg.answers()[-1]["text"] == texts.TAKE_WRITE_TIME
+    assert h.tg.last(L1).text == texts.take_ask_eta(course)
+    assert (await db.get_course(course["id"]))["status"] == "pending"
+    await h.text(L1, "dans un moment")                                    # pas un temps
+    assert h.tg.last(L1).text == texts.TAKE_TIME_FORMAT
+    await h.text(L1, "20")
+    fiche = h.tg.last(L1)                                     # sa fiche arrive en bas, sous son temps
+    assert h.tg.messages[(L1, prop1.message_id)].text == texts.proposal_yours(course["id"])
+    assert not h.tg.messages[(L1, prop1.message_id)].markup
     taken = await db.get_course(course["id"])
-    assert taken["eta_minutes"] == 20 and taken["eta_at"]
+    assert taken["eta_minutes"] == 20 and taken["eta_at"] and taken["livreur_message_id"] == fiche.message_id
     at = hhmm(parse_ts(taken["eta_at"]))
-    assert not any(d.startswith("eta:") for _, d in fiche.buttons)   # temps déjà donné
-    assert "Donne ton temps" not in fiche.text
+    assert f"⏱ Tu y seras dans 20 min (vers {at})" in fiche.text and "Écris ton temps" not in fiche.text
     assert fiche.text.startswith(f"🚴 Course #{course['id']} — c'est pour toi")
     assert "📍 12 Rue de Rivoli 75004 Paris" in fiche.text and "🔑 Digicode 45A32" in fiche.text
     assert "💶 60 € à encaisser" in fiche.text
@@ -376,14 +388,11 @@ async def test_dispo_broadcast_take_and_deliver(h):
     # Le franchisé reçoit un vrai message (une fiche modifiée ne sonne pas sur le téléphone), avec le temps.
     assert any(t.startswith(f"🚴 <b>Ta course #{course['id']} est prise</b> par Livreur 1 — il y sera dans 20 min "
                             f"(vers {at}).") for t in h.tg.texts(F1))
-    assert not any("dans combien de temps tu y es" in t for t in h.tg.texts(L1))   # pas de question en plus
+    assert not any("Écris juste le temps, par exemple" in t for t in h.tg.texts(L1))   # pas de question en plus
 
     # L2 appuie trop tard.
-    await h.press_data(L2, prop2, f"course_take:{course['id']}:15")
-    assert h.tg.answers()[-1]["text"] == texts.TOO_LATE
-    # Ancien bouton sans temps : les boutons de temps s'affichent, rien n'est pris.
     await h.press_data(L2, prop2, f"course_take:{course['id']}")
-    assert h.tg.answers()[-1]["text"] == texts.TAKE_PICK_TIME
+    assert h.tg.answers()[-1]["text"] == texts.TOO_LATE
 
     await h.text(L1, "/macourse")
     assert h.tg.last(L1).text.startswith(f"🚴 Course #{course['id']}")
@@ -410,7 +419,7 @@ async def test_simultaneous_takes_through_handlers(h):
     await go_on_duty(h, L2, REPUBLIQUE)
     course = await order(h, F1, "rivoli")
     p1, p2 = h.tg.last(L1), h.tg.last(L2)
-    await asyncio.gather(h.press(L1, p1, "course_take:"), h.press(L2, p2, "course_take:"))
+    await asyncio.gather(take(h, L1, p1), take(h, L2, p2))
     stored = await db.get_course(course["id"])
     assert stored["status"] == "assigned"
     winner, loser = (L1, L2) if stored["livreur_id"] == l1["id"] else (L2, L1)
@@ -452,7 +461,7 @@ async def test_waves_widen(h, test_config):
     assert (await db.get_course(course["id"]))["broadcast_round"] == 2
     # Un livreur de la vague 1 peut encore la prendre.
     first = h.tg.find(L1, f"\nCourse #{course['id']}")
-    await h.press(L1, first, "course_take:")
+    await take(h, L1, first)
     assert (await db.get_course(course["id"]))["livreur_id"] == ls[0]["id"]
 
 
@@ -466,14 +475,14 @@ async def test_livreur_chains_several_courses(h, test_config):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     # Il s'approche de l'adresse : « bientôt libre » automatique (retombe à la livraison).
     await h.location(L1, 48.8557, 2.3578, edited=True, message_id=L1)
     assert (await db.get_user(l1["id"]))["soon_free"] is True
     c2 = await order(h, F2, "oberkampf")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c2['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c2['id']}"))
     c3 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c3['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c3['id']}"))
     assert len(await db.list_assigned_for_livreur(l1["id"])) == 3
     await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c1['id']}"))
     assert (await db.get_user(l1["id"]))["soon_free"] is False
@@ -482,7 +491,7 @@ async def test_livreur_chains_several_courses(h, test_config):
     config.set_config(dataclasses.replace(test_config, max_courses_per_livreur=2))
     c4 = await order(h, F2, "oberkampf")
     assert not any(f"\nCourse #{c4['id']}" in t for t in h.tg.texts(L1))
-    await h.press_data(L1, h.tg.last(L1), f"course_take:{c4['id']}:15")
+    await h.press_data(L1, h.tg.last(L1), f"course_take:{c4['id']}")
     assert h.tg.answers()[-1].get("text") == texts.ALREADY_HAS_COURSE
     assert (await db.get_course(c4["id"]))["status"] == "pending"
 
@@ -491,7 +500,7 @@ async def test_livreur_cancel_rebroadcast(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await go_on_duty(h, L2, REPUBLIQUE)  # arrive après l'attribution
     fiche = h.tg.find(L1, f"🚴 Course #{course['id']}")
     await h.press(L1, fiche, "course_livreur_cancel:")
@@ -526,7 +535,7 @@ async def test_franchise_withdraw_pending_and_on_site(h):
     assert f"🗑 #{c1['id']} — retirée par Franchisé 1" in h.tg.texts(DISPATCH)
 
     c2 = await order(h, F1, "oberkampf")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     fmsg2 = h.tg.find(F1, f"Course #{c2['id']}")
     await h.press(F1, fmsg2, "course_withdraw:")
     await h.press(F1, h.tg.messages[(F1, fmsg2.message_id)], "fw_yes:")
@@ -558,7 +567,7 @@ async def test_stuck_alert_once(h):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     stored = await db.update_course(course["id"], {"assigned_at": iso(now_utc() - timedelta(minutes=80))})
     await jobs.stuck_courses(h.context)
     await jobs.stuck_courses(h.context)
@@ -594,7 +603,7 @@ async def test_relay_both_ways(h):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     fiche = h.tg.find(L1, "c'est pour toi")
 
     await h.press(L1, fiche, "relay_start:")
@@ -632,10 +641,10 @@ async def test_recap_journal_csv(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     c2 = await order(h, F2, "oberkampf")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await deliver_course(h, L1, h.tg.find(L1, f"🚴 Course #{c2['id']}"))
     await go_on_duty(h, L2, REPUBLIQUE)
     c3 = await order(h, F1, "deux")
@@ -672,7 +681,7 @@ async def test_encours_and_overrides(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     c2 = await order(h, F2, "oberkampf")
 
     await h.text(DISPATCH, "/encours")
@@ -694,7 +703,7 @@ async def test_encours_and_overrides(h):
     assert (await db.get_course(c2["id"]))["status"] == "cancelled"
 
     await go_on_duty(h, L2, REPUBLIQUE)
-    await h.press(L2, h.tg.find(L2, f"\nCourse #{c1['id']}"), "course_take:")
+    await take(h, L2, h.tg.find(L2, f"\nCourse #{c1['id']}"))
     await h.press_data(DISPATCH, enc, f"force_deliver:{c1['id']}")
     await h.press(DISPATCH, h.tg.last(DISPATCH), "fy:deliver:")
     assert (await db.get_course(c1["id"]))["status"] == "delivered"
@@ -724,7 +733,7 @@ async def test_ban_livreur_with_course_rebroadcasts(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await go_on_duty(h, L2, REPUBLIQUE)
     await h.text(DISPATCH, "/exclure")
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"ban:{l1['id']}")
@@ -755,7 +764,7 @@ async def test_privacy_wall(h):
     await go_on_duty(h, L1, BASTILLE)
     await go_on_duty(h, L2, REPUBLIQUE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     for text in h.tg.all_texts_ever(L2):
         assert "Rivoli" not in text and "45A32" not in text and "barducoin" not in text
     for tg in (F1, F2):
@@ -812,7 +821,7 @@ async def test_cancel_correction_and_relay(h):
 
     await go_on_duty(h, L1, BASTILLE)
     await h.press(F1, restored, "draft_confirm:")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await h.press(L1, h.tg.find(L1, "c'est pour toi"), "relay_start:")
     await h.press(L1, h.tg.last(L1), "relay_cancel")
     assert h.tg.last(L1).text == texts.RELAY_CANCELLED
@@ -832,7 +841,7 @@ async def test_retention_scrubs_old_data(h):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await h.press(L1, h.tg.find(L1, "c'est pour toi"), "relay_start:")
     await h.text(L1, "je suis en bas")
     await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
@@ -969,7 +978,7 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     await asyncio.gather(*list(sheets._tasks))
     assert [(r["numero"], r["vendeur"], r["livreur"], r["statut"], r["prix"]) for r in sent] == [
@@ -1016,7 +1025,7 @@ async def test_payment_mode_at_delivery(h, monkeypatch):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     fiche = h.tg.find(L1, "c'est pour toi")
 
     # 📦 Livré → « tu es sûr d'avoir donné… » à confirmer 3 fois → choix du paiement ; ↩️ Retour rend la fiche.
@@ -1061,7 +1070,7 @@ async def test_payment_mode_at_delivery(h, monkeypatch):
 
     # L'admin marque une course livrée en choisissant le mode de paiement.
     c2 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c2['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c2['id']}"))
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"force_deliver:{c2['id']}")
     confirm = h.tg.last(DISPATCH)
     assert f"fy:deliver:{c2['id']}:e" in [d for _, d in confirm.buttons]
@@ -1088,13 +1097,12 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")          # « 2 vodka + coca », 60 €
-    prop = h.tg.last(L1)
-    await h.press(L1, prop, "course_take:")
-    card = h.tg.messages[(L1, prop.message_id)]
+    await take(h, L1, h.tg.last(L1))
+    card = h.tg.last(L1)
     assert "🍾 Produits :\n   • 2 vodka\n   • coca" in card.text
 
     def screen():
-        return h.tg.messages[(L1, prop.message_id)]
+        return h.tg.messages[(L1, card.message_id)]
 
     def txt(m):
         return m.text.replace("\xa0", " ")
@@ -1443,7 +1451,7 @@ async def test_franchise_and_dispatch_notified_when_livreur_arrives(h):
     far = (48.8700, 2.3300)                     # ~2,3 km de Rivoli : ≈ 10 min à 15 km/h
     await go_on_duty(h, L1, far)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     n_f1 = len(h.tg.inbox(F1))
     await h.location(L1, *far, edited=True, message_id=L1)
     assert len(h.tg.inbox(F1)) == n_f1          # encore loin : rien
@@ -1479,7 +1487,7 @@ async def test_onsite_without_approach_alert(h):
     far = (48.8700, 2.3300)
     await go_on_duty(h, L1, far)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     c = await db.get_course(course["id"])
     await h.location(L1, c["lat"], c["lon"], edited=True, message_id=L1)
     await h.location(L1, c["lat"] + 0.0002, c["lon"], edited=True, message_id=L1)
@@ -1517,7 +1525,7 @@ async def test_stock_alerts_last_units_and_empty(h, monkeypatch, test_config):
     await go_on_duty(h, L1, BASTILLE)
     order_of_calls.clear()               # la question du stock de début de service lit aussi le tableau
     course = await order(h, F1, "commande us")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await asyncio.gather(*list(sheets._tasks))
 
     last = f"• Ce sont les 2 derniers US de Livreur 1 (Livreur A)"
@@ -1565,7 +1573,7 @@ async def test_stock_computed_in_parallel_of_the_sheet(h, monkeypatch, test_conf
     await go_on_duty(h, L1, BASTILLE)
 
     c1 = await order(h, F1, "deux us")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await asyncio.gather(*list(sheets._tasks))
     assert not [t for t in h.tg.texts(F1) if t.startswith("⚠️ Stock")]      # 3 US, 2 commandés : rien
 
@@ -1777,7 +1785,7 @@ async def test_expenses_and_cash_to_collect(h, monkeypatch):
     sheet_up["ok"] = False
     await go_on_duty(h, L1, BASTILLE)
     await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"), pay="e")
     await asyncio.gather(*list(sheets._tasks))
 
@@ -1838,13 +1846,13 @@ async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
     assert h.tg.last(L2).text.endswith(f"\nCourse #{c1['id']}")
     assert not [t for t in h.tg.texts(L1) if t.endswith(f"\nCourse #{c1['id']}")]
     assert not [t for t in h.tg.texts(R1) if "aucun livreur en service n'a tout" in t]
-    await h.press(L2, h.tg.last(L2), "course_take:")
+    await take(h, L2, h.tg.last(L2))
 
     # Livreur 2 a déjà une course mais encore 3 US : il reçoit la suivante ; Livreur 1 (0 US) non.
     c2 = await order(h, F1, "deux us")
     assert h.tg.last(L2).text.endswith(f"\nCourse #{c2['id']}")
     assert not [t for t in h.tg.texts(L1) if t.endswith(f"\nCourse #{c2['id']}")]
-    await h.press(L2, h.tg.last(L2), "course_take:")
+    await take(h, L2, h.tg.last(L2))
 
     # Plus personne n'a 2 US : la course attend, ravitailleurs et dispatch prévenus une fois.
     c3 = await order(h, F1, "deux us")
@@ -1858,7 +1866,7 @@ async def test_dispatch_prefers_livreur_with_stock(h, monkeypatch, test_config):
     assert len([t for t in h.tg.texts(R1) if t.startswith(f"⚠️ Course #{c3['id']}")]) == 1
 
     # « Je prends » sans le produit (d'après le tableau) : refusé, le dispatch est prévenu…
-    await h.press_data(L1, h.tg.last(L1), f"course_take:{c3['id']}:15")
+    await h.press_data(L1, h.tg.last(L1), f"course_take:{c3['id']}")
     assert h.tg.answers()[-1].get("text").startswith("⛔ D'après le tableau, il te manque : 0/2 US")
     assert (await db.get_course(c3["id"]))["status"] == "pending"
     assert "voulait la prendre, mais il lui manque" in h.tg.last(DISPATCH).text
@@ -1982,10 +1990,10 @@ async def test_close_day_debrief(h, monkeypatch):
     await go_on_duty(h, L1, BASTILLE)
     await go_on_duty(h, L2, REPUBLIQUE)
     c1 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c1['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c1['id']}"))
     await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"), pay="e")
     c2 = await order(h, F2, "oberkampf")
-    await h.press(L2, h.tg.find(L2, f"\nCourse #{c2['id']}"), "course_take:")
+    await take(h, L2, h.tg.find(L2, f"\nCourse #{c2['id']}"))
     await deliver_course(h, L2, h.tg.find(L2, "c'est pour toi"), pay="v")
     await order(h, F1, "rivoli")                         # reste en attente
     await h.text(L1, "/depense")
@@ -2054,7 +2062,7 @@ async def test_transport_mode_declared_and_metro_detected(h):
 
         await h.location(L1, 48.8532, 2.3691, message_id=L1)        # à Bastille
         course = await order(h, F1, "rivoli")
-        await h.press(L1, h.tg.last(L1), "course_take:")
+        await take(h, L1, h.tg.last(L1))
 
         # Il a pris la course il y a 10 min, sa dernière position (Bastille) date de 7 min…
         await db._t("courses").update({"assigned_at": iso(now_utc() - timedelta(minutes=10))}).eq(
@@ -2091,7 +2099,7 @@ async def test_transport_declared_but_vehicle_speed(h):
     await h.press_data(L1, h.tg.last(L1), "tmode:t")
     await h.location(L1, 48.8532, 2.3691, message_id=L1)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await db._t("courses").update({"assigned_at": iso(now_utc() - timedelta(minutes=5))}).eq(
         "id", course["id"]).execute()
     lat = 48.8532
@@ -2112,7 +2120,7 @@ async def test_exclude_and_delete_remove_access_and_wipe_messages(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{course['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{course['id']}"))
     assert any("12 Rue de Rivoli" in t for t in h.tg.texts(L1))           # il a vu l'adresse
 
     # Exclusion du livreur : course rendue, messages du bot effacés chez lui, plus rien ensuite.
@@ -2663,7 +2671,7 @@ async def test_sheet_failures_are_resent_automatically(h, monkeypatch):
             .eq("id", await db.last_event_id(type_)).execute()
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
     await asyncio.gather(*list(sheets._tasks))
     restock = await db.create_restock({"livreur_id": l1["id"], "by_user_id": l1["id"], "kind": "cash", "cash": 10})
@@ -2804,17 +2812,17 @@ async def test_livreur_announces_eta(h):
     await h.press(F1, h.tg.find(F1, f"Course #{cid}"), "assign:")
     await h.press(F1, h.tg.last(F1), "assign_to:")
     fiche = h.tg.find(L1, "c'est pour toi")
-    assert "⏱ <b>Donne ton temps</b>" in fiche.text
-    assert [d for _, d in fiche.buttons][:8] == [f"eta:{cid}:{m}" for m in (10, 15, 20, 30, 45, 60, 90, 120)]
+    assert "⏱ <b>Écris ton temps</b> (par exemple 47) : obligatoire avant de valider." in fiche.text
     ask = h.tg.find(L1, f"⏱ <b>Course #{cid}</b> — dans combien de temps tu y es ?")
     assert not ask.buttons
-    # Sans temps, il ne peut pas valider : ni 📦 Livré, ni « OK ».
+    # Sans temps, il ne peut pas valider : ni 📦 Livré, ni « OK », ni « Modif ».
     await h.press(L1, fiche, "course_deliver:")
-    assert h.tg.answers()[-1]["text"] == texts.ETA_FIRST
+    assert h.tg.answers()[-1]["text"] == texts.ETA_FIRST_ALERT
     assert not h.tg.messages[(L1, fiche.message_id)].text.startswith("🧐")
     await h.text(L1, "OK")
     assert h.tg.last(L1).text == texts.ETA_FIRST
-    assert h.tg.last(L1).buttons[0][1] == f"eta:{cid}:10"
+    await h.text(L1, "modif")
+    assert h.tg.last(L1).text == texts.ETA_FIRST
     assert (await db.get_course(cid))["status"] == "assigned"
 
     await h.text(L1, "47")
@@ -2825,8 +2833,8 @@ async def test_livreur_announces_eta(h):
     c = await db.get_course(course["id"])
     assert c["eta_minutes"] == 47 and c["eta_at"]
     assert "⏱ Arrivée prévue vers " in h.tg.messages[(F1, c["franchise_message_id"])].text
-    fiche = h.tg.messages[(L1, fiche.message_id)]                     # temps donné : boutons ⏱ retirés
-    assert "Donne ton temps" not in fiche.text and not any(d.startswith("eta:") for _, d in fiche.buttons)
+    fiche = h.tg.messages[(L1, fiche.message_id)]                     # temps donné : sur sa fiche
+    assert "Écris ton temps" not in fiche.text and "⏱ Tu y seras dans 47 min (vers " in fiche.text
 
     await h.text(L1, "1h10")                                          # retard : nouveau délai
     assert h.tg.last(F1).text.startswith("⏱ <b>Nouveau délai</b> — Livreur 1 sera chez ton client dans 1 h 10")
@@ -2848,7 +2856,7 @@ async def test_change_course_address(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     card = h.tg.messages[(F1, (await db.get_course(course["id"]))["franchise_message_id"])]
     assert f"addr:{course['id']}" in [d for _, d in card.buttons]
 
@@ -2890,7 +2898,7 @@ async def test_change_course_address(h):
     assert c2["district"] == "Paris 11e" and c2["status"] == "pending"
     assert any(f"#{course2['id']} a été changée par Dispatch" in t for t in h.tg.texts(F2))
     fixed = h.tg.messages[(L2, proposal.message_id)]                 # proposition corrigée, bouton gardé
-    assert "Paris 11e" in fixed.text and fixed.buttons[0][1] == f"course_take:{course2['id']}:10"
+    assert "Paris 11e" in fixed.text and fixed.buttons[0][1] == f"course_take:{course2['id']}"
 
 
 def _decl_id(msg) -> int:
@@ -2972,12 +2980,11 @@ async def test_franchise_picks_livreur(h, test_config):
     reminder = h.tg.last(L1)
     assert reminder.text.startswith("🔔 <b>Course suivante, à faire maintenant</b>")
     assert f"🚴 Course #{c2['id']}" in reminder.text and "course_deliver" in [d.split(":")[0] for _, d in reminder.buttons]
-    assert reminder.buttons[0][1] == f"eta:{c2['id']}:10"           # choisie par le franchisé : son temps d'abord
+    assert "⏱ <b>Écris ton temps</b>" in reminder.text             # choisie par le franchisé : son temps d'abord
     assert (await db.get_course(c2["id"]))["livreur_message_id"] == reminder.message_id
-    await h.press_data(L1, reminder, f"eta:{c2['id']}:30")
-    assert h.tg.answers()[-1]["text"] == texts.ETA_NOTED
+    await h.text(L1, "30")
     assert (await db.get_course(c2["id"]))["eta_minutes"] == 30
-    assert not any(d.startswith("eta:") for _, d in h.tg.messages[(L1, reminder.message_id)].buttons)
+    assert "⏱ Tu y seras dans 30 min" in h.tg.messages[(L1, reminder.message_id)].text
     assert any(t.startswith("⏱ Livreur 1 sera chez ton client dans 30 min") for t in h.tg.texts(F2))
 
     # « Au plus proche » : diffusion habituelle.
@@ -3014,7 +3021,7 @@ async def test_livreur_validates_with_ok_or_modif(h, monkeypatch):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c1['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c1['id']}"))
     # Une deuxième course pour lui pendant sa livraison (choisie par le franchisé).
     c2 = await order(h, F2, "oberkampf")
     won = await db.take_course(c2["id"], l1["id"])
@@ -3082,7 +3089,7 @@ async def test_franchise_reminded_of_pending_edit(h):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     c = await order(h, F1, "oberkampf")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c['id']}"))
     await h.text(L1, "Modif")
     editor = h.tg.last(L1)
     await h.press_data(L1, editor, "oe_q:0:1")
@@ -3209,7 +3216,7 @@ async def test_dispatch_orders_like_a_franchise(h):
     course = (await db.list_courses_by_status("pending"))[-1]
     assert course["franchise_id"] == (await db.get_user_by_tg(DISPATCH))["id"]
     assert not [t for t in h.tg.texts(DISPATCH) if t.startswith(f"🆕 #{course['id']}")]   # pas d'avis à lui-même
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{course['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{course['id']}"))
     fiche = h.tg.find(L1, "c'est pour toi")
     assert "Dispatch" in fiche.text
 
@@ -3274,7 +3281,7 @@ async def test_livreur_menu_buttons(h):
     assert h.tg.texts(L1)[-2:] == [texts.DISPO_PROMPT, texts.TRANSPORT_QUESTION]
     await h.location(L1, *BASTILLE, message_id=L1)
     c = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c['id']}"))
 
     await h.text(L1, "✅ Livrée")                                 # le récapitulatif à confirmer 3 fois
     check = h.tg.last(L1)
@@ -3318,7 +3325,7 @@ async def test_close_livreur_end_of_service(h, monkeypatch):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     c = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c['id']}"))
     await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"), pay="e")
     await asyncio.gather(*list(sheets._tasks))
 
@@ -3459,7 +3466,7 @@ async def test_course_card_change_livreur_and_time(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await go_on_duty(h, L2, REPUBLIQUE)
     fiche_l1 = h.tg.find(L1, f"Course #{course['id']} — c'est pour toi")
 
@@ -3567,7 +3574,7 @@ async def test_franchises_get_every_notification(h, test_config):
     course = await order(h, F1, "rivoli")
     assert any(t.startswith(f"🆕 #{course['id']}") or f"#{course['id']}" in t for t in h.tg.texts(F2))
     n1 = len(h.tg.inbox(F1))
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     taken = [t for t in h.tg.texts(F2) if f"#{course['id']}" in t and "Livreur 1" in t]
     assert taken                                            # F2 sait que Livreur 1 a pris la course de F1
     assert len([m for m in h.tg.inbox(F1)[n1:] if "Livreur 1" in m.text]) == 1   # F1 : son seul message
@@ -3618,10 +3625,10 @@ async def test_webapp_board_and_actions(h):
     f1, f2, (l1, l2) = await setup_network(h)
     await go_on_duty(h, L1, BASTILLE)
     c1 = await order(h, F1, "rivoli")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await h.text(L1, "47")                                     # il écrit son temps
     c2 = await order(h, F2, "oberkampf")
-    await h.press(L1, h.tg.find(L1, f"\nCourse #{c2['id']}"), "course_take:")
+    await take(h, L1, h.tg.find(L1, f"\nCourse #{c2['id']}"))
     c3 = await order(h, F1, "rivoli")
 
     async with TestClient(TestServer(web.build(h.app))) as client:
@@ -4026,7 +4033,7 @@ async def test_traffic_live_arrival(h, test_config):
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "oberkampf")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
     await h.text(L1, "5")                                                           # annonce 5 min
 
     async def fake_route(*a, **k):
@@ -4093,7 +4100,7 @@ async def test_idfm_transit_route(h, test_config):
     await go_on_duty(h, L1, BASTILLE)
     await db.update_user(l1["id"], {"transport_mode": "transport"})
     course = await order(h, F1, "oberkampf")
-    await h.press(L1, h.tg.last(L1), "course_take:")
+    await take(h, L1, h.tg.last(L1))
 
     async def fake_transit(*a, **k):
         return {"seconds": 1260, "arrival": None, "steps": r["steps"], "disruptions": 1}
@@ -4278,22 +4285,21 @@ async def test_livreur_notifications_pro(h, test_config):
     prop = h.tg.find(L1, f"\nCourse #{course['id']}")
     assert prop.text.startswith("🔔 <b>NOUVELLE COURSE</b> · Paris 4e · 60")
     keys = prop.markup["inline_keyboard"]
-    assert keys[0][0] == {"text": "⏱ 10 min", "callback_data": f"course_take:{course['id']}:10"}
-    assert [b["text"] for b in keys[1]] == ["⏱ 45 min", "⏱ 1h", "⏱ 1h30", "⏱ 2h"]
-    assert keys[2][0]["web_app"]["url"] == f"https://app.test/livreur?course={course['id']}"
+    assert keys[0][0] == {"text": "✅ JE LA PRENDS", "callback_data": f"course_take:{course['id']}"}
+    assert keys[1][0]["web_app"]["url"] == f"https://app.test/livreur?course={course['id']}"
     assert not params(prop).get("disable_notification")                    # la course sonne
 
     # Relance : la course n'est pas prise, les livreurs sollicités reçoivent une 2e notification qui sonne.
     assert await broadcast.relance(h.app, course["id"], course["broadcast_round"]) >= 1
     relance = h.tg.find(L1, "⏰ <b>Toujours dispo</b>")
     assert not params(relance).get("disable_notification")
-    await h.press(L1, prop, "course_take:")
+    await take(h, L1, prop)
     assert (h.tg.last(L1).chat_id, relance.message_id) not in h.tg.messages      # effacée : la course est partie
     assert not [m for m in h.tg.inbox(L2) if "⏰ <b>Toujours dispo</b>" in m.text]
 
     # Temps donné en la prenant : pas de question en plus. Course attribuée sans temps : la question est un
     # message secondaire, silencieux.
-    assert not [m for m in h.tg.inbox(L1) if "dans combien de temps tu y es" in m.text]
+    assert not [m for m in h.tg.inbox(L1) if "Écris juste le temps, par exemple" in m.text]
     c2 = await order(h, F1, "oberkampf")
     won = await db.take_course(c2["id"], (await db.get_user_by_tg(L1))["id"])
     await lifecycle.after_assignment(h.context, won, await db.get_user_by_tg(L1), None)

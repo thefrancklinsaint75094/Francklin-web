@@ -581,7 +581,7 @@ async def edit_decision(update: Update, context):
         if accepted and updated["status"] == "assigned":
             franchise = await db.get_user(updated["franchise_id"]) or {}
             await messaging.edit(context.bot, livreur["telegram_id"], updated.get("livreur_message_id"),
-                                 texts.full_fiche(updated, franchise), keyboards.livreur_course(updated["id"], ask_eta=not updated.get("eta_at")),
+                                 texts.full_fiche(updated, franchise), keyboards.livreur_course(updated["id"]),
                                  user=livreur, resend_if_old=False)
     await lifecycle.refresh_franchise_message(context, updated, livreur=livreur)
     await messaging.notify_dispatch(

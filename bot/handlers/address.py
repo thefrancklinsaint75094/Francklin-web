@@ -119,7 +119,7 @@ async def apply(context, user: dict, course: dict, new: dict) -> dict:
         # Message qui sonne + fiche à jour (le livreur part peut-être déjà vers l'ancienne adresse).
         await messaging.send(context.bot, livreur, texts.address_for_livreur(course, old), ring=True)
         await messaging.edit(context.bot, livreur["telegram_id"], course.get("livreur_message_id"),
-                             texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"], ask_eta=not course.get("eta_at")),
+                             texts.full_fiche(course, franchise or {}), keyboards.livreur_course(course["id"]),
                              user=livreur)
     elif course["status"] == "pending":
         await _refresh_proposals(context, course)

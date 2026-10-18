@@ -89,46 +89,23 @@ def withdraw_confirm(course_id: int) -> M:
     return M([[B("Oui", callback_data=f"fw_yes:{course_id}"), B("Non", callback_data=f"fw_no:{course_id}")]])
 
 
-ETA_CHOICES = (10, 15, 20, 30, 45, 60, 90, 120)   # minutes proposées au livreur pour son temps
-
-
-def eta_label(minutes: int) -> str:
-    """10 → « 10 min », 60 → « 1h », 90 → « 1h30 »."""
-    if minutes < 60:
-        return f"{minutes} min"
-    return f"{minutes // 60}h" + (f"{minutes % 60:02d}" if minutes % 60 else "")
-
-
-def eta_rows(prefix: str) -> list[list[B]]:
-    """Boutons de temps (« ⏱ 15 min »…) ; callback « <prefix>:<minutes> »."""
-    buttons = [B(f"⏱ {eta_label(m)}", callback_data=f"{prefix}:{m}") for m in ETA_CHOICES]
-    return [buttons[:4], buttons[4:]]
-
-
 def proposal(course_id: int) -> M:
-    """Prendre la course = choisir son temps (un appui) : le franchisé sait tout de suite quand il arrive.
+    """✅ JE LA PRENDS, puis il écrit son temps précis : la course est à lui quand il l'a écrit.
     📱 OUVRIR ouvre la course dans l'appli « Mes courses »."""
     from telegram import WebAppInfo
 
     from bot import config
 
-    rows = eta_rows(f"course_take:{course_id}")
+    rows = [[B("✅ JE LA PRENDS", callback_data=f"course_take:{course_id}")]]
     url = config.get().webapp_url
     if url:
         rows.append([B("📱 OUVRIR", web_app=WebAppInfo(f"{url}/livreur?course={course_id}"))])
     return M(rows)
 
 
-def eta_only(course_id: int) -> M:
-    """Les boutons ⏱ seuls (rappel « donne d'abord ton temps »)."""
-    return M(eta_rows(f"eta:{course_id}"))
-
-
-def livreur_course(course_id: int, ask_eta: bool = False) -> M:
-    """Fiche du livreur ; ask_eta : il n'a pas encore donné son temps (course attribuée par un admin ou un
-    franchisé) → les boutons de temps en premier, obligatoires avant de valider."""
+def livreur_course(course_id: int) -> M:
     return M(
-        (eta_rows(f"eta:{course_id}") if ask_eta else []) + [
+        [
             [B("📦 Livré", callback_data=f"course_deliver:{course_id}"), B("💬 Contacter", callback_data=f"relay_start:{course_id}")],
             [B("✏️ Modifier la commande", callback_data=f"order_edit:{course_id}")],
             [

@@ -780,8 +780,10 @@ simple qui respecte le mur de confidentialité (§12).
 175. **Le livreur donne son temps pour prendre une course, et confirme 3 fois ce qu'il a donné** (l'exploitant :
      les livreurs ne mettent pas leur temps, et se trompent de produit, une bouteille plus chère donnée à la
      place d'une autre ; « il faut vraiment les infantiliser », « qu'il appuie 3 fois sur valider »). Prendre une
-     course = choisir son temps (boutons ⏱, un appui : pas d'étape en plus dans la course à la prise) ; une course
-     attribuée par un admin ou un franchisé ne se valide pas sans temps. Avant le paiement, le récapitulatif
+     course = écrire son temps **précis** après « JE LA PRENDS » (l'exploitant refuse les tranches de temps : des
+     boutons 10/15/20 min… ont été essayés puis retirés) ; la course est à lui quand il l'a écrit, donc entre deux
+     livreurs le premier qui écrit son temps l'a. Une course attribuée par un admin ou un franchisé ne se valide
+     pas sans temps. Avant le paiement, le récapitulatif
      « Tu es sûr d'avoir donné : … » demande trois « OUI » (bouton grisé un instant dans l'appli, pour qu'il lise),
      ou « NON, je corrige » qui ouvre la modification (le franchisé garde le dernier mot). « OK CB » ne saute plus
      ces étapes. Les admins qui marquent une course livrée ne sont pas concernés.
