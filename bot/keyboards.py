@@ -207,6 +207,10 @@ def given_check(course_id: int, done: int) -> M:
               [B("↩️ Retour", callback_data=f"pay_back:{course_id}")]])
 
 
+def ask_position(livreur_id: str, name: str) -> M:
+    return M([[B(f"📩 Demander à {name[:30]} d'activer sa position", callback_data=f"ask_loc:{livreur_id}")]])
+
+
 def payment_choice(course_id: int) -> M:
     return M([[B("💵 Espèces", callback_data=f"pay:{course_id}:e"), B("💳 Virement", callback_data=f"pay:{course_id}:v")],
               [B("↩️ Retour", callback_data=f"pay_back:{course_id}")]])

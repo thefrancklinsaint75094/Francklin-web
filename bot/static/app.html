@@ -484,7 +484,7 @@ function viewLivreurs() {
   lvs.forEach((lv) => {
     const r = route[lv.id];
     const meta = [lv.on_duty ? (lv.courses ? plural(lv.courses, "course") : "libre") : "en pause"];
-    meta.push(lv.position_min === null ? "pas de position" : lv.position_min <= 1 ? "position à l'instant" : `position il y a ${lv.position_min} min`);
+    meta.push(lv.position_ago === null ? "pas de position" : `position ${lv.position_ago}`);
     list.append(el("div", { class: "card" },
       el("div", { class: "row" },
         el("div", { class: "grow" },
@@ -1075,8 +1075,14 @@ async function resetFlow() {
 async function showMap(lv) {
   const r = await call({ type: "position", livreur_id: lv.id });
   if (!r.ok) { toast(r.message); return; }
-  toast(r.message);
-  if (tg && tg.openLink) tg.openLink(r.map); else window.open(r.map, "_blank");
+  const openMap = () => { if (tg && tg.openLink) tg.openLink(r.map); else window.open(r.map, "_blank"); };
+  if (!r.stale) { toast(r.message); openMap(); return; }
+  // Position pas en temps réel : on peut lui demander de l'activer (notification qui sonne chez lui).
+  openSheet(el("h3", {}, `📍 ${who(lv)}`),
+    el("p", {}, r.ago ? `Sa position n'est plus à jour : dernière ${r.ago}.` : "Aucune position reçue de ce livreur."),
+    el("button", { class: "btn main full", onclick: async () => { const a = await call({ type: "ask_position", livreur_id: lv.id }); toast(a.message || ""); if (a.ok) closeSheet(); } },
+      "📩 Lui demander d'activer sa position"),
+    r.map ? el("button", { class: "choice", onclick: () => { closeSheet(); openMap(); } }, el("span", {}, "🗺"), el("span", { class: "grow" }, "Voir la dernière position connue"), el("span", { class: "muted" }, "›")) : null);
 }
 function messageForm(target) {
   const input = el("textarea", { rows: "3", placeholder: "Ton message…", maxlength: "1000" });

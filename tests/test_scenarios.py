@@ -2222,10 +2222,35 @@ async def test_dispatch_sees_livreur_positions_and_alerts(h):
     await h.text(DISPATCH, "/livreurs")
     assert "Livreur 1 — ⏸ pause" in h.tg.last(DISPATCH).text
 
-    # Livreur sans aucune position : 📍 répond qu'il n'y en a pas.
+    # 📍 sur une position pas à jour (31 min) : la dernière carte, puis « 📩 Demander … d'activer sa position ».
+    await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"loc:{l1['id']}")
+    ask = h.tg.last(DISPATCH)
+    assert ask.text == texts.position_stale("Livreur 1", 31) and "dernière position il y a 31 min" in ask.text
+    assert h.tg.texts(DISPATCH)[-2].startswith("[carte] 🛵 Livreur 1")
+    assert ask.buttons == [("📩 Demander à Livreur 1 d'activer sa position", f"ask_loc:{l1['id']}")]
+    await h.press_data(DISPATCH, ask, f"ask_loc:{l1['id']}")
+    assert h.tg.answers()[-1]["text"] == texts.position_ask_sent("Livreur 1")
+    asked = h.tg.last(L1)
+    assert asked.text == texts.position_asked("Dispatch") and "Partager ma position en direct" in asked.text
+    sent = next(p for m, p in h.tg.calls if m == "sendMessage" and p.get("text") == asked.text)
+    assert not sent.get("disable_notification")                                  # ça sonne chez lui
+    await h.press_data(DISPATCH, ask, f"ask_loc:{l1['id']}")                     # deux appuis : une demande
+    assert h.tg.answers()[-1]["text"] == texts.position_ask_recent("Livreur 1")
+    assert len([t for t in h.tg.texts(L1) if t == asked.text]) == 1
+
+    # Livreur sans aucune position : pas de carte, mais la demande est proposée.
     await db.delete_position(l2["id"])
+    await h.text(DISPATCH, "/livreurs")
     await h.press_data(DISPATCH, h.tg.last(DISPATCH), f"loc:{l2['id']}")
-    assert h.tg.answers()[-1]["text"] == texts.NO_POSITION
+    assert h.tg.last(DISPATCH).text == texts.position_stale("Livreur 2", None)
+    assert "aucune position reçue" in h.tg.last(DISPATCH).text
+
+
+def test_ago_in_hours_and_days():
+    """Âge d'une position : minutes, puis heures, puis jours (plus de « 2293 min »)."""
+    assert [texts.ago(m) for m in (0, 7, 60, 95, 748, 1440, 2293, 2358, 3 * 1440)] == [
+        "à l'instant", "il y a 7 min", "il y a 1 h", "il y a 1 h 35", "il y a 12 h 28", "il y a 1 j",
+        "il y a 1 j 14 h", "il y a 1 j 15 h", "il y a 3 j"]
 
 
 async def test_dispo_without_position_reminder_and_pause_details(h):
@@ -3791,7 +3816,17 @@ async def test_webapp_does_everything(h, monkeypatch, test_config):
         r = await act(DISPATCH, type="message", user_id=l1["id"], text="Passe au dépôt")
         assert r["ok"] and "Passe au dépôt" in h.tg.last(L1).text
         r = await act(DISPATCH, type="position", livreur_id=l1["id"])
-        assert r["ok"] and r["map"].startswith("https://www.google.com/maps")
+        assert r["ok"] and r["map"].startswith("https://www.google.com/maps") and r["stale"] is False
+        # Position plus à jour (1 j 14 h) : l'appli propose de lui demander de l'activer.
+        await db._t("livreur_positions").update({"updated_at": iso(now_utc() - timedelta(minutes=2293))}).eq(
+            "livreur_id", l1["id"]).execute()
+        r = await act(DISPATCH, type="position", livreur_id=l1["id"])
+        assert r["ok"] and r["stale"] is True and r["ago"] == "il y a 1 j 14 h" and r["map"]
+        b = await (await client.post("/api/board", headers={"X-Init-Data": _init_data(DISPATCH)})).json()
+        assert next(lv for lv in b["livreurs"] if lv["id"] == l1["id"])["position_ago"] == "il y a 1 j 14 h"
+        r = await act(DISPATCH, type="ask_position", livreur_id=l1["id"])
+        assert r["ok"] and r["message"] == texts.position_ask_sent("Livreur 1")
+        assert h.tg.last(L1).text == texts.position_asked("Dispatch")
         n = len(h.tg.inbox(DISPATCH))
         r = await act(DISPATCH, type="debrief")
         assert r["ok"] and "Journée close" in r["html"]
