@@ -675,6 +675,11 @@ Le numéro de course est gardé dans une note sur la cellule Vendeur : le script
 course et ne touche pas aux lignes remplies à la main. `/synchro` (dispatch) renvoie les courses de la nuit,
 sans risque de doublon. Si un onglet est plein, le dispatch le voit dans la réponse de `/synchro`.
 
+Une écriture refusée (script injoignable, code secret différent, onglet plein…) est signalée au dispatch, puis
+**renvoyée toute seule toutes les 10 minutes** jusqu'à ce que le tableau l'accepte (courses, rechargements et
+dépenses) ; le dispatch reçoit « ✅ Rattrapé dans le tableau ». Seulement pendant 36 h et depuis le dernier
+`/reset` : au-delà, `/synchro` de la nuit.
+
 ### Paiement à la livraison
 
 Quand le livreur appuie sur **📦 Livré**, le bot demande **💵 Espèces** ou **💳 Virement** (↩️ Retour pour revenir

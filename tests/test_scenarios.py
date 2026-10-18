@@ -2591,6 +2591,60 @@ async def test_sheet_error_alerts_dispatch(h):
     assert len(h.tg.texts(DISPATCH)) == count
 
 
+async def test_sheet_failures_are_resent_automatically(h, monkeypatch):
+    """Course livrée pendant que le script refuse tout (mauvais secret) : elle n'est pas perdue. Dès que le
+    tableau répond, le job la renvoie toute seule (avec les rechargements et dépenses refusés), une seule fois,
+    et le dispatch voit ce qui a été rattrapé. Rien d'avant le dernier /reset ni de plus de 36 h n'est renvoyé."""
+    import asyncio
+
+    from bot import jobs
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent, down = [], [True]
+
+    async def fake_send(rows, client=None):
+        if down[0]:
+            raise RuntimeError("réponse du script : secret")
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    old = await db.create_restock({"livreur_id": l1["id"], "by_user_id": l1["id"], "kind": "cash", "cash": 10})
+    older = await db.create_restock({"livreur_id": l1["id"], "by_user_id": l1["id"], "kind": "cash", "cash": 20})
+    for type_, payload, hours in (("sheet_error", {"restock_id": old["id"], "error": "avant le reset"}, 50),
+                                  ("cloture", None, 48),
+                                  ("sheet_error", {"restock_id": older["id"], "error": "trop ancienne"}, 37)):
+        await db.log_event(type_, payload=payload)
+        await db._t("events").update({"created_at": iso(now_utc() - timedelta(hours=hours))}) \
+            .eq("id", await db.last_event_id(type_)).execute()
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await h.press(L1, h.tg.last(L1), "course_take:")
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
+    await asyncio.gather(*list(sheets._tasks))
+    restock = await db.create_restock({"livreur_id": l1["id"], "by_user_id": l1["id"], "kind": "cash", "cash": 10})
+    assert not await sheets.push_restock(restock)
+    assert not sent
+
+    await jobs.sheet_retry(h.context)                        # le tableau refuse encore : rien de rattrapé
+    assert not sent and "Rattrapé" not in h.tg.last(DISPATCH).text
+
+    down[0] = False
+    await jobs.sheet_retry(h.context)
+    assert [r["numero"] for r in sent] == [course["id"], restock["id"]]
+    assert sent[0]["livreur"] == "Livreur 1" and sent[1]["type"] == "recharge"
+    assert h.tg.last(DISPATCH).text == texts.d_sheet_resent([f"c{course['id']}", f"r{restock['id']}"])
+    assert f"• Course #{course['id']}" in h.tg.last(DISPATCH).text
+
+    sent.clear()
+    count = len(h.tg.texts(DISPATCH))
+    await jobs.sheet_retry(h.context)                        # déjà rattrapé : ni renvoi ni message
+    assert not sent and len(h.tg.texts(DISPATCH)) == count
+
+
 async def test_livreur_declares_stock_at_start_and_end(h, monkeypatch, test_config):
     """Début de service : le livreur déclare son stock (ou ✅ si le tableau est exact) et confirme ; une seule
     fois par nuit. Fin de service (/close) : ce qu'il lui reste. Le dispatch voit les écarts ; sans réponse,

@@ -7,7 +7,8 @@ première ligne de commande vide, avec le statut « OK ». Il ignore une course 
 présente : renvoyer une course est sans danger.
 
 Sans GOOGLE_SHEETS_WEBHOOK_URL, rien n'est envoyé. Un échec n'interrompt
-jamais le bot : il est journalisé, et /synchro permet de renvoyer la nuit.
+jamais le bot : il est journalisé, le dispatch est prévenu, et l'écriture est
+réessayée toute seule (retry_failed) ; /synchro permet aussi de renvoyer la nuit.
 """
 from __future__ import annotations
 
@@ -16,12 +17,12 @@ import html
 import logging
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 
 from bot import config, db
-from bot.timeutil import night_start_date, parse_ts, to_paris
+from bot.timeutil import night_start_date, now_utc, parse_ts, to_paris
 
 log = logging.getLogger(__name__)
 
@@ -387,3 +388,79 @@ def push_delivered_later(course: dict) -> None:
     task = asyncio.get_running_loop().create_task(push_delivered(dict(course)))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
+
+
+# ---------------------------------------------------------------- rattrapage automatique
+
+RETRY_HOURS = 36   # au-delà, une erreur oubliée ne ressurgit pas d'un coup dans le tableau : /synchro
+RETRY_MAX = 20     # écritures renvoyées par passage
+
+
+def failed_key(event: dict) -> str | None:
+    """Ce qu'un sheet_error n'a pas pu écrire : « c45 » (course), « r32 » (rechargement), « d4 » (dépense)."""
+    p = event.get("payload") or {}
+    if p.get("restock_id"):
+        return f"r{p['restock_id']}"
+    if p.get("expense_id"):
+        return f"d{p['expense_id']}"
+    if event.get("course_id"):
+        return f"c{event['course_id']}"
+    return None
+
+
+async def _row_for(key: str, catalog) -> dict | None | bool:
+    """Ligne à renvoyer ; None : plus rien à écrire (supprimé, plus livré) ; False : pas encore (modification
+    de la course qui attend le franchisé : elle est écrite après sa décision)."""
+    kind, ident = key[0], int(key[1:])
+    if kind == "c":
+        course = await db.get_course(ident)
+        if not course or course["status"] != "delivered" or not course.get("delivered_at"):
+            return None
+        if course.get("pending_edit"):
+            return False
+        return row(course, await db.get_users([course["franchise_id"], course.get("livreur_id")]), catalog)
+    if kind == "r":
+        restock = await db.get_restock(ident)
+        return restock_row(restock, await db.get_users([restock["livreur_id"], restock["by_user_id"]])) \
+            if restock else None
+    expense = await db.get_expense(ident)
+    return expense_row(expense, await db.get_users([expense["livreur_id"]])) if expense else None
+
+
+async def retry_failed() -> list[str]:
+    """Renvoie une à une les écritures refusées (sheet_error) pas encore rattrapées, et la liste de celles qui
+    sont maintenant dans le tableau. Seulement les erreurs des RETRY_HOURS dernières heures, et depuis le dernier
+    /reset : une nuit d'avant écraserait l'onglet du même jour de la nouvelle semaine. Sans danger : le script
+    ignore une ligne déjà présente (comme pour /synchro)."""
+    if not enabled():
+        return []
+    since = now_utc() - timedelta(hours=RETRY_HOURS)
+    reset = await db.last_event("cloture")
+    if reset:
+        since = max(since, parse_ts(reset["created_at"]))
+    done = {k for ev in await db.events_since("sheet_resent", since) for k in (ev.get("payload") or {}).get("keys", [])}
+    pending: list[str] = []
+    for ev in await db.events_since("sheet_error", since):
+        key = failed_key(ev)
+        if key and key not in done and key not in pending:
+            pending.append(key)
+    if not pending:
+        return []
+    catalog = await load_catalog()
+    resent, dropped = [], []
+    for key in pending[:RETRY_MAX]:
+        out = await _row_for(key, catalog)
+        if out is False:
+            continue
+        if out is None:
+            dropped.append(key)
+            continue
+        try:
+            await send_rows([out])
+        except Exception as exc:  # noqa: BLE001 — on réessaiera au prochain passage
+            log.warning("Rattrapage %s impossible : %s", key, exc)
+            continue
+        resent.append(key)
+    if resent or dropped:
+        await db.log_event("sheet_resent", payload={"keys": resent + dropped})
+    return resent
