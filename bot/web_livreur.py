@@ -1,8 +1,8 @@
 """Appli des livreurs (mini-application Telegram) : le plus simple possible, mais tout y est.
 
 GET /livreur → bot/static/livreur.html. Un seul écran utile à la fois : commencer sa soirée, confirmer son
-stock, les nouvelles courses (« JE LA PRENDS »), SA course (y aller, dans combien de minutes, à donner,
-à encaisser, C'EST LIVRÉ → espèces / carte), ce qui vient ensuite ; puis son argent, son stock, ses goûts,
+stock, les nouvelles courses (« JE LA PRENDS » = choisir son temps), SA course (y aller, dans combien de
+minutes, à donner, à encaisser, C'EST LIVRÉ → « tu es sûr d'avoir donné… » ×3 → espèces / carte), ce qui vient ensuite ; puis son argent, son stock, ses goûts,
 une dépense, la pause et la fin de soirée.
 
 Chaque action passe par exactement le même code que les boutons et les messages du chat (mêmes règles,
@@ -85,6 +85,9 @@ async def board(user: dict) -> dict:
             "eta_at": hhmm(eta) if eta else None, "eta_in": max(0, int((eta - now).total_seconds() // 60)) if eta else None,
             "franchise": franchise.get("display_name") or "Franchisé",
             "pending_edit": bool(c.get("pending_edit")), "nav": _nav(c), "traffic": _traffic(c["id"], now),
+            # Sa modification attend le franchisé : c'est elle qu'il confirme avoir donnée en validant.
+            "given": {"lines": order_edit.lines_from_course({**c, **c["pending_edit"]}, await catalog.load()),
+                      "price": float(c["pending_edit"]["price"])} if c.get("pending_edit") else None,
             "messages": [{"mine": m["sender_id"] == user["id"], "text": m["content"], "at": _hm(m["created_at"])}
                          for m in msgs],
         }
@@ -175,8 +178,11 @@ async def act(context, user: dict, body: dict) -> dict:
     if kind == "pause":
         await admin_web.with_capture(context, user, "/pause", lambda u: livreur_h.pause(u, context))
         return {"ok": True, "message": "Tu es en pause ⏸"}
-    if kind == "take":
-        ok, text = await livreur_h.take_course(context, user, int(body.get("course_id") or 0))
+    if kind == "take":                                 # prendre = donner son temps (obligatoire)
+        minutes = livreur_h.eta_minutes(str(body.get("minutes") or ""))
+        if minutes is None:
+            return {"ok": False, "message": texts.TAKE_PICK_TIME}
+        ok, text = await livreur_h.take_course(context, user, int(body.get("course_id") or 0), eta=minutes)
         return {"ok": bool(ok), "message": text or texts.TOO_LATE}
     if kind == "eta":
         minutes = livreur_h.eta_minutes(str(body.get("minutes") or ""))
@@ -191,6 +197,11 @@ async def act(context, user: dict, body: dict) -> dict:
         current = await livreur_h.current_course(user)
         if current and current["id"] != course["id"]:
             return {"ok": False, "message": texts.finish_first(current["id"])}
+        if not course.get("eta_at"):
+            return {"ok": False, "message": texts.ETA_FIRST}
+        # L'appli fait confirmer ce qu'il a donné (3 fois) avant le paiement : elle l'envoie avec la livraison.
+        if body.get("confirmed") is not True:
+            return {"ok": False, "message": texts.GIVEN_UNCONFIRMED}
         payment = lifecycle.PAYMENTS.get(str(body.get("payment") or ""))
         if payment is None:
             return {"ok": False, "message": texts.PAYMENT_PROMPT}

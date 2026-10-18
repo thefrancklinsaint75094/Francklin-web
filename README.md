@@ -572,10 +572,14 @@ courtes, une chose à la fois. Quatre onglets en bas : 🚴 Mes courses · 💶 
   4 étapes comment la partager (la position en direct se partage toujours dans le chat).
 - **Stock du début (et de fin)** : « Le tableau dit que tu as… C'est juste ? » **✅ OUI** / **✏️ NON** (compteurs
   − / +). Tant que ce n'est pas fait, pas de course (comme dans le chat).
-- **🆕 Nouvelle course pour toi** : quartier, distance, produits, prix, **✋ JE LA PRENDS**.
+- **🆕 Nouvelle course pour toi** : quartier, distance, produits, prix, **✋ JE LA PRENDS** → **son temps**
+  (10 min … 2 h, un appui) : sans temps, pas de prise ; le franchisé le reçoit avec « course prise ».
 - **🚴 Ta course maintenant**, en 4 étapes numérotées : 1. Où ? (adresse, digicode, heure voulue, **🗺 Y ALLER**
   Google Maps / Waze) · 2. Ton temps (**⏱ J'ÉCRIS MON TEMPS** : le franchisé est prévenu) · 3. À donner, à
-  encaisser · 4. **✅ C'EST LIVRÉ** → **💵 EN ESPÈCES** / **💳 PAR CARTE / VIREMENT**. Et : les messages avec le
+  encaisser · 4. **✅ C'EST LIVRÉ** → son temps s'il ne l'a pas donné → **« Tu es sûr d'avoir donné : … »** (les
+  produits et le montant) : **✅ OUI, J'AI DONNÉ ÇA** à appuyer **3 fois** (1/3, 2/3, 3/3, bouton grisé un instant
+  entre deux appuis) ou **✏️ NON, JE CORRIGE** (la modification part au franchisé) → **💵 EN ESPÈCES** /
+  **💳 PAR CARTE / VIREMENT**. Et : les messages avec le
   franchisé + **💬 ÉCRIRE AU FRANCHISÉ** (phrases toutes prêtes), **✏️ Le client a pris autre chose**
   (compteurs, le franchisé valide), **❌ Je ne peux pas la faire**, **🏁 J'ai presque fini**.
 - **📋 Ensuite** : ses autres courses, dans l'ordre (une seule adresse à la fois).
@@ -614,10 +618,18 @@ paiement (💵 / 💳) de la course en cours. « 🟢 Je commence » envoie deux
 (ou « tu es en service »), puis la question « Comment tu te déplaces ce soir ? » avec un bouton par ligne,
 en toutes lettres (🚶 À pied ou en transports · 🛵 Deux-roues · 🚗 Voiture) ; le choix est confirmé en clair.
 
-### Validation par le livreur : « OK » ou « Modif »
+### Validation par le livreur : temps, récapitulatif ×3, paiement
 
-Le livreur valide sa course en cours en écrivant **OK** (espèces) ou **OK CB** / **OK virement**. Il doit
-valider sa course avant de passer à la suivante : le bouton « Livré » d'une course en attente répond
+**Son temps est obligatoire.** Une course proposée se prend en appuyant sur son temps (⏱ 10 min, 15, 20, 30,
+45 min, 1 h, 1 h 30, 2 h) : le franchisé et le dispatch le reçoivent avec « course prise ». Une course attribuée
+par un admin ou un franchisé arrive avec ces boutons ⏱ sur la fiche (ou il écrit « 47 ») : tant qu'il ne l'a
+pas donné, ni 📦 Livré, ni « OK », ni « Modif » (« Donne d'abord ton temps »).
+
+**Puis le récapitulatif, à confirmer 3 fois.** 📦 Livré, ✅ Livrée (menu) ou « OK » affichent « 🧐 vérifie
+bien ! Tu es sûr d'avoir donné au client : … » avec les produits et le montant : **✅ OUI, J'AI DONNÉ ÇA** à
+appuyer trois fois (1/3, 2/3, 3/3), ou **✏️ NON, je corrige** (l'éditeur ; sa modification part au
+franchisé). Seulement ensuite, le choix du paiement valide la livraison (« OK CB » ne saute plus ces étapes).
+Il doit valider sa course avant de passer à la suivante : le bouton « Livré » d'une course en attente répond
 « valide d'abord ta course en cours ». Un « ok merci » ne valide rien : seul un « OK » net compte.
 
 **Modif** (aussi « modifier », « modification ») : le client a pris autre chose. L'éditeur de la commande
@@ -682,8 +694,8 @@ dépenses) ; le dispatch reçoit « ✅ Rattrapé dans le tableau ». Seulement 
 
 ### Paiement à la livraison
 
-Quand le livreur appuie sur **📦 Livré**, le bot demande **💵 Espèces** ou **💳 Virement** (↩️ Retour pour revenir
-à la fiche). Un admin qui marque une course livrée choisit aussi le mode. Le mode est enregistré, affiché au
+Quand le livreur a confirmé ce qu'il a donné (voir ci-dessus), le bot demande **💵 Espèces** ou **💳 Virement**
+(↩️ Retour pour revenir à la fiche). Un admin qui marque une course livrée choisit aussi le mode. Le mode est enregistré, affiché au
 dispatch et dans le journal (colonne « paiement » du CSV), et écrit dans la colonne **Paiement** de la feuille.
 
 ### Caisse des livreurs (`/depense`, `/caisse`, `/macaisse`)
@@ -743,7 +755,8 @@ bot, depuis le départ) + 💰 ce que tu lui as donné − 🧾 charges − 📦
 ### Notifications des livreurs, sonnerie et raccourci (appli « Courses »)
 
 - **Carte « NOUVELLE COURSE »** : la 1re ligne (lisible sur l'écran verrouillé) donne le quartier et le prix ;
-  boutons **✅ JE LA PRENDS** et **📱 OUVRIR** (ouvre la course dans l'appli « Mes courses »).
+  boutons de temps **⏱ 10 min … 2 h** (prendre la course = donner son temps) et **📱 OUVRIR** (ouvre la course
+  dans l'appli « Mes courses »).
 - **Seuls les messages importants sonnent** chez les livreurs (nouvelle course, relance, course retirée / modifiée /
   annulée, heure ou adresse changée, message du franchisé ou du dispatch, mise en service par le dispatch, alertes) ;
   le reste arrive sans bruit (`messaging.send(..., ring=True)`). Leur sonnerie dédiée veut donc dire « course ».

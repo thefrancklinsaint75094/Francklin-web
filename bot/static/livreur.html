@@ -64,6 +64,10 @@ main { padding: 0 12px; display: flex; flex-direction: column; gap: 14px; }
 .tile { background: var(--soft); border-radius: 16px; padding: 14px 6px; text-align: center; font-weight: 800; font-size: 15px; border: 3px solid transparent; }
 .tile .e { display: block; font-size: 32px; margin-bottom: 4px; }
 .tile.on { border-color: var(--green); background: rgba(31,157,85,.12); }
+.given-dots { display: flex; justify-content: center; gap: 12px; margin: 14px 0 6px; }
+.given-dots span { width: 18px; height: 18px; border-radius: 50%; background: var(--line); }
+.given-dots span.on { background: var(--green); }
+button[disabled] { opacity: .55; }
 .next div { font-size: 17px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .next div:last-child { border-bottom: 0; }
 .msg { padding: 8px 12px; border-radius: 14px; margin-top: 8px; max-width: 85%; font-size: 16px; }
@@ -214,7 +218,7 @@ function showRing(p, quiet) {
     p.km !== null ? el("div", { class: "ring-m" }, `📍 à ${p.km} km de toi`) : null,
     el("div", { class: "ring-m" }, "🍾 " + (p.products || "")),
     p.requested_time ? el("div", { class: "ring-m" }, "🕐 " + p.requested_time) : null,
-    el("button", { class: "big ring-go", onclick: async () => { hideRing(); await act({ type: "take", course_id: p.id }); } }, "✅ JE LA PRENDS"),
+    el("button", { class: "big ring-go", onclick: () => { hideRing(); takeSheet(p); } }, "✅ JE LA PRENDS"),
     el("button", { class: "ring-later", onclick: hideRing }, "Plus tard")));
   $("ring").hidden = false;
   if (!quiet) ringStart();
@@ -286,7 +290,7 @@ function viewCourses() {
     el("div", { class: "items" }, el("div", {}, "🍾 " + (p.products || ""))),
     p.requested_time ? el("div", { class: "muted" }, "🕐 " + p.requested_time) : null,
     el("div", { class: "money" }, el("span", {}, "À encaisser"), el("b", {}, eur(p.price))),
-    el("button", { class: "big go", onclick: () => act({ type: "take", course_id: p.id }) }, "✋ JE LA PRENDS"))));
+    el("button", { class: "big go", onclick: () => takeSheet(p) }, "✋ JE LA PRENDS"))));
   if (d.current) out.push(currentCard(d.current));
   if (d.next.length) out.push(el("div", { class: "card" }, el("div", { class: "label" }, "📋 Ensuite (dans l'ordre)"),
     el("div", { class: "next" }, d.next.map((n, i) => el("div", {}, `${i + 2}. ${n.district || ""} · ${eur(n.price)}`))),
@@ -348,7 +352,8 @@ function currentCard(c) {
   const etaBlock = c.eta_at
     ? el("div", {}, el("div", { class: "addr" }, `Tu arrives vers ${c.eta_at}`), el("div", { class: "muted" }, c.eta_in > 0 ? `dans ${c.eta_in} min` : "c'est l'heure"),
         el("button", { class: "big grey", onclick: etaSheet }, "Changer mon temps"))
-    : el("div", {}, el("div", { class: "muted" }, "Le franchisé attend ta réponse."), el("button", { class: "big blue-b", onclick: etaSheet }, "⏱ J'ÉCRIS MON TEMPS"));
+    : el("div", {}, el("div", { class: "banner" }, "⏱ Obligatoire : le franchisé attend ton temps. Sans lui, tu ne peux pas valider."),
+        el("button", { class: "big blue-b", onclick: etaSheet }, "⏱ J'ÉCRIS MON TEMPS"));
   function etaSheet() {
     const input = el("input", { type: "number", inputmode: "numeric", min: "1", max: "300", placeholder: "Par exemple 25" });
     openSheet(el("div", { class: "title" }, "Dans combien de minutes tu arrives ?"), input,
@@ -400,10 +405,46 @@ function messagesBlock(c) {
     } }, "💬 ÉCRIRE AU FRANCHISÉ"));
 }
 
+// Son temps : obligatoire pour prendre une course (et avant de valider une course qu'on lui a attribuée).
+const ETA_CHOICES = [10, 15, 20, 30, 45, 60, 90, 120];
+const etaLabel = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, "0") : ""}`;
+function timeSheet(title, sub, onPick) {
+  openSheet(el("div", { class: "title" }, title), el("div", { class: "muted" }, sub),
+    el("div", { class: "tiles", style: "grid-template-columns: repeat(4, 1fr)" }, ETA_CHOICES.map((m) =>
+      el("button", { class: "tile", style: "font-size:19px; padding:18px 4px", onclick: () => { tap(); onPick(m); } }, etaLabel(m)))),
+    el("button", { class: "big grey", onclick: closeSheet }, "Annuler"));
+}
+function takeSheet(p) {
+  timeSheet("⏱ Tu y es dans combien de temps ?", "Choisis ton temps pour prendre la course. Le franchisé est prévenu.",
+    async (m) => { closeSheet(); await act({ type: "take", course_id: p.id, minutes: m }); });
+}
+
+// C'EST LIVRÉ : son temps s'il ne l'a pas donné, puis « tu es sûr d'avoir donné… » (OUI 3 fois), puis le paiement.
+const GIVEN = 3;
 function deliverSheet(c) {
-  openSheet(el("div", { class: "title" }, "Le client a payé comment ?"), el("div", { class: "muted" }, `Montant : ${eur(c.price)}`),
-    el("button", { class: "big go", onclick: async () => { closeSheet(); await act({ type: "deliver", course_id: c.id, payment: "e" }); } }, "💵 EN ESPÈCES"),
-    el("button", { class: "big blue-b", onclick: async () => { closeSheet(); await act({ type: "deliver", course_id: c.id, payment: "v" }); } }, "💳 PAR CARTE / VIREMENT"),
+  if (!c.eta_at) return timeSheet("⏱ D'abord ton temps", "Tu n'as pas donné ton temps. Choisis-le, ensuite tu pourras valider.",
+    async (m) => { closeSheet(); const r = await act({ type: "eta", course_id: c.id, minutes: m }); if (r && r.ok) givenSheet(c, 0); });
+  givenSheet(c, 0);
+}
+function givenSheet(c, done) {
+  const g = c.given || { lines: c.lines, price: c.price };   // sa modification en attente, s'il en a envoyé une
+  const yes = el("button", { class: "big go", disabled: "", onclick: () => { vibrate("warning"); done + 1 < GIVEN ? givenSheet(c, done + 1) : paySheet(c); } },
+    `✅ OUI, J'AI DONNÉ ÇA (${done + 1}/${GIVEN})`);
+  setTimeout(() => yes.removeAttribute("disabled"), 700);     // pas trois appuis d'un coup sans lire
+  openSheet(el("div", { class: "title" }, "🧐 Tu es sûr d'avoir donné :"),
+    el("div", { class: "items" }, g.lines.length ? g.lines.map((l) => el("div", {}, `${l.q} × ${l.p}`)) : el("div", {}, c.products || "")),
+    el("div", { class: "money" }, el("span", {}, "💶 À encaisser"), el("b", {}, eur(g.price))),
+    c.given ? el("div", { class: "banner" }, "⏳ C'est ta modification : le franchisé doit encore la valider.") : null,
+    el("div", { class: "given-dots" }, [0, 1, 2].map((i) => el("span", { class: i < done ? "on" : "" }))),
+    el("div", { class: "muted", style: "text-align:center" }, done === 0 ? `C'est exactement ça ? Appuie ${GIVEN} fois sur OUI.` : `Encore ${GIVEN - done} fois sur OUI.`),
+    yes,
+    el("button", { class: "big orange-b", onclick: () => { closeSheet(); editSheet(c); } }, "✏️ NON, JE CORRIGE"),
+    el("button", { class: "big grey", onclick: closeSheet }, "Annuler"));
+}
+function paySheet(c) {
+  openSheet(el("div", { class: "title" }, "Le client a payé comment ?"), el("div", { class: "muted" }, `Montant : ${eur((c.given || c).price)}`),
+    el("button", { class: "big go", onclick: async () => { closeSheet(); await act({ type: "deliver", course_id: c.id, payment: "e", confirmed: true }); } }, "💵 EN ESPÈCES"),
+    el("button", { class: "big blue-b", onclick: async () => { closeSheet(); await act({ type: "deliver", course_id: c.id, payment: "v", confirmed: true }); } }, "💳 PAR CARTE / VIREMENT"),
     el("button", { class: "big grey", onclick: closeSheet }, "Retour"));
 }
 
@@ -503,7 +544,7 @@ function viewPlus() {
     el("div", { class: "card" }, el("div", { class: "title" }, "❓ Comment ça marche"),
       el("ol", { class: "help" },
         el("li", {}, "Appuie sur ▶️ JE COMMENCE et partage ta position."),
-        el("li", {}, "Une course arrive : ça sonne. Appuie sur ✅ JE LA PRENDS."),
+        el("li", {}, "Une course arrive : ça sonne. Appuie sur ✅ JE LA PRENDS et choisis ton temps."),
         el("li", {}, "Appuie sur 🗺 Y ALLER pour le GPS."),
         el("li", {}, "Écris ton temps (⏱) : le franchisé est prévenu."),
         el("li", {}, "Donne la commande, encaisse, puis ✅ C'EST LIVRÉ."),

@@ -89,22 +89,46 @@ def withdraw_confirm(course_id: int) -> M:
     return M([[B("Oui", callback_data=f"fw_yes:{course_id}"), B("Non", callback_data=f"fw_no:{course_id}")]])
 
 
+ETA_CHOICES = (10, 15, 20, 30, 45, 60, 90, 120)   # minutes proposées au livreur pour son temps
+
+
+def eta_label(minutes: int) -> str:
+    """10 → « 10 min », 60 → « 1h », 90 → « 1h30 »."""
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60}h" + (f"{minutes % 60:02d}" if minutes % 60 else "")
+
+
+def eta_rows(prefix: str) -> list[list[B]]:
+    """Boutons de temps (« ⏱ 15 min »…) ; callback « <prefix>:<minutes> »."""
+    buttons = [B(f"⏱ {eta_label(m)}", callback_data=f"{prefix}:{m}") for m in ETA_CHOICES]
+    return [buttons[:4], buttons[4:]]
+
+
 def proposal(course_id: int) -> M:
-    """✅ JE LA PRENDS en un appui ; 📱 OUVRIR ouvre la course dans l'appli « Mes courses »."""
+    """Prendre la course = choisir son temps (un appui) : le franchisé sait tout de suite quand il arrive.
+    📱 OUVRIR ouvre la course dans l'appli « Mes courses »."""
     from telegram import WebAppInfo
 
     from bot import config
 
-    rows = [[B("✅ JE LA PRENDS", callback_data=f"course_take:{course_id}")]]
+    rows = eta_rows(f"course_take:{course_id}")
     url = config.get().webapp_url
     if url:
         rows.append([B("📱 OUVRIR", web_app=WebAppInfo(f"{url}/livreur?course={course_id}"))])
     return M(rows)
 
 
-def livreur_course(course_id: int) -> M:
+def eta_only(course_id: int) -> M:
+    """Les boutons ⏱ seuls (rappel « donne d'abord ton temps »)."""
+    return M(eta_rows(f"eta:{course_id}"))
+
+
+def livreur_course(course_id: int, ask_eta: bool = False) -> M:
+    """Fiche du livreur ; ask_eta : il n'a pas encore donné son temps (course attribuée par un admin ou un
+    franchisé) → les boutons de temps en premier, obligatoires avant de valider."""
     return M(
-        [
+        (eta_rows(f"eta:{course_id}") if ask_eta else []) + [
             [B("📦 Livré", callback_data=f"course_deliver:{course_id}"), B("💬 Contacter", callback_data=f"relay_start:{course_id}")],
             [B("✏️ Modifier la commande", callback_data=f"order_edit:{course_id}")],
             [
@@ -194,6 +218,16 @@ def override_confirm(action: str, course_id: int) -> M:
                    B("Oui — 💳 Virement", callback_data=f"fy:deliver:{course_id}:v")],
                   [B("Non", callback_data="op_cancel")]])
     return M([[B("Oui", callback_data=f"fy:{action}:{course_id}"), B("Non", callback_data="op_cancel")]])
+
+
+GIVEN_CONFIRMATIONS = 3   # appuis sur « OUI, J'AI DONNÉ ÇA » avant le choix du paiement
+
+
+def given_check(course_id: int, done: int) -> M:
+    """Récapitulatif avant la livraison : OUI (1/3, 2/3, 3/3), ou NON → il corrige la commande."""
+    return M([[B(f"✅ OUI, J'AI DONNÉ ÇA ({done + 1}/{GIVEN_CONFIRMATIONS})", callback_data=f"dv:{course_id}:{done + 1}")],
+              [B("✏️ NON, je corrige", callback_data=f"dv_fix:{course_id}")],
+              [B("↩️ Retour", callback_data=f"pay_back:{course_id}")]])
 
 
 def payment_choice(course_id: int) -> M:
