@@ -770,3 +770,9 @@ simple qui respecte le mur de confidentialité (§12).
      quand l'appli est ouverte, raccourci sur l'écran d'accueil (icône scooter choisie par l'exploitant) via le lien
      direct de l'appli. Limite assumée : sur iPhone, c'est un bandeau (persistant), jamais un écran d'appel.
 
+174. **Les écritures refusées par le tableau sont rattrapées toutes seules.** Le 17/10, pendant que le code secret
+     du script ne correspondait plus, trois courses et un rechargement livrés le soir n'ont pas été écrits ; ils
+     n'existaient que dans le bot jusqu'à une /synchro manuelle, oubliée. Désormais un job renvoie, une à une,
+     toutes les 10 minutes, chaque écriture signalée par un `sheet_error` et pas encore rattrapée (événement
+     `sheet_resent`), et le dispatch voit ce qui a été rattrapé. Limité à 36 h et à la semaine en cours : une
+     erreur ancienne et oubliée ne doit pas ressurgir d'un coup dans un tableau déjà corrigé à la main.

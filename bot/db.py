@@ -427,6 +427,10 @@ async def create_restock(fields: dict) -> dict | None:
     return _first(await _t("restocks").insert(fields).execute())
 
 
+async def get_restock(restock_id: int) -> dict | None:
+    return _first(await _t("restocks").select("*").eq("id", restock_id).limit(1).execute())
+
+
 async def list_restocks_between(start: datetime, end: datetime) -> list[dict]:
     res = await (
         _t("restocks").select("*").gte("created_at", iso(start)).lt("created_at", iso(end))
@@ -437,6 +441,10 @@ async def list_restocks_between(start: datetime, end: datetime) -> list[dict]:
 
 async def create_expense(fields: dict) -> dict | None:
     return _first(await _t("expenses").insert(fields).execute())
+
+
+async def get_expense(expense_id: int) -> dict | None:
+    return _first(await _t("expenses").select("*").eq("id", expense_id).limit(1).execute())
 
 
 async def list_expenses_between(start: datetime, end: datetime) -> list[dict]:
@@ -584,6 +592,12 @@ async def last_user_events(type_: str, since: datetime) -> dict[str, str]:
 async def events_after(type_: str, after_id: int, limit: int = 20) -> list[dict]:
     """Événements d'un type plus récents qu'un id, du plus ancien au plus récent."""
     res = await (_t("events").select("*").eq("type", type_).gt("id", after_id).order("id").limit(limit).execute())
+    return res.data
+
+
+async def events_since(type_: str, since: datetime) -> list[dict]:
+    """Événements d'un type depuis une date, du plus ancien au plus récent."""
+    res = await (_t("events").select("*").eq("type", type_).gte("created_at", iso(since)).order("id").execute())
     return res.data
 
 

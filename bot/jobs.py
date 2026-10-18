@@ -199,6 +199,16 @@ async def sheet_errors(context) -> None:
     await messaging.notify_dispatch(context.bot, texts.d_sheet_errors(events), team=False, important=True)
 
 
+async def sheet_retry(context) -> None:
+    """Écritures refusées par un tableau (script injoignable, mauvais secret…) : renvoyées toutes seules dès
+    que le tableau répond, sans attendre une /synchro ; le dispatch voit ce qui a été rattrapé."""
+    from bot.services import sheets
+
+    resent = await sheets.retry_failed()
+    if resent:
+        await messaging.notify_dispatch(context.bot, texts.d_sheet_resent(resent), team=False)
+
+
 def _safe(job):
     async def wrapper(context):
         try:
@@ -221,6 +231,7 @@ def register(job_queue) -> None:
     job_queue.run_once(_safe(refresh_menus), when=10, name="refresh_menus")
     job_queue.run_repeating(_safe(edit_reminders), interval=120, first=150, name="edit_reminders")
     job_queue.run_repeating(_safe(sheet_errors), interval=60, first=20, name="sheet_errors")
+    job_queue.run_repeating(_safe(sheet_retry), interval=600, first=240, name="sheet_retry")
     job_queue.run_repeating(_safe(declare.remind), interval=120, first=100, name="declare_remind")
     job_queue.run_repeating(_safe(stale_positions), interval=120, first=60, name="stale_positions")
     job_queue.run_repeating(_safe(stuck_courses), interval=300, first=90, name="stuck_courses")

@@ -1177,8 +1177,18 @@ def d_sheet_errors(events: list[dict]) -> str:
         lines.append(f"• {what} : {esc(error[:200])}")
     if len(events) > 10:
         lines.append(f"• … et {len(events) - 10} autres")
-    lines += ["", "C'est enregistré dans le bot. Corrige le tableau (ex. une colonne produit manquante), puis "
-                  "/synchro pour renvoyer la nuit en cours."]
+    lines += ["", "C'est enregistré dans le bot, qui réessaie tout seul toutes les 10 minutes (pendant 36 h). Si le tableau "
+                  "doit être corrigé (ex. une colonne produit manquante), corrige-le : ce sera écrit au prochain "
+                  "essai, ou tout de suite avec /synchro."]
+    return "\n".join(lines)
+
+
+def d_sheet_resent(keys: list[str]) -> str:
+    """Écritures refusées puis rattrapées toutes seules (sheets.retry_failed)."""
+    names = {"c": "Course #", "r": "Rechargement R#", "d": "Dépense D#"}
+    lines = ["✅ <b>Rattrapé dans le tableau</b>"] + [f"• {names[k[0]]}{k[1:]}" for k in keys[:10]]
+    if len(keys) > 10:
+        lines.append(f"• … et {len(keys) - 10} autres")
     return "\n".join(lines)
 
 
