@@ -735,10 +735,45 @@ async def show_position(update: Update, context):
     if livreur is None or livreur["role"] != "livreur":
         return texts.ALREADY_HANDLED, True
     pos = await db.get_position(livreur["id"])
-    if pos is None:
-        return texts.NO_POSITION, True
-    await _send_position(context, update.effective_chat.id, livreur, pos)
+    if pos is not None:
+        await _send_position(context, update.effective_chat.id, livreur, pos)
+    minutes = position_minutes(pos)
+    if minutes is None or minutes > config.get().position_stale_minutes:   # pas en temps réel : on lui demande
+        name = livreur.get("display_name") or "le livreur"
+        await messaging.reply(update, texts.position_stale(name, minutes), keyboards.ask_position(livreur["id"], name))
     return None
+
+
+def position_minutes(pos: dict | None) -> float | None:
+    """Âge de la position en minutes (None : jamais reçue)."""
+    return (now_utc() - parse_ts(pos["updated_at"])).total_seconds() / 60 if pos else None
+
+
+POSITION_ASK_COOLDOWN = 2   # minutes : deux appuis rapprochés n'envoient qu'une demande
+
+
+async def ask_position(context, admin: dict, livreur: dict) -> str:
+    """Demande au livreur (notification qui sonne) d'activer sa position en direct ; texte pour l'admin."""
+    name = livreur.get("display_name") or "le livreur"
+    recent = await db.last_user_events("position_asked", now_utc() - timedelta(minutes=POSITION_ASK_COOLDOWN))
+    if livreur["id"] in recent:
+        return texts.position_ask_recent(name)
+    await messaging.send(context.bot, livreur, texts.position_asked(admin.get("display_name") or "Le dispatch"),
+                         ring=True)
+    await db.log_event("position_asked", user_id=livreur["id"], payload={"by": admin["id"]})
+    return texts.position_ask_sent(name)
+
+
+@common.callback
+async def ask_position_button(update: Update, context):
+    """ask_loc:<livreur> — 📩 sous une position pas à jour."""
+    admin = await _dispatch(update)
+    if admin is None:
+        return None
+    livreur = await db.get_user(common.arg(update))
+    if livreur is None or livreur["role"] != "livreur" or livreur["status"] != "active":
+        return texts.ALREADY_HANDLED, True
+    return await ask_position(context, admin, livreur), True
 
 
 @common.callback

@@ -331,6 +331,12 @@ Boutons : **📍** à côté de chaque livreur → son point sur une carte Teleg
 l'adresse la plus proche, l'âge de la position, en direct ou fixe, et l'heure de fin du partage choisie dans
 Telegram ; **🗺 Tous les livreurs** → un point par livreur en service.
 
+L'âge d'une position s'écrit en minutes, puis en heures, puis en jours (« il y a 12 h 28 », « il y a 1 j 14 h »),
+dans le chat comme dans l'appli. **Position pas en temps réel** (plus vieille que `POSITION_STALE_MINUTES`, ou
+jamais reçue) : 📍 (chat ou appli Dispatch) propose **📩 Demander à … d'activer sa position** ; le livreur reçoit
+une notification qui sonne avec la marche à suivre (une seule par 2 min), et son appli « Mes courses » affiche
+« 📍 Le dispatch te demande ta position » pendant une heure. L'appli garde « Voir la dernière position connue ».
+
 Alertes au dispatch : un livreur en service qui n'envoie plus sa position depuis `POSITION_ALERT_MINUTES`
 (10 min) → « ⚠️ Livreur A : plus de position depuis 12 min (dernière : près de …) », et le livreur reçoit un
 rappel ; à `POSITION_STALE_MINUTES` (30 min) il sort du service → « ⏸ Livreur A retiré du service ».

@@ -150,6 +150,8 @@ async def board(viewer: dict) -> dict:
             "transport": transport.ICON.get(lv.get("transport_mode") or "", ""),
             "position_min": (minutes_since(parse_ts(positions[lv["id"]]["updated_at"]))
                              if lv["id"] in positions else None),
+            "position_ago": (texts.ago(minutes_since(parse_ts(positions[lv["id"]]["updated_at"])))
+                             if lv["id"] in positions else None),
             "stock_to_confirm": lv["id"] in blocked,
         } for lv in livreurs],
         "totals": {"n": len(delivered), "total": sum(float(c["price"]) for c in delivered), "pay": pay,
@@ -251,13 +253,22 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
         if not livreur or livreur["role"] != "livreur" or livreur["status"] != "active":
             return {"ok": False, "message": texts.ALREADY_HANDLED}
         return {"ok": True, "message": await dispatch.set_duty(context, admin, livreur, bool(body.get("on")))}
-    if kind == "position":
+    if kind in ("position", "ask_position"):
+        from bot.handlers import dispatch
+
         livreur = await db.get_user(str(body.get("livreur_id")))
-        pos = (await db.get_positions([livreur["id"]])).get(livreur["id"]) if livreur else None
-        if not pos:
-            return {"ok": False, "message": "Pas de position connue pour ce livreur."}
-        return {"ok": True, "map": f"https://www.google.com/maps/search/?api=1&query={pos['lat']},{pos['lon']}",
-                "message": f"Position il y a {minutes_since(parse_ts(pos['updated_at']))} min"}
+        if not livreur or livreur["role"] != "livreur" or livreur["status"] != "active":
+            return {"ok": False, "message": texts.ALREADY_HANDLED}
+        if kind == "ask_position":                     # notification au livreur : activer sa position en direct
+            return {"ok": True, "message": await dispatch.ask_position(context, admin, livreur)}
+        pos = (await db.get_positions([livreur["id"]])).get(livreur["id"])
+        minutes = dispatch.position_minutes(pos)
+        # Pas en temps réel : l'appli propose de lui demander d'activer sa position (et la dernière connue).
+        stale = minutes is None or minutes > config.get().position_stale_minutes
+        when = texts.ago(minutes) if minutes is not None else None
+        return {"ok": True, "stale": stale, "ago": when,
+                "map": f"https://www.google.com/maps/search/?api=1&query={pos['lat']},{pos['lon']}" if pos else None,
+                "message": f"Position {when}" if when else "Aucune position reçue."}
     if kind == "open_chat":
         if course is None or course["status"] not in ("pending", "assigned"):
             return {"ok": False, "message": texts.COURSE_FINISHED}

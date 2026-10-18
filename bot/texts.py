@@ -922,13 +922,36 @@ def d_onsite(course: dict, livreur: dict) -> str:
 
 
 def ago(minutes: float) -> str:
-    """0 → « à l'instant » ; 7 → « il y a 7 min » ; 95 → « il y a 1 h 35 »."""
+    """0 → « à l'instant » ; 7 → « il y a 7 min » ; 95 → « il y a 1 h 35 » ; 2293 → « il y a 1 j 14 h »."""
     m = int(minutes)
     if m < 1:
         return "à l'instant"
     if m < 60:
         return f"il y a {m} min"
-    return f"il y a {m // 60} h {m % 60:02d}" if m % 60 else f"il y a {m // 60} h"
+    if m < 24 * 60:
+        return f"il y a {m // 60} h {m % 60:02d}" if m % 60 else f"il y a {m // 60} h"
+    days, hours = divmod(m // 60, 24)
+    return f"il y a {days} j {hours} h" if hours else f"il y a {days} j"
+
+
+def position_asked(admin_name: str) -> str:
+    """Le dispatch voit que la position d'un livreur n'est plus à jour et lui demande de la réactiver."""
+    return (f"📍 <b>{esc(admin_name)} te demande d'activer ta position en direct.</b>\n"
+            "On ne voit plus où tu es : sans ta position, pas de course.\n\n" + LIVE_GUIDE)
+
+
+def position_ask_sent(name: str) -> str:
+    return f"📩 Demande envoyée à {name} : il reçoit une notification pour activer sa position en direct."
+
+
+def position_ask_recent(name: str) -> str:
+    return f"📩 {name} a déjà reçu la demande il y a moins de 2 min."
+
+
+def position_stale(name: str, minutes: float | None) -> str:
+    """Sous la carte (ou à sa place) : la position du livreur n'est plus à jour."""
+    when = f"dernière position {ago(minutes)}" if minutes is not None else "aucune position reçue"
+    return f"⚠️ <b>{esc(name)}</b> : position pas à jour ({when}). Tu peux lui demander de l'activer 👇"
 
 
 def position_state(pos: dict | None, minutes: float | None, fresh: bool) -> str:

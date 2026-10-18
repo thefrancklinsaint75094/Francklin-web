@@ -11,6 +11,7 @@ mêmes avis au franchisé et au dispatch). Accès : la signature initData de Tel
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from pathlib import Path
 
 from aiohttp import web
@@ -70,6 +71,7 @@ async def board(user: dict) -> dict:
     courses = sorted(await db.list_assigned_for_livreur(user["id"]), key=lambda c: (c.get("assigned_at") or "", c["id"]))
     pos = await db.get_position(user["id"])
     pos_min = minutes_since(parse_ts(pos["updated_at"])) if pos else None
+    asked = await db.last_user_events("position_asked", now - timedelta(hours=1))   # le dispatch la demande
     blocked = user["id"] in await declare.blocked_ids()
 
     current = None
@@ -115,7 +117,8 @@ async def board(user: dict) -> dict:
         "me": {"name": user.get("display_name"), "prenom": names.prenom(user.get("display_name")),
                "on_duty": bool(user.get("on_duty")), "transport": user.get("transport_mode"),
                "soon_free": bool(user.get("soon_free")),
-               "position_min": pos_min, "position_ok": pos_min is not None and pos_min <= cfg.position_stale_minutes},
+               "position_min": pos_min, "position_ok": pos_min is not None and pos_min <= cfg.position_stale_minutes,
+               "position_asked": user["id"] in asked},
         "now": hhmm(now), "blocked": blocked, "declaration": declaration,
         "current": current,
         "next": [{"id": c["id"], "district": c.get("district"), "price": float(c.get("price") or 0)} for c in courses[1:]],

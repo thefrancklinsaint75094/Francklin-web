@@ -220,6 +220,7 @@ def register_handlers(app: Application) -> None:
         (r"^sname:", dispatch.name_ask),
         (r"^loc:", dispatch.show_position),
         (r"^loc_all$", dispatch.show_all_positions),
+        (r"^ask_loc:", dispatch.ask_position_button),
         (r"^sname_set:", dispatch.name_set),
         (r"^sname_done:", dispatch.name_done),
         (r"^relay_start:", relay.start),

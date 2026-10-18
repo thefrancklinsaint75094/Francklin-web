@@ -278,6 +278,7 @@ function viewCourses() {
   } else if (!me.position_ok) {
     out.push(positionCard());
   }
+  if (!me.on_duty && !me.position_ok && me.position_asked) out.unshift(positionCard());   // le dispatch la demande
   if (me.on_duty && !soundOk()) out.push(el("div", { class: "card blue" },
     el("div", { class: "title" }, "🔊 Le son des courses"),
     el("div", { class: "muted" }, "Appuie une fois : quand une course arrive et que l'appli est ouverte, ça sonne en grand."),
@@ -303,7 +304,7 @@ function viewCourses() {
 
 function positionCard() {
   return el("div", { class: "card orange" },
-    el("div", { class: "title" }, "📍 Partage ta position"),
+    el("div", { class: "title" }, S.d.me.position_asked ? "📍 Le dispatch te demande ta position" : "📍 Partage ta position"),
     el("div", { class: "muted" }, "Sans ta position, je ne peux pas te donner de course."),
     el("ol", { class: "help" },
       el("li", {}, "Appuie sur le bouton ci-dessous : l'appli se ferme."),

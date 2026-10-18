@@ -787,3 +787,10 @@ simple qui respecte le mur de confidentialité (§12).
      « Tu es sûr d'avoir donné : … » demande trois « OUI » (bouton grisé un instant dans l'appli, pour qu'il lise),
      ou « NON, je corrige » qui ouvre la modification (le franchisé garde le dernier mot). « OK CB » ne saute plus
      ces étapes. Les admins qui marquent une course livrée ne sont pas concernés.
+
+176. **Âge des positions en heures et jours ; demander au livreur d'activer sa position** (l'exploitant : « au
+     lieu de 800 minutes », et « s'il n'a pas sa position en temps réel, lui envoyer un pop-up »). Un bot ne peut
+     pas activer la position à la place du livreur (règle de Telegram) : il reçoit une notification qui sonne
+     avec la marche à suivre, à la demande du dispatch (📍 sur un livreur sans position à jour), au plus une par
+     2 minutes. Pas d'envoi automatique : c'est le dispatch qui décide (les alertes de position perdue existent
+     déjà pour les livreurs en service).
