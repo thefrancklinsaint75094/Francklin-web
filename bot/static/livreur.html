@@ -405,25 +405,27 @@ function messagesBlock(c) {
     } }, "💬 ÉCRIRE AU FRANCHISÉ"));
 }
 
-// Son temps : obligatoire pour prendre une course (et avant de valider une course qu'on lui a attribuée).
-const ETA_CHOICES = [10, 15, 20, 30, 45, 60, 90, 120];
-const etaLabel = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, "0") : ""}`;
-function timeSheet(title, sub, onPick) {
-  openSheet(el("div", { class: "title" }, title), el("div", { class: "muted" }, sub),
-    el("div", { class: "tiles", style: "grid-template-columns: repeat(4, 1fr)" }, ETA_CHOICES.map((m) =>
-      el("button", { class: "tile", style: "font-size:19px; padding:18px 4px", onclick: () => { tap(); onPick(m); } }, etaLabel(m)))),
+// Son temps précis (en minutes) : obligatoire pour prendre une course, et avant de valider une course attribuée.
+function timeSheet(title, sub, button, onOk) {
+  const input = el("input", { type: "number", inputmode: "numeric", min: "1", max: "300", placeholder: "Par exemple 47" });
+  openSheet(el("div", { class: "title" }, title), el("div", { class: "muted" }, sub), input,
+    el("div", { class: "muted small", style: "margin-top:6px" }, "En minutes : 1h10, c'est 70."),
+    el("button", { class: "big go", onclick: () => { const m = parseInt(input.value, 10);
+      if (!(m >= 1 && m <= 300)) { vibrate("error"); toast("Écris ton temps en minutes, par exemple 47."); input.focus(); return; }
+      onOk(m); } }, button),
     el("button", { class: "big grey", onclick: closeSheet }, "Annuler"));
+  setTimeout(() => input.focus(), 300);
 }
 function takeSheet(p) {
-  timeSheet("⏱ Tu y es dans combien de temps ?", "Choisis ton temps pour prendre la course. Le franchisé est prévenu.",
-    async (m) => { closeSheet(); await act({ type: "take", course_id: p.id, minutes: m }); });
+  timeSheet("⏱ Tu y es dans combien de temps ?", "Écris ton temps précis pour prendre la course. Le franchisé est prévenu.",
+    "✅ JE LA PRENDS", async (m) => { closeSheet(); await act({ type: "take", course_id: p.id, minutes: m }); });
 }
 
 // C'EST LIVRÉ : son temps s'il ne l'a pas donné, puis « tu es sûr d'avoir donné… » (OUI 3 fois), puis le paiement.
 const GIVEN = 3;
 function deliverSheet(c) {
-  if (!c.eta_at) return timeSheet("⏱ D'abord ton temps", "Tu n'as pas donné ton temps. Choisis-le, ensuite tu pourras valider.",
-    async (m) => { closeSheet(); const r = await act({ type: "eta", course_id: c.id, minutes: m }); if (r && r.ok) givenSheet(c, 0); });
+  if (!c.eta_at) return timeSheet("⏱ D'abord ton temps", "Tu n'as pas donné ton temps. Écris-le, ensuite tu pourras valider.",
+    "✅ OK", async (m) => { closeSheet(); const r = await act({ type: "eta", course_id: c.id, minutes: m }); if (r && r.ok) givenSheet(c, 0); });
   givenSheet(c, 0);
 }
 function givenSheet(c, done) {
@@ -544,7 +546,7 @@ function viewPlus() {
     el("div", { class: "card" }, el("div", { class: "title" }, "❓ Comment ça marche"),
       el("ol", { class: "help" },
         el("li", {}, "Appuie sur ▶️ JE COMMENCE et partage ta position."),
-        el("li", {}, "Une course arrive : ça sonne. Appuie sur ✅ JE LA PRENDS et choisis ton temps."),
+        el("li", {}, "Une course arrive : ça sonne. Appuie sur ✅ JE LA PRENDS et écris ton temps."),
         el("li", {}, "Appuie sur 🗺 Y ALLER pour le GPS."),
         el("li", {}, "Écris ton temps (⏱) : le franchisé est prévenu."),
         el("li", {}, "Donne la commande, encaisse, puis ✅ C'EST LIVRÉ."),

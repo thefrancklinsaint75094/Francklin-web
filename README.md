@@ -572,11 +572,11 @@ courtes, une chose à la fois. Quatre onglets en bas : 🚴 Mes courses · 💶 
   4 étapes comment la partager (la position en direct se partage toujours dans le chat).
 - **Stock du début (et de fin)** : « Le tableau dit que tu as… C'est juste ? » **✅ OUI** / **✏️ NON** (compteurs
   − / +). Tant que ce n'est pas fait, pas de course (comme dans le chat).
-- **🆕 Nouvelle course pour toi** : quartier, distance, produits, prix, **✋ JE LA PRENDS** → **son temps**
-  (10 min … 2 h, un appui) : sans temps, pas de prise ; le franchisé le reçoit avec « course prise ».
+- **🆕 Nouvelle course pour toi** : quartier, distance, produits, prix, **✋ JE LA PRENDS** → il **tape son temps
+  précis** (en minutes) puis ✅ JE LA PRENDS : sans temps, pas de prise ; le franchisé le reçoit avec « course prise ».
 - **🚴 Ta course maintenant**, en 4 étapes numérotées : 1. Où ? (adresse, digicode, heure voulue, **🗺 Y ALLER**
   Google Maps / Waze) · 2. Ton temps (**⏱ J'ÉCRIS MON TEMPS** : le franchisé est prévenu) · 3. À donner, à
-  encaisser · 4. **✅ C'EST LIVRÉ** → son temps s'il ne l'a pas donné → **« Tu es sûr d'avoir donné : … »** (les
+  encaisser · 4. **✅ C'EST LIVRÉ** → son temps (tapé) s'il ne l'a pas donné → **« Tu es sûr d'avoir donné : … »** (les
   produits et le montant) : **✅ OUI, J'AI DONNÉ ÇA** à appuyer **3 fois** (1/3, 2/3, 3/3, bouton grisé un instant
   entre deux appuis) ou **✏️ NON, JE CORRIGE** (la modification part au franchisé) → **💵 EN ESPÈCES** /
   **💳 PAR CARTE / VIREMENT**. Et : les messages avec le
@@ -620,10 +620,12 @@ en toutes lettres (🚶 À pied ou en transports · 🛵 Deux-roues · 🚗 Voit
 
 ### Validation par le livreur : temps, récapitulatif ×3, paiement
 
-**Son temps est obligatoire.** Une course proposée se prend en appuyant sur son temps (⏱ 10 min, 15, 20, 30,
-45 min, 1 h, 1 h 30, 2 h) : le franchisé et le dispatch le reçoivent avec « course prise ». Une course attribuée
-par un admin ou un franchisé arrive avec ces boutons ⏱ sur la fiche (ou il écrit « 47 ») : tant qu'il ne l'a
-pas donné, ni 📦 Livré, ni « OK », ni « Modif » (« Donne d'abord ton temps »).
+**Son temps précis est obligatoire** (pas de tranches). **✅ JE LA PRENDS** → « dans combien de temps tu y es ?
+Écris ton temps précis » → il écrit **47** ou **1h10** : la course est à lui à ce moment-là (entre deux livreurs,
+le premier qui écrit son temps l'a ; la demande vaut 3 minutes). Sa fiche arrive en bas du chat, avec « ⏱ Tu y
+seras dans 47 min (vers 21:05) », et le franchisé et le dispatch reçoivent ce temps avec « course prise ». Une
+course attribuée par un admin ou un franchisé : la fiche demande « ⏱ Écris ton temps » ; tant qu'il ne l'a pas
+écrit, ni 📦 Livré, ni « OK », ni « Modif » (« Écris d'abord ton temps »). En retard, il écrit le nouveau temps.
 
 **Puis le récapitulatif, à confirmer 3 fois.** 📦 Livré, ✅ Livrée (menu) ou « OK » affichent « 🧐 vérifie
 bien ! Tu es sûr d'avoir donné au client : … » avec les produits et le montant : **✅ OUI, J'AI DONNÉ ÇA** à
@@ -755,8 +757,8 @@ bot, depuis le départ) + 💰 ce que tu lui as donné − 🧾 charges − 📦
 ### Notifications des livreurs, sonnerie et raccourci (appli « Courses »)
 
 - **Carte « NOUVELLE COURSE »** : la 1re ligne (lisible sur l'écran verrouillé) donne le quartier et le prix ;
-  boutons de temps **⏱ 10 min … 2 h** (prendre la course = donner son temps) et **📱 OUVRIR** (ouvre la course
-  dans l'appli « Mes courses »).
+  boutons **✅ JE LA PRENDS** (puis il écrit son temps précis) et **📱 OUVRIR** (ouvre la course dans l'appli
+  « Mes courses »).
 - **Seuls les messages importants sonnent** chez les livreurs (nouvelle course, relance, course retirée / modifiée /
   annulée, heure ou adresse changée, message du franchisé ou du dispatch, mise en service par le dispatch, alertes) ;
   le reste arrive sans bruit (`messaging.send(..., ring=True)`). Leur sonnerie dédiée veut donc dire « course ».

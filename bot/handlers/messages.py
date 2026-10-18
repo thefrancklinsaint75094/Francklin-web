@@ -34,6 +34,12 @@ async def on_message(update: Update, context) -> None:
     if user["role"] == "livreur" and livreur.menu_action(update.message.text):
         await livreur.on_menu(update, context, user, livreur.menu_action(update.message.text))
         return
+    # Livreur qui vient d'appuyer sur « JE LA PRENDS » : son temps écrit prend la course (« OK » / « Modif »
+    # valident toujours sa course en cours).
+    if (user["role"] == "livreur" and state == livreur.TAKE_STATE and update.message.text
+            and not livreur.is_validation(update.message.text)):
+        await livreur.take_typed(update, context, user, payload)
+        return
     # Fiche utilisateur : nouveau nom / prénom écrit par un admin.
     if state == user_card.STATE and common.is_admin(user) and update.message.text:
         await user_card.on_message(update, context, user, payload)

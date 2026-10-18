@@ -95,7 +95,7 @@ async def after_assignment(context, course: dict, livreur: dict, message, eta: i
     bc = await db.get_broadcast(course["id"], livreur["id"])
     msg_id = message.message_id if message is not None else None
     new = await messaging.edit(
-        context.bot, livreur["telegram_id"], msg_id, fiche, keyboards.livreur_course(course["id"], ask_eta=not eta),
+        context.bot, livreur["telegram_id"], msg_id, fiche, keyboards.livreur_course(course["id"]),
         sent_at=parse_ts(bc["sent_at"]) if bc else None, user=livreur,
     )
     if new is not None:
@@ -219,7 +219,7 @@ async def remind_next(context, livreur: dict, done_id: int) -> None:
     nxt = min(others, key=lambda c: (c.get("assigned_at") or "", c["id"]))
     franchise = await db.get_user(nxt["franchise_id"]) or {}
     sent = await messaging.send(context.bot, livreur, texts.next_course_for_livreur(nxt, franchise),
-                                keyboards.livreur_course(nxt["id"], ask_eta=not nxt.get("eta_at")), ring=True)
+                                keyboards.livreur_course(nxt["id"]), ring=True)
     fields = {"assigned_at": iso(now_utc())}
     if sent is not None:
         fields["livreur_message_id"] = sent.message_id

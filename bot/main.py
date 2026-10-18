@@ -186,7 +186,6 @@ def register_handlers(app: Application) -> None:
         (r"^course_deliver:", livreur.deliver),
         (r"^dv:", livreur.given),
         (r"^dv_fix:", livreur.given_fix),
-        (r"^eta:", livreur.eta_pick),
         (r"^pay(_back)?:", livreur.pay),
         (r"^tmode:", livreur.transport_mode),
         (r"^livreur_soon_free$", livreur.soon_free),

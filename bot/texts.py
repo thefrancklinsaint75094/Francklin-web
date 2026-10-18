@@ -391,15 +391,29 @@ def proposal(course: dict, distance_label: str | None) -> str:
     lines.append(f"🍾 {esc(course['products'])}")
     if course.get("requested_time"):
         lines.append(f"🕐 {esc(course['requested_time'])}")
-    lines.append("⏱ <b>Pour la prendre, appuie sur ton temps</b> 👇")
+    lines.append("⏱ Pour la prendre : ✅ JE LA PRENDS, puis écris ton temps.")
     lines.append(f"Course #{course['id']}")
     return "\n".join(lines)
 
 
-TAKE_PICK_TIME = "⏱ Pour la prendre, choisis ton temps : appuie sur le temps qu'il te faut pour y être."
-ETA_FIRST = ("⏱ Donne d'abord ton temps (les boutons ⏱ de ta course) : le franchisé doit savoir quand tu "
-             "arrives. Ensuite tu pourras valider.")
-ETA_NOTED = "Temps noté ✅"
+TAKE_PICK_TIME = "⏱ Pour la prendre, écris ton temps précis en minutes (par exemple 47)."
+TAKE_WRITE_TIME = "⏱ Écris ton temps 👇"
+TAKE_TIME_FORMAT = ("Écris juste ton temps : un nombre de minutes, par exemple <b>47</b>, ou <b>1h10</b>. "
+                    "La course est à toi dès que tu l'as écrit.")
+ETA_FIRST = ("⏱ Écris d'abord ton temps précis, par exemple <b>47</b> (minutes) ou <b>1h10</b> : le franchisé doit "
+             "savoir quand tu arrives. Ensuite tu pourras valider.")
+ETA_FIRST_ALERT = ("⏱ Écris d'abord ton temps précis dans le chat (par exemple 47) : le franchisé doit savoir quand "
+                   "tu arrives. Ensuite tu pourras valider.")
+
+
+def take_ask_eta(course: dict) -> str:
+    return (f"⏱ <b>Course #{course['id']}</b> · {esc(course.get('district') or '')} — dans combien de temps tu y es ?\n"
+            "Écris ton temps précis, par exemple <b>47</b> (minutes) ou <b>1h10</b>. "
+            "La course est à toi dès que tu l'as écrit.")
+
+
+def proposal_yours(course_id: int) -> str:
+    return f"✅ Course #{course_id} : c'est pour toi. Ta fiche est en bas 👇"
 GIVEN_UNCONFIRMED = "Confirme d'abord ce que tu as donné au client."
 
 
@@ -432,8 +446,10 @@ def full_fiche(course: dict, franchise: dict) -> str:
     if franchise.get("telegram_username"):
         who += f" — @{esc(franchise['telegram_username'])}"
     lines += ["", who, ""]
-    if not course.get("eta_at"):
-        lines.append("⏱ <b>Donne ton temps</b> avec les boutons ⏱ ci-dessous : obligatoire avant de valider.")
+    if course.get("eta_at"):
+        lines.append(f"⏱ Tu y seras {_eta_at(course)} : le franchisé est prévenu. En retard ? Écris le nouveau temps.")
+    else:
+        lines.append("⏱ <b>Écris ton temps</b> (par exemple 47) : obligatoire avant de valider.")
     lines.append("✅ Livrée : écris <b>OK</b> · ✏️ autre chose vendu : écris <b>Modif</b>")
     return "\n".join(lines)
 
