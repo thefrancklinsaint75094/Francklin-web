@@ -154,8 +154,15 @@ Coca-Cola : coca
 ```
 
 Le bot reconnaît le produit malgré les majuscules, accents, pluriels, contenances (« 70cl ») et petites
-fautes, et affiche le nom du catalogue sur la fiche. Un produit inconnu ne bloque pas la commande : la
-fiche porte « ⚠️ Produit pas dans le catalogue ». Les franchisés voient la liste avec `/produits`.
+fautes, et affiche le nom du catalogue sur la fiche. Les franchisés voient la liste avec `/produits`.
+
+**Sécurité : jamais de produit hors catalogue.** Un produit que le catalogue ne reconnaît pas (pas dedans, ou
+plusieurs produits possibles) **bloque** : la fiche affiche « ⛔ Produit pas reconnu : corrige ta commande » et
+n'a pas de ✅ (ni « ✅ Envoyer » dans l'appli) ; il faut ✏️ Corriger. Une faute de frappe proche d'un seul
+produit reste acceptée, avec le nom exact du catalogue affiché. Même règle pour les modifications (livreur,
+franchisé, dispatch : « produit pas reconnu, choisis-le dans la liste ») et pour `/ventes`. Dernier filet : une
+course qui contiendrait quand même un produit non reconnu (ancienne course) n'est jamais écrite dans le tableau ;
+le dispatch est prévenu et `/synchro` la signale au lieu de l'écrire. Catalogue vide : aucun contrôle.
 
 **Prix de 10 en 10 €** : une commande dont le total, ou le prix d'une ligne, n'est pas un multiple de 10 €
 est refusée avec un message qui dit quoi corriger ; le franchisé la renvoie avec le bon prix.

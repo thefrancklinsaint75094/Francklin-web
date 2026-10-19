@@ -17,10 +17,10 @@ def approve_reject(user_id: str) -> M:
     return M([[B("✅ Valider", callback_data=f"approve:{user_id}"), B("❌ Refuser", callback_data=f"reject:{user_id}")]])
 
 
-def draft_card(draft_id: str) -> M:
+def draft_card(draft_id: str, blocked: bool = False) -> M:
+    """blocked : un produit n'est pas reconnu → pas de ✅, il faut ✏️ Corriger."""
     return M(
-        [
-            [B("✅ Confirmer", callback_data=f"draft_confirm:{draft_id}")],
+        ([] if blocked else [[B("✅ Confirmer", callback_data=f"draft_confirm:{draft_id}")]]) + [
             [
                 B("✏️ Corriger", callback_data=f"draft_edit:{draft_id}"),
                 B("🗑 Annuler", callback_data=f"draft_cancel:{draft_id}"),

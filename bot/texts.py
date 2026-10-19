@@ -255,6 +255,11 @@ def draft_card(ex: dict, price_max: int) -> str:
         lines.append("⚠️ Pas de numéro de rue trouvé — vérifie l'adresse")
     for warning in ex.get("warnings") or []:
         lines.append(esc(warning))
+    blocked = ex.get("blocked_products") or []
+    if blocked:
+        lines.append("⛔ <b>Produit pas reconnu : corrige ta commande</b>")
+        lines += [f"   • {esc(p)}" for p in blocked]
+        lines.append("Écris le produit comme dans le catalogue (/modele), avec ✏️ Corriger.")
     if lines:
         lines.append("")
     body = order_lines(ex)
@@ -262,7 +267,7 @@ def draft_card(ex: dict, price_max: int) -> str:
         idx = next(i for i, l in enumerate(body) if l.startswith("💶"))
         body.insert(idx + 1, "⚠️ Prix élevé, vérifie")
     lines.extend(body)
-    lines += ["", "C'est correct ?"]
+    lines += ["", "Corrige avec ✏️ Corriger." if blocked else "C'est correct ?"]
     return "\n".join(lines)
 
 
@@ -415,6 +420,12 @@ def take_ask_eta(course: dict) -> str:
 def proposal_yours(course_id: int) -> str:
     return f"✅ Course #{course_id} : c'est pour toi. Ta fiche est en bas 👇"
 GIVEN_UNCONFIRMED = "Confirme d'abord ce que tu as donné au client."
+ORDER_BLOCKED_ALERT = "⛔ Un produit n'est pas reconnu : corrige la commande (✏️ Corriger) avant de l'envoyer."
+
+
+def edit_unknown_products(problems: list[str]) -> str:
+    """Modification refusée : un produit n'est pas reconnu par le catalogue (texte simple, pour une alerte)."""
+    return "⛔ Produit pas reconnu : " + " · ".join(problems)[:150] + ". Choisis-le dans la liste ou retire-le."
 
 
 def _eta_at(course: dict) -> str:
@@ -1265,6 +1276,16 @@ def d_sheet_errors(events: list[dict]) -> str:
     lines += ["", "C'est enregistré dans le bot, qui réessaie tout seul toutes les 10 minutes (pendant 36 h). Si le tableau "
                   "doit être corrigé (ex. une colonne produit manquante), corrige-le : ce sera écrit au prochain "
                   "essai, ou tout de suite avec /synchro."]
+    return "\n".join(lines)
+
+
+def sheets_skipped_unknown(skipped: list[tuple[int, str]]) -> str:
+    """/synchro : courses pas écrites parce qu'un produit n'est pas reconnu par le catalogue."""
+    lines = ["⛔ <b>Pas écrites dans le tableau</b> (produit pas reconnu par le catalogue) :"]
+    lines += [f"• Course #{cid} : {esc(why)}" for cid, why in skipped[:10]]
+    if len(skipped) > 10:
+        lines.append(f"• … et {len(skipped) - 10} autres")
+    lines.append("Ajoute le produit au catalogue (ou un surnom), puis relance /synchro.")
     return "\n".join(lines)
 
 

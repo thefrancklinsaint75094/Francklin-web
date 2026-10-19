@@ -100,3 +100,23 @@ def test_free_text_is_not_the_model():
     assert parse_template("12 rue de rivoli paris 4, digicode 45A32, 2 vodka + coca, 60€", CAT) is None
     assert parse_template("54 rue du point du jour Boulogne 50 mousseux", CAT) is None
     assert parse_template("- 8 rue oberkampf 75011, 1 jack, 45\n- 12 rue de paris, 2 rosé, 38€", CAT) is None
+
+
+# --- Sécurité : produits pas reconnus
+
+def test_product_problems_block_unknown_and_ambiguous_but_accept_typos():
+    from bot.services.catalog import product_problems
+
+    assert product_problems("2 Vodka Absolut (60 €) + 1 Coca-Cola (10 €)", CAT) == []
+    assert product_problems("2 absolu + 1 cocas", CAT) == []                          # fautes de frappe : reconnues
+    assert product_problems("1 ricard + 1 coca", CAT) == ["« ricard » n'est pas dans le catalogue"]
+    assert product_problems("2 vodka", CAT) == ["« vodka » peut être : Vodka Absolut, Vodka Grey Goose"]
+    assert product_problems("1 ricard", Catalog([])) == []                            # pas de catalogue : pas de contrôle
+
+
+def test_order_edit_lines_unknown_and_canonical():
+    from bot.services import order_edit
+
+    lines = [{"p": "abso", "q": 1, "x": 30}, {"p": "ricard", "q": 1, "x": 20}]
+    assert order_edit.unknown(lines, CAT) == ["« ricard » n'est pas dans le catalogue"]
+    assert [l["p"] for l in order_edit.canonical(lines[:1], CAT)] == ["Vodka Absolut"]

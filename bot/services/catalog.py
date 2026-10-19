@@ -104,6 +104,29 @@ class Catalog:
         return [p["name"] for p in self.index.get(key, []) if p["id"] != product_id]
 
 
+def problem(name: str, cat: Catalog) -> str | None:
+    """Pourquoi ce produit n'est pas reconnu (pas dans le catalogue, ou plusieurs possibles), sinon None.
+    Une faute de frappe proche d'un seul produit est reconnue (le nom exact s'affiche à la place)."""
+    m = cat.match(name)
+    if m.product:
+        return None
+    if m.ambiguous:
+        return f"« {name} » peut être : {', '.join(m.ambiguous)}"
+    return f"« {name} » n'est pas dans le catalogue"
+
+
+def product_problems(products: str, cat: Catalog) -> list[str]:
+    """Produits d'une commande (« 2 X + 1 Y (20 €) ») que le catalogue ne reconnaît pas. Sécurité voulue
+    par l'exploitant : une commande, une modification ou une ligne du tableau ne passe pas tant qu'il en
+    reste. Catalogue vide : aucun contrôle."""
+    if not cat:
+        return []
+    from bot.services.sheets import product_lines
+
+    return [p for p in (problem(line["produit"], cat) for line in product_lines(products or "", 0.0)
+                        if str(line["produit"]).strip()) if p]
+
+
 async def load() -> Catalog:
     return Catalog(await db.list_products())
 

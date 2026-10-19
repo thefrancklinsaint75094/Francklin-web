@@ -330,6 +330,13 @@ async def deliver_course(h, tg_id, msg, pay="e"):
     await h.press_data(tg_id, h.tg.messages[(tg_id, msg.message_id)], f"pay:{course_id}:{pay}")
 
 
+async def order_products():
+    """Catalogue de test qui reconnaît les produits des commandes d'exemple (« 2 vodka + coca ») : un produit
+    pas reconnu bloque la commande."""
+    for name in ("vodka", "coca"):
+        await db.create_product(name, name, [])
+
+
 async def take(h, tg_id, msg, minutes="20"):
     """✅ JE LA PRENDS, puis son temps écrit : la course est à lui quand il l'a écrit."""
     await h.press(tg_id, msg, "course_take:")
@@ -948,7 +955,19 @@ async def test_catalog_from_bot_and_model_order(h, monkeypatch, test_config):
     assert "🍾 2 Vodka Absolut (60 €) + 1 Coca-Cola (10 €) + 1 ricard (20 €)" in card.text
     assert "💶 90 €" in card.text
     assert "🔑 Digicode 45A32, 3e étage" in card.text
-    assert "⚠️ Produit pas dans le catalogue : « ricard »" in card.text
+    # Sécurité : un produit pas reconnu bloque la commande (pas de ✅) jusqu'à correction.
+    assert "⛔ <b>Produit pas reconnu : corrige ta commande</b>\n   • « ricard » n'est pas dans le catalogue" in card.text
+    assert "⚠️ Produit pas dans le catalogue" not in card.text and card.text.endswith("Corrige avec ✏️ Corriger.")
+    assert not any(d.startswith("draft_confirm:") for _, d in card.buttons)
+    draft_id = card.data("draft_edit:").split(":")[1]
+    await h.press_data(F1, card, f"draft_confirm:{draft_id}")                  # un ancien ✅ : refusé
+    assert h.tg.answers()[-1]["text"] == texts.ORDER_BLOCKED_ALERT
+    assert not await db.list_courses_by_status("pending")
+    await h.press(F1, card, "draft_edit:")
+    await h.text(F1, "12 rue de Rivoli 75004 Paris\n2 abso 60\n1 cocas 10\n2 cocaa 20\n\nDigicode 45A32, 3e étage")
+    card = h.tg.last(F1)
+    assert "Produit pas reconnu" not in card.text and "C'est correct ?" in card.text   # faute de frappe : acceptée
+    assert "+ 2 Coca-Cola (20 €)" in card.text
     await h.press(F1, card, "draft_confirm:")
     [course] = await db.list_courses_by_status("pending")
     assert float(course["price"]) == 90 and course["address_detail"] == "Digicode 45A32, 3e étage"
@@ -1008,6 +1027,45 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     sent.clear()
     await h.text(DISPATCH, "/synchro hier")
     assert "pas dans la semaine en cours" in h.tg.last(DISPATCH).text and not sent
+
+
+async def test_sheet_never_gets_unknown_product(h, monkeypatch):
+    """Dernier filet : une course dont un produit n'est pas reconnu par le catalogue (ancienne course) n'est
+    jamais écrite dans le tableau ; le dispatch est prévenu, et /synchro la signale au lieu de l'écrire."""
+    import asyncio
+
+    from bot import jobs
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    sent = []
+
+    async def fake_send(rows, client=None):
+        sent.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    await order_products()
+    f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
+    await go_on_duty(h, L1, BASTILLE)
+    course = await order(h, F1, "rivoli")
+    await take(h, L1, h.tg.last(L1))
+    await db.update_course(course["id"], {"products": "2 vodka + 1 ricard"})   # ancienne course, avant le blocage
+    jobs._sheet_error_seen = None
+    await jobs.sheet_errors(h.context)
+    await deliver_course(h, L1, h.tg.find(L1, "c'est pour toi"))
+    await asyncio.gather(*list(sheets._tasks))
+    assert not sent
+    await jobs.sheet_errors(h.context)
+    alert = h.tg.last(DISPATCH).text
+    assert f"• Course #{course['id']} : produit non reconnu : « ricard » n'est pas dans le catalogue" in alert
+    await jobs.sheet_retry(h.context)                                         # le rattrapage ne l'écrit pas non plus
+    assert not sent
+    await h.text(DISPATCH, "/synchro")
+    assert any(t.startswith("⛔ <b>Pas écrites dans le tableau</b>") and f"Course #{course['id']}" in t
+               for t in h.tg.texts(DISPATCH))
+    assert not sent
 
 
 async def test_payment_mode_at_delivery(h, monkeypatch):
@@ -1094,6 +1152,7 @@ async def test_livreur_modifies_order_with_buttons(h, monkeypatch):
     monkeypatch.setattr(sheets, "send_rows", fake_send)
     div = await db.create_product("DIV", "div", [])
     await db.create_product("KT", "kt", [])
+    await order_products()
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     course = await order(h, F1, "rivoli")          # « 2 vodka + coca », 60 €
@@ -2806,6 +2865,7 @@ async def test_no_course_until_start_stock_confirmed(h, test_config):
 
     config.set_config(dataclasses.replace(test_config, stock_declaration=True))
     await db.create_product("US", "us", [])
+    await order_products()
     f1, f2, (l1,) = await setup_network(h, livreurs=(L1,))
     await go_on_duty(h, L1, BASTILLE)
     assert "⛔ Pas de course tant que ce n'est pas confirmé." in h.tg.find(L1, "📦 <b>Début de service").text
@@ -3745,6 +3805,7 @@ async def test_webapp_does_everything(h, monkeypatch, test_config):
     monkeypatch.setattr(sheets, "fetch_action", fake_action)
     for name in ("DIV", "US"):
         await db.create_product(name, name.lower(), [])
+    await order_products()
     EXTRACTIONS["commande rivoli"] = [RIVOLI]
     f1, f2, (l1, l2) = await setup_network(h)
     r1 = await register(h, R1, "ravitailleur", "Sam")
@@ -3769,8 +3830,11 @@ async def test_webapp_does_everything(h, monkeypatch, test_config):
         # Produits de la course.
         r = await act(DISPATCH, type="edit_lines", course_id=cid)
         assert r["ok"] and r["lines"]
-        r = await act(DISPATCH, type="edit_apply", course_id=cid, lines=[{"p": "DIV", "q": 3, "x": 90}])
+        r = await act(DISPATCH, type="edit_apply", course_id=cid, lines=[{"p": "ricard", "q": 3, "x": 90}])
+        assert not r["ok"] and "« ricard » n'est pas dans le catalogue" in r["message"]
+        r = await act(DISPATCH, type="edit_apply", course_id=cid, lines=[{"p": "divv", "q": 3, "x": 90}])
         assert r["ok"] and (await db.get_course(cid))["price"] == 90
+        assert (await db.get_course(cid))["products"].startswith("3 DIV")       # faute de frappe → nom exact
         assert (await act(DISPATCH, type="edit_apply", course_id=cid, lines=[{"p": "DIV", "q": 1, "x": 15}]))["ok"] is False
 
         # Rechargement, cash seul, swipe, dépense, ventes.
@@ -3849,6 +3913,7 @@ async def test_livreur_app_full_night(h, test_config):
     from bot import config, web
 
     await db.create_product("DIV", "div", [])
+    await order_products()
     f1, f2, (l1, l2) = await setup_network(h)
     await h.location(L1, *BASTILLE)                       # position partagée dans le chat
 
@@ -3894,6 +3959,10 @@ async def test_livreur_app_full_night(h, test_config):
         assert (await board(L1))["current"]["messages"][-1] == {"mine": True, "text": "Je suis en bas",
                                                                  "at": (await board(L1))["current"]["messages"][-1]["at"]}
 
+        r = await act(L1, type="edit", course_id=course["id"], lines=[{"p": "vodka", "q": 2, "x": 60},
+                                                                      {"p": "ricard", "q": 1, "x": 30}])
+        assert not r["ok"] and r["message"] == texts.edit_unknown_products(["« ricard » n'est pas dans le catalogue"])
+        assert not (await db.get_course(course["id"]))["pending_edit"]          # produit inconnu : refusé
         r = await act(L1, type="edit", course_id=course["id"], lines=[{"p": "vodka", "q": 3, "x": 90}])
         assert r["ok"] and (await db.get_course(course["id"]))["pending_edit"]["price"] == 90
         assert any("Tu valides" in t for t in h.tg.texts(F1))

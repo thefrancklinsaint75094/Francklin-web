@@ -742,6 +742,11 @@ async def _edit_validate(context, chat_id: int, user: dict, payload: dict, cours
     off = order_edit.off_step_prices(lines)
     if off:
         return texts.order_edit_off_step(off), True
+    cat = await catalog.load()
+    unknown = order_edit.unknown(lines, cat)
+    if unknown:                                  # sécurité : jamais de produit hors catalogue
+        return texts.edit_unknown_products(unknown), True
+    lines = order_edit.canonical(lines, cat)
     fields = {"products": order_edit.products_text(lines), "price": order_edit.total(lines)}
     if _edit_mode(user, course) == "livreur":
         return await _edit_request(context, chat_id, user, payload, course, fields)
