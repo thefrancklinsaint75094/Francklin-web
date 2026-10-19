@@ -794,3 +794,11 @@ simple qui respecte le mur de confidentialité (§12).
      avec la marche à suivre, à la demande du dispatch (📍 sur un livreur sans position à jour), au plus une par
      2 minutes. Pas d'envoi automatique : c'est le dispatch qui décide (les alertes de position perdue existent
      déjà pour les livreurs en service).
+
+177. **Un produit non reconnu bloque au lieu d'avertir** (l'exploitant : « même des produits qui n'existent pas
+     sont rentrés dans le tableau dispatch ; je veux une sécurité »). Choix de l'exploitant : blocage jusqu'à
+     correction, sans exception pour le dispatch ; les produits ambigus (plusieurs possibles) bloquent aussi ;
+     une faute de frappe proche d'un seul produit reste acceptée (le nom exact s'affiche avant validation).
+     Appliqué aux commandes (chat et appli), aux modifications (livreur, admin), à `/ventes` (déjà le cas) et
+     en dernier filet avant le tableau (la course n'est pas écrite, le dispatch est prévenu). Le catalogue
+     lui-même (noms, surnoms) n'est pas touché par cette évolution.

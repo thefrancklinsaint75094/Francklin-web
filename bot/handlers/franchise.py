@@ -166,6 +166,7 @@ async def analyse(user: dict, raw: str, extract_input: str | None = None, image=
             return "none", []
 
     total = len(orders)
+    cat = await catalog.load()
     recent_courses = await db.list_franchise_courses_since(user["id"], now_utc() - DUPLICATE_WINDOW)
     results: list = []
     for index, order in enumerate(orders, start=1):
@@ -187,6 +188,11 @@ async def analyse(user: dict, raw: str, extract_input: str | None = None, image=
         if not geocoding.in_zone(geo.postcode, cfg.departements_autorises):
             results.append(("error", texts.out_of_zone(f"{geo.city} {geo.postcode}".strip())))
             continue
+        # Produit pas reconnu (ou plusieurs possibles) : la fiche n'a pas de ✅, il faut corriger (les
+        # avertissements « pas dans le catalogue » du modèle sont remplacés par ce blocage).
+        blocked = catalog.product_problems(order.products, cat)
+        warnings = [w for w in order.warnings if not (w.startswith("⚠️ Produit pas dans le catalogue")
+                                                      or "» peut être :" in w)] if cat else order.warnings
         extracted = {
             "address": geo.label,
             "address_detail": order.address_detail,
@@ -201,7 +207,8 @@ async def analyse(user: dict, raw: str, extract_input: str | None = None, image=
             "lon": geo.lon,
             "has_housenumber": geo.has_housenumber,
             "header": f"Commande {index} sur {total}" if total > 1 else None,
-            "warnings": order.warnings,
+            "warnings": warnings,
+            "blocked_products": blocked,
         }
         dup = next((c for c in reversed(recent_courses)
                     if c["status"] not in db.CANCELLED_STATUSES and _norm(c["address"]) == _norm(geo.label)), None)
@@ -263,7 +270,7 @@ async def process(update: Update, context, user: dict, raw: str, correcting_id: 
             target = await db.create_draft(user["id"], raw)
             target = await db.update_draft(target["id"], {"extracted": extracted})
         sent = await messaging.reply(update, texts.draft_card(extracted, cfg.price_max),
-                                     keyboards.draft_card(target["id"]))
+                                     keyboards.draft_card(target["id"], bool(extracted.get("blocked_products"))))
         if sent:
             await db.update_draft(target["id"], {"telegram_message_id": sent.message_id})
         produced += 1
@@ -292,6 +299,8 @@ async def confirm(update: Update, context):
     user, draft = await _own_draft(update)
     if draft is None:
         return None
+    if (draft.get("extracted") or {}).get("blocked_products"):         # un ancien ✅ : toujours refusé
+        return texts.ORDER_BLOCKED_ALERT, True
     locked = await db.update_draft_if_status(draft["id"], ["awaiting"], {"status": "confirmed"})
     if locked is None:
         current = await db.get_draft(draft["id"])
@@ -424,7 +433,7 @@ async def _restore_card(context, chat_id: int, draft_id: str) -> None:
     if restored and restored.get("extracted"):
         await messaging.edit(context.bot, chat_id, restored.get("telegram_message_id"),
                              texts.draft_card(restored["extracted"], config.get().price_max),
-                             keyboards.draft_card(draft_id))
+                             keyboards.draft_card(draft_id, bool(restored["extracted"].get("blocked_products"))))
 
 
 @common.callback

@@ -673,9 +673,18 @@ async def _synchro_night(update: Update, night: date, current: date, allowed: li
     users = await db.get_users([c["livreur_id"] for c in delivered] + [c["franchise_id"] for c in delivered]
                                + [r["livreur_id"] for r in restocks] + [r["by_user_id"] for r in restocks]
                                + [e["livreur_id"] for e in expenses])
+    catalog = await sheets.load_catalog()
+    course_rows, skipped = [], []
+    for c in delivered:
+        try:
+            course_rows.append(sheets.row(c, users, catalog))
+        except sheets.UnknownProduct as exc:     # dernier filet : jamais de produit hors catalogue
+            skipped.append((c["id"], str(exc)))
+    delivered = [c for c in delivered if c["id"] not in {cid for cid, _ in skipped}]
+    if skipped:
+        await messaging.reply(update, texts.sheets_skipped_unknown(skipped))
     try:
-        catalog = await sheets.load_catalog()
-        rows = ([sheets.row(c, users, catalog) for c in delivered] + [sheets.restock_row(r, users) for r in restocks]
+        rows = (course_rows + [sheets.restock_row(r, users) for r in restocks]
                 + [sheets.expense_row(e, users) for e in expenses] + [sheets.sale_row(s) for s in sold])
         added = await sheets.send_rows(rows)
     except RuntimeError as exc:

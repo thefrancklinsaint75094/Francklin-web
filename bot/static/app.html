@@ -883,7 +883,7 @@ async function newOrder() {
     out.replaceChildren(...r.cards.map((c) => {
       const box = el("div", { class: "result" }, safeHtml(c.html));
       if (c.ok) box.append(el("div", { class: "row-actions" },
-        el("button", { class: "btn main", onclick: () => sendOrder(c.draft_id) }, "✅ Envoyer"),
+        c.blocked ? null : el("button", { class: "btn main", onclick: () => sendOrder(c.draft_id) }, "✅ Envoyer"),
         el("button", { class: "btn danger", onclick: async () => { await call({ type: "order_drop", draft_id: c.draft_id }); box.remove(); } }, "Retirer")));
       return box;
     }));

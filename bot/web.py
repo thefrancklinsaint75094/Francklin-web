@@ -362,7 +362,7 @@ async def _order(context, admin: dict, kind: str, body: dict, course: dict | Non
                 continue
             draft = await db.create_draft(admin["id"], raw)
             draft = await db.update_draft(draft["id"], {"extracted": item}) or draft
-            cards.append({"ok": True, "draft_id": draft["id"],
+            cards.append({"ok": True, "draft_id": draft["id"], "blocked": bool(item.get("blocked_products")),
                           "html": texts.draft_card(item, config.get().price_max)})
         return {"ok": True, "cards": cards}
     if kind == "order_drop":
@@ -372,6 +372,8 @@ async def _order(context, admin: dict, kind: str, body: dict, course: dict | Non
         draft = await db.get_draft(str(body.get("draft_id")))
         if draft is None or draft["franchise_id"] != admin["id"]:
             return {"ok": False, "message": texts.DRAFT_NOT_ACTIVE}
+        if (draft.get("extracted") or {}).get("blocked_products"):     # produit pas reconnu : à corriger
+            return {"ok": False, "message": texts.ORDER_BLOCKED_ALERT}
         locked = await db.update_draft_if_status(draft["id"], ["awaiting"], {"status": "confirmed"})
         if locked is None:
             return {"ok": False, "message": texts.DRAFT_NOT_ACTIVE}
@@ -421,6 +423,10 @@ async def _edit(context, admin: dict, kind: str, body: dict, course: dict | None
         return {"ok": False, "message": texts.order_edit_missing_price(order_edit.missing_prices(lines))}
     if order_edit.off_step_prices(lines):
         return {"ok": False, "message": texts.order_edit_off_step(order_edit.off_step_prices(lines))}
+    cat = await catalog.load()
+    if order_edit.unknown(lines, cat):              # sécurité : jamais de produit hors catalogue
+        return {"ok": False, "message": texts.edit_unknown_products(order_edit.unknown(lines, cat))}
+    lines = order_edit.canonical(lines, cat)
     fields = {"products": order_edit.products_text(lines), "price": order_edit.total(lines)}
     updated = await db.update_course_if_status(course["id"], ["pending", "assigned"], fields)
     if updated is None:

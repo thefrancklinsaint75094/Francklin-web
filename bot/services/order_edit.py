@@ -34,6 +34,27 @@ def lines_from_course(course: dict, catalog=None) -> list[dict]:
     return out
 
 
+def unknown(lines: list[dict], cat) -> list[str]:
+    """Produits que le catalogue ne reconnaît pas (pas dedans, ou plusieurs possibles) : la modification est
+    refusée tant qu'il en reste. Catalogue vide : aucun contrôle."""
+    from bot.services import catalog as catalog_mod
+
+    if not cat:
+        return []
+    return [p for p in (catalog_mod.problem(l["p"], cat) for l in lines) if p]
+
+
+def canonical(lines: list[dict], cat) -> list[dict]:
+    """Nom exact du catalogue pour chaque produit reconnu (faute de frappe corrigée)."""
+    if not cat:
+        return lines
+    out = []
+    for line in lines:
+        m = cat.match(line["p"])
+        out.append({**line, "p": m.product["name"]} if m.product else line)
+    return out
+
+
 def total(lines: list[dict]) -> float:
     return round(sum(float(l["x"]) for l in lines), 2)
 

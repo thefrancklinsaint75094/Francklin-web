@@ -91,7 +91,17 @@ def product_lines(products: str, total: float, catalog=None) -> list[dict]:
     return lines
 
 
+class UnknownProduct(RuntimeError):
+    """Dernier filet : une course dont un produit n'est pas reconnu par le catalogue n'est jamais écrite."""
+
+
 def row(course: dict, users: dict[str, dict], catalog=None) -> dict:
+    if catalog:
+        from bot.services import catalog as catalog_mod
+
+        bad = catalog_mod.product_problems(course.get("products") or "", catalog)
+        if bad:
+            raise UnknownProduct("produit non reconnu : " + " · ".join(bad))
     at = to_paris(parse_ts(course["delivered_at"]))
     franchise = users.get(course["franchise_id"], {})
     livreur = users.get(course.get("livreur_id"), {})
@@ -449,7 +459,10 @@ async def retry_failed() -> list[str]:
     catalog = await load_catalog()
     resent, dropped = [], []
     for key in pending[:RETRY_MAX]:
-        out = await _row_for(key, catalog)
+        try:
+            out = await _row_for(key, catalog)
+        except UnknownProduct:                   # pas écrite tant que le produit n'est pas reconnu
+            continue
         if out is False:
             continue
         if out is None:

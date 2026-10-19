@@ -227,6 +227,10 @@ async def act(context, user: dict, body: dict) -> dict:
             return {"ok": False, "message": texts.order_edit_missing_price(order_edit.missing_prices(lines))}
         if order_edit.off_step_prices(lines):
             return {"ok": False, "message": texts.order_edit_off_step(order_edit.off_step_prices(lines))}
+        cat = await catalog.load()
+        if order_edit.unknown(lines, cat):          # sécurité : jamais de produit hors catalogue
+            return {"ok": False, "message": texts.edit_unknown_products(order_edit.unknown(lines, cat))}
+        lines = order_edit.canonical(lines, cat)
         fields = {"products": order_edit.products_text(lines), "price": order_edit.total(lines)}
         franchise = await livreur_h.request_edit(context, user, course, fields)
         if franchise is None:
