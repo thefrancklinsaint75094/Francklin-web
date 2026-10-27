@@ -71,6 +71,8 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .h2 .more { margin-left: auto; text-transform: none; color: var(--accent); font-weight: 600; }
 .list { padding: 0 12px; display: flex; flex-direction: column; gap: 10px; }
 .card { background: var(--card); border-radius: var(--radius); padding: 12px 14px; }
+button.card.tap { display: block; width: 100%; text-align: left; border: 0; color: inherit; font: inherit; cursor: pointer; }
+button.card.tap:active { opacity: .7; }
 .tap { cursor: pointer; }
 .row { display: flex; align-items: center; gap: 8px; }
 .grow { flex: 1; min-width: 0; }
@@ -523,11 +525,32 @@ function viewStock() {
     el("button", { class: "btn", onclick: swipeForm }, "↔️ Transfert")));
   if (s.error) wrap.append(el("div", { class: "list" }, el("div", { class: "card badge warn" }, plain(s.error))));
   wrap.append(el("div", { class: "h2" }, "📦 Box", refreshBtn("stock")));
-  wrap.append(el("div", { class: "list" }, s.boxes.map((b) => el("div", { class: "card" }, el("b", {}, b.name), el("div", { style: "margin-top:6px" }, itemsGrid(b.items))))));
+  wrap.append(el("div", { class: "list" }, s.boxes.map((b) => el("button", { class: "card tap", onclick: () => boxStockSheet(b) },
+    el("div", { class: "row" }, el("b", { class: "grow" }, b.name), el("span", { class: "muted" }, "›")),
+    el("div", { style: "margin-top:6px" }, itemsGrid(b.items))))));
   wrap.append(el("div", { class: "h2" }, "🛵 Chez les livreurs"));
-  wrap.append(el("div", { class: "list" }, s.livreurs.map((l) => el("div", { class: "card" }, el("b", {}, who(l)), el("div", { style: "margin-top:6px" }, itemsGrid(l.items))))));
-  wrap.append(el("div", { class: "muted small", style: "text-align:center;margin:14px" }, "Tableau Rechargement + mouvements du bot pas encore écrits."));
+  wrap.append(el("div", { class: "list" }, s.livreurs.map((l) => el("button", { class: "card tap", onclick: () => livreurStockSheet(l) },
+    el("div", { class: "row" }, el("b", { class: "grow" }, who(l)),
+      l.cash !== null && l.cash !== undefined ? el("span", { class: "badge" + (l.cash > 0 ? " warn" : "") }, `💶 ${eur(l.cash)} sur lui`) : null,
+      el("span", { class: "muted" }, "›")),
+    el("div", { style: "margin-top:6px" }, itemsGrid(l.items))))));
+  wrap.append(el("div", { class: "muted small", style: "text-align:center;margin:14px" }, "Touche une box ou un livreur pour recharger ou décharger. Tableau Rechargement + mouvements du bot pas encore écrits."));
   return wrap;
+}
+// Stock : une box ou un livreur touché → recharger / décharger (produits ou argent), formulaire déjà rempli.
+function livreurStockSheet(l) {
+  openSheet(el("h3", {}, "🛵 " + who(l)),
+    el("p", {}, l.cash !== null && l.cash !== undefined ? `Il a ${eur(l.cash)} sur lui (encaissé − dépenses − déjà récupéré).` : "Stock d'après le tableau."),
+    el("div", { style: "margin-bottom:8px" }, itemsGrid(l.items)),
+    el("button", { class: "choice", onclick: () => restockForm(false, { livreur: l.name, mode: "+" }) }, el("span", {}, "📦"), el("span", { class: "grow" }, "Recharger (lui donner des produits)"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => restockForm(false, { livreur: l.name, mode: "-" }) }, el("span", {}, "↩️"), el("span", { class: "grow" }, "Décharger des produits (les reprendre)"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => restockForm(true, { livreur: l.name, cash: l.cash > 0 ? l.cash : "" }) }, el("span", {}, "💶"), el("span", { class: "grow" }, "Décharger de l'argent (cash récupéré)"), el("span", { class: "muted" }, "›")));
+}
+function boxStockSheet(b) {
+  openSheet(el("h3", {}, "📦 " + b.name),
+    el("div", { style: "margin-bottom:8px" }, itemsGrid(b.items)),
+    el("button", { class: "choice", onclick: () => restockForm(false, { box: b.name, mode: "+" }) }, el("span", {}, "📦"), el("span", { class: "grow" }, "Recharger un livreur depuis cette box"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => restockForm(false, { box: b.name, mode: "-" }) }, el("span", {}, "↩️"), el("span", { class: "grow" }, "Décharger un livreur dans cette box"), el("span", { class: "muted" }, "›")));
 }
 
 function viewProducts() {
@@ -969,12 +992,13 @@ async function twoStep(kind, title, build) {
 }
 
 // Rechargement (charger / reprendre / cash récupéré).
-async function restockForm(cashOnly) {
+async function restockForm(cashOnly, preset) {
+  const p = preset || {};
   const f = await forms();
   const ravi = select(f.ravitailleurs, f.ravitailleurs[0]);
-  const lv = select(f.livreurs, "", "Choisis le livreur");
-  const box = select(f.boxes, f.boxes[0]);
-  let mode = "+";
+  const lv = select(f.livreurs, p.livreur || "", "Choisis le livreur");
+  const box = select(f.boxes, p.box && f.boxes.includes(p.box) ? p.box : f.boxes[0]);
+  let mode = p.mode === "-" ? "-" : "+";
   const toggle = el("div", { class: "toggle" });
   const drawToggle = () => toggle.replaceChildren(
     el("button", { class: mode === "+" ? "on" : "", onclick: () => { mode = "+"; drawToggle(); } }, "📦 Charger"),
@@ -982,6 +1006,7 @@ async function restockForm(cashOnly) {
   drawToggle();
   const items = itemLines();
   const cash = textInput({ type: "number", min: "0", placeholder: "0", inputmode: "decimal" });
+  if (p.cash) cash.value = p.cash;
   const title = cashOnly ? "💶 Cash récupéré" : "🔄 Rechargement";
   openSheet(el("h3", {}, title), el("p", {}, cashOnly ? "Le cash que le ravitailleur récupère chez le livreur." : "Ce que le ravitailleur charge au livreur (ou lui reprend), et le cash récupéré."),
     field("Ravitailleur", ravi), field("Livreur", lv),
@@ -1098,7 +1123,7 @@ function livreurSheet(lv) {
   openSheet(el("h3", {}, who(lv)), el("p", {}, lv.on_duty ? "En service" : "En pause"),
     el("button", { class: "choice", onclick: () => showMap(lv) }, el("span", {}, "📍"), el("span", { class: "grow" }, "Voir sur la carte"), el("span", { class: "muted" }, "›")),
     el("button", { class: "choice", onclick: () => messageForm(lv) }, el("span", {}, "💬"), el("span", { class: "grow" }, "Envoyer un message"), el("span", { class: "muted" }, "›")),
-    el("button", { class: "choice", onclick: () => restockForm(false).then(() => { const s = document.querySelectorAll("#sheet select")[1]; if (s) s.value = lv.name; }) }, el("span", {}, "🔄"), el("span", { class: "grow" }, "Recharger"), el("span", { class: "muted" }, "›")),
+    el("button", { class: "choice", onclick: () => restockForm(false, { livreur: lv.name }) }, el("span", {}, "🔄"), el("span", { class: "grow" }, "Recharger"), el("span", { class: "muted" }, "›")),
     el("button", { class: "choice", onclick: () => expenseForm(lv.name) }, el("span", {}, "🧾"), el("span", { class: "grow" }, "Noter une dépense"), el("span", { class: "muted" }, "›")),
     el("button", { class: "choice", onclick: () => doAction({ type: "duty", livreur_id: lv.id, on: !lv.on_duty }).then(closeSheet) }, el("span", {}, lv.on_duty ? "⏸" : "🟢"), el("span", { class: "grow" }, lv.on_duty ? "Mettre en pause" : "Mettre en service"), el("span", { class: "muted" }, "›")),
     el("button", { class: "choice", onclick: () => closeLivreur(lv) }, el("span", {}, "🏁"), el("span", { class: "grow" }, "Fin de service (récap de sa nuit)"), el("span", { class: "muted" }, "›")));

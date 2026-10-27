@@ -802,3 +802,9 @@ simple qui respecte le mur de confidentialité (§12).
      Appliqué aux commandes (chat et appli), aux modifications (livreur, admin), à `/ventes` (déjà le cas) et
      en dernier filet avant le tableau (la course n'est pas écrite, le dispatch est prévenu). Le catalogue
      lui-même (noms, surnoms) n'est pas touché par cette évolution.
+
+178. **Écran Stock : recharger / décharger d'un geste, et l'argent de chaque livreur** (l'exploitant). Toucher un
+     livreur ou une box ouvre les actions (recharger, décharger des produits, décharger de l'argent) avec le
+     formulaire de rechargement déjà rempli : même enregistrement que 🔄 Recharger (récap puis ✅). L'argent
+     affiché est celui de l'écran Argent (tableau + mouvements du bot) ; s'il est illisible, le stock s'affiche
+     quand même, sans montant.

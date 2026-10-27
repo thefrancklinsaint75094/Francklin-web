@@ -705,13 +705,19 @@ async def section(name: str, viewer: dict) -> dict:
     from bot.services import cash, stock
 
     if name == "stock":
-        boxes, livreurs = await stock.boxes_now(), await stock.livreurs_now()
+        import asyncio
+
+        # Le cash de chaque livreur (comme l'écran Argent) s'affiche à côté de son stock.
+        boxes, livreurs, money = await asyncio.gather(stock.boxes_now(), stock.livreurs_now(), cash.livreurs_now())
         if not boxes["ok"] and not livreurs["ok"]:
             return {"ok": False, "error": boxes.get("error")}
         clean = lambda values: {p: q for p, q in (values or {}).items() if float(q or 0)}  # noqa: E731
+        on_them = {stock._key(r["nom"]): round(float(r.get("cash") or 0), 2)
+                   for r in (money.get("livreurs") or {}).values()} if money.get("ok") else {}
         return {"ok": True,
                 "boxes": [{"name": b, "items": clean(v)} for b, v in (boxes.get("boxes") or {}).items()],
-                "livreurs": [{"name": n, "prenom": names.prenom(n), "items": clean(v)}
+                "livreurs": [{"name": n, "prenom": names.prenom(n), "items": clean(v),
+                              "cash": on_them.get(stock._key(n)) if money.get("ok") else None}
                              for n, v in sorted((livreurs.get("livreurs") or {}).items())],
                 "error": None if boxes["ok"] and livreurs["ok"] else (boxes.get("error") or livreurs.get("error"))}
     if name == "cash":
