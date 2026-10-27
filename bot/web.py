@@ -705,10 +705,11 @@ async def section(name: str, viewer: dict) -> dict:
     from bot.services import cash, stock
 
     if name == "stock":
-        import asyncio
-
-        # Le cash de chaque livreur (comme l'écran Argent) s'affiche à côté de son stock.
-        boxes, livreurs, money = await asyncio.gather(stock.boxes_now(), stock.livreurs_now(), cash.livreurs_now())
+        # Le cash de chaque livreur (comme l'écran Argent) s'affiche à côté de son stock. Lectures l'une après
+        # l'autre : le script Google n'en traite qu'une à la fois (verrou), en parallèle elles s'y bloquaient.
+        boxes = await stock.boxes_now()
+        livreurs = await stock.livreurs_now()
+        money = await cash.livreurs_now()
         if not boxes["ok"] and not livreurs["ok"]:
             return {"ok": False, "error": boxes.get("error")}
         clean = lambda values: {p: q for p, q in (values or {}).items() if float(q or 0)}  # noqa: E731
