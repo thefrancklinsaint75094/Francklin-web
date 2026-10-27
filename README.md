@@ -476,6 +476,9 @@ vraie appli dans Telegram, avec un **menu à gauche** (☰ ou glisser depuis le 
   prévenus. **💬 Livreur** : message au livreur de la course.
 - **📦 Stock** : 🔄 Recharger (ravitailleur, livreur, box, charger / reprendre, cash récupéré) et ↔️ Transfert
   entre livreurs (ou « tout son stock ») — récap, puis ✅ Enregistrer, comme `/ravi` et `/swipe`.
+  Chaque livreur affiche **💶 l'argent qu'il a sur lui** (même calcul que l'écran Argent). **Toucher un livreur** :
+  📦 Recharger, ↩️ Décharger des produits, 💶 Décharger de l'argent (montant déjà rempli) ; **toucher une box** :
+  recharger un livreur depuis cette box ou décharger dans cette box — le formulaire s'ouvre déjà rempli.
 - **💶 Caisse** : 💶 Cash récupéré, 🧾 Dépense (charges / avance sur paye).
 - **🛵 Livreurs** (⋯) : carte (Google Maps), message, recharger, dépense, service / pause, 🏁 fin de service
   (le récap de sa nuit s'affiche dans l'appli).

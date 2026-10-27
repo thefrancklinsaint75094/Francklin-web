@@ -1029,6 +1029,39 @@ async def test_delivery_pushes_row_to_google_sheets(h, monkeypatch):
     assert "pas dans la semaine en cours" in h.tg.last(DISPATCH).text and not sent
 
 
+async def test_stock_screen_shows_cash_on_each_livreur(h, monkeypatch):
+    """Écran Stock de l'appli Dispatch : les box, et chaque livreur avec son stock et l'argent qu'il a sur lui
+    (même calcul que l'écran Argent)."""
+    from bot import web
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+
+    async def fake_action(action, client=None, **kw):
+        if action == "stock_box":
+            return {"ok": True, "boxes": {"Box 1": {"DIV": 28, "US": 0}}}
+        if action == "stock_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"DIV": 4}}}
+        if action == "cash_livreurs":
+            return {"ok": True, "livreurs": {"Livreur 1": {"especes": 350, "depenses": 200, "recupere": 100,
+                                                           "cash": 50}}}
+        return {"ok": False, "error": "?"}
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    await setup_network(h, livreurs=(L1,))
+    s = await web.section("stock", await db.get_user_by_tg(DISPATCH))
+    assert s["ok"] and s["boxes"] == [{"name": "Box 1", "items": {"DIV": 28}}]
+    assert s["livreurs"] == [{"name": "Livreur 1", "prenom": None, "items": {"DIV": 4}, "cash": 50.0}]
+
+    async def no_cash(action, client=None, **kw):              # argent illisible : le stock reste affiché
+        return {"ok": False, "error": "x"} if action == "cash_livreurs" else await fake_action(action)
+
+    monkeypatch.setattr(sheets, "fetch_action", no_cash)
+    s = await web.section("stock", await db.get_user_by_tg(DISPATCH))
+    assert s["ok"] and s["livreurs"][0]["cash"] is None and s["livreurs"][0]["items"] == {"DIV": 4}
+
+
 async def test_sheet_never_gets_unknown_product(h, monkeypatch):
     """Dernier filet : une course dont un produit n'est pas reconnu par le catalogue (ancienne course) n'est
     jamais écrite dans le tableau ; le dispatch est prévenu, et /synchro la signale au lieu de l'écrire."""
