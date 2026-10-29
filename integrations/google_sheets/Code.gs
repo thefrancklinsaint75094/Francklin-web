@@ -55,6 +55,9 @@
  * Argent du ravitailleur (« action: ravi_move », espace 💼 Ravi de l'appli) : chaque charge, invest, perso ou
  * dépôt noté dans le bot est recopié dans COMPTA RAVI (lignes 5 à 14, note « Bot V#… » sur la Date) ; un mouvement
  * annulé dans le bot efface sa ligne. Au reset, le bot écrit une ligne Dépôt « Report semaine passée ».
+ * Lecture pour l'appli (« action: ravi_sheet ») : le cash récupéré des onglets du tableau Rechargement
+ * (colonne C, ravitailleur en T, sans « Stock antérieur » ni « Swipe ») et les lignes de COMPTA RAVI, y compris
+ * celles tapées à la main : l'espace 💼 Ravi du bot compte exactement ce qu'il y a dans les tableaux.
  *
  * Clôture de la semaine (« action: cloture », commande /cloture du bot) :
  * 1. copie des 3 fichiers dans le dossier Drive « Archives bot » (si la copie échoue, rien n'est effacé) ;
@@ -136,6 +139,7 @@ function doPost(e) {
     if (data.action === 'cash_livreurs') return json_(cashLivreurs_());
     if (data.action === 'cloture') return json_(cloture_(data));
     if (data.action === 'ravi_move') return json_(raviMove_(data));
+    if (data.action === 'ravi_sheet') return json_(raviSheet_());
     const rows = data.rows || [];
     const courses = rows.filter(function (r) { return r.type !== 'recharge' && r.type !== 'depense'; });
     const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
@@ -340,13 +344,13 @@ function cashLivreurs_() {
     });
   }
   const livreurs = {};
-  let recupere = 0;
   Object.keys(out).forEach(function (k) {
     const c = out[k];
     c.cash = Math.round((c.especes - c.depenses - c.recupere) * 100) / 100;
-    recupere += c.recupere;
     livreurs[c.nom] = c;
   });
+  // Cash vraiment arrivé chez le ravitailleur : sans le report de début de semaine ni les transferts.
+  const recupere = raviRecupere_().reduce(function (s, r) { return s + r.cash; }, 0);
   // Reste chez le ravitailleur (comme COMPTA RAVI) : cash récupéré + dépôts − charges, invest et perso.
   let ravi = null;
   if (COMPTA_SPREADSHEET_ID) {
@@ -355,6 +359,52 @@ function cashLivreurs_() {
     ravi = Math.round((recupere - used) * 100) / 100;
   }
   return { ok: true, livreurs: livreurs, ravitailleur: ravi };
+}
+
+// Cash récupéré par les ravitailleurs : lignes des onglets du tableau Rechargement avec du cash, hors
+// « Stock antérieur » (report de la semaine d'avant) et « Swipe » (transfert entre livreurs). Pas de produits.
+function raviRecupere_() {
+  const out = [];
+  if (!RECHARGE_SPREADSHEET_ID) return out;
+  const rss = SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID);
+  const count = R_LAST_ROW - R_FIRST_ROW + 1;
+  JOURS.forEach(function (day) {
+    const sheet = rss.getSheetByName(day);
+    if (!sheet) return;
+    const values = sheet.getRange(R_FIRST_ROW, 1, count, R_COLS).getDisplayValues();
+    const raw = sheet.getRange(R_FIRST_ROW, 3, count, 1).getValues();
+    const notes = sheet.getRange(R_FIRST_ROW, 1, count, 1).getNotes();
+    values.forEach(function (row, i) {
+      const cash = num_(raw[i][0]);
+      const box = key_(row[1]);
+      if (!key_(row[0]) || !cash || box === key_(STOCK_ANTERIEUR) || box === key_(SWIPE_BOX)) return;
+      out.push({ jour: day, livreur: String(row[0]).trim(), cash: cash, heure: String(row[R_COLS - 2] || '').trim(),
+                 ravitailleur: String(row[R_COLS - 1] || '').trim(), note: notes[i][0] || '' });
+    });
+  });
+  return out;
+}
+
+// Argent des ravitailleurs tel que les tableaux le disent (espace 💼 Ravi du bot).
+function raviSheet_() {
+  const moves = [];
+  if (COMPTA_SPREADSHEET_ID) {
+    const sheet = SpreadsheetApp.openById(COMPTA_SPREADSHEET_ID).getSheetByName(C_RAVI_SHEET);
+    if (sheet) {
+      const count = C_RAVI_LAST - C_RAVI_FIRST + 1;
+      const values = sheet.getRange(C_RAVI_FIRST, 1, count, 5).getDisplayValues();
+      const raw = sheet.getRange(C_RAVI_FIRST, 3, count, 1).getValues();
+      const notes = sheet.getRange(C_RAVI_FIRST, 1, count, 1).getNotes();
+      values.forEach(function (row, i) {
+        const amount = num_(raw[i][0]);
+        if (!key_(row[1]) || !amount) return;
+        moves.push({ date: String(row[0] || '').trim(), type: String(row[1]).trim(), montant: amount,
+                     motif: String(row[3] || '').trim(), ravitailleur: String(row[4] || '').trim(),
+                     note: notes[i][0] || '' });
+      });
+    }
+  }
+  return { ok: true, recupere: raviRecupere_(), moves: moves };
 }
 
 // Mouvement d'argent du ravitailleur (espace « Ravi » du bot) dans COMPTA RAVI, lignes 5 à 14.

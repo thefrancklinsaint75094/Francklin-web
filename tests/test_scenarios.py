@@ -1992,7 +1992,7 @@ async def test_weekly_cloture(h, monkeypatch):
         if action == "cash_livreurs":
             return {"ok": True, "livreurs": {"Livreur 1": {"especes": 350, "depenses": 200, "recupere": 100,
                                                            "cash": 50}}, "ravitailleur": 70}
-        return answer[action]
+        return answer.get(action, {"ok": False, "error": "action inconnue (test)"})
 
     monkeypatch.setattr(sheets, "fetch_action", fake_action)
     f1, f2, (l1, l2) = await setup_network(h)
@@ -2015,7 +2015,7 @@ async def test_weekly_cloture(h, monkeypatch):
     assert [d for _, d in check.buttons] == ["cl_go", "cl_x"]
     await h.press_data(DISPATCH, check, "cl_x")
     assert h.tg.messages[(DISPATCH, check.message_id)].text == texts.CLOTURE_CANCELLED
-    assert [c[0] for c in calls] == ["stock_livreurs", "cash_livreurs"]
+    assert [c[0] for c in calls] == ["stock_livreurs", "cash_livreurs", "ravi_sheet"]
 
     # Réservé au dispatch : un franchisé ne remet pas la semaine à zéro.
     await h.text(F1, "/cloture")
@@ -4045,7 +4045,7 @@ async def test_ravitailleur_app(h, monkeypatch):
             "stock_livreurs": {"ok": True, "livreurs": {"Livreur 1": {"DIV": 4, "US": 0}, "Livreur 2": {"DIV": 0}}},
             "cash_livreurs": {"ok": True, "livreurs": {"Livreur 1": {"especes": 120, "cash": 120}}, "ravitailleur": 30},
             "stock_box": {"ok": True, "boxes": {"Box 1": {"DIV": 20, "US": 6}}, "totals": []},
-        }[action]
+        }.get(action, {"ok": False, "error": "action inconnue (test)"})
 
     monkeypatch.setattr(sheets, "send_rows", fake_send)
     monkeypatch.setattr(sheets, "fetch_action", fake_action)
@@ -4303,6 +4303,77 @@ async def test_daily_cash_account(h, monkeypatch):
     assert mine.split("\n")[2:6] == ["📅 Reste d'avant (pas encore remis) : 370 €", "💵 + Encaissé aujourd'hui : 80 €",
                                      "🧾 − Charges : 20 €", "🤝 − Remis aujourd'hui : 130 €"]
     assert "<b>= Il te reste : 300 €</b>" in mine
+
+
+async def test_ravi_money_reads_the_sheets(h, monkeypatch):
+    """Va-et-vient : l'espace Ravi compte ce que disent les tableaux (cash récupéré des onglets du tableau
+    Rechargement, lignes de COMPTA RAVI, même tapées à la main), sans compter deux fois ce que le bot y a
+    écrit, plus ce qui est noté dans le bot et pas encore écrit (⏳). Le report de début de semaine est le
+    départ. Fixer un solde écrit une ligne d'ajustement. Sans script à jour : calcul du bot."""
+    from bot.services import ravi, sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    f1, f2, (l1, l2) = await setup_network(h)
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+    sam = r1["display_name"]
+    admin = await db.get_user_by_tg(DISPATCH)
+    written = await db.create_restock({"livreur_id": l2["id"], "by_user_id": r1["id"], "kind": "cash", "cash": 50})
+    await db.create_restock({"livreur_id": l1["id"], "by_user_id": r1["id"], "kind": "cash", "cash": 30})
+    done = await db.create_ravi_move({"ravitailleur": sam, "kind": "depot", "amount": 200, "motif": "Chez Leila",
+                                      "by_user_id": admin["id"], "sheet_state": "done"})
+    await db.create_ravi_move({"ravitailleur": sam, "kind": "charge", "amount": 15, "motif": "essence",
+                               "by_user_id": admin["id"], "sheet_state": "pending"})
+    sheet = {"ok": True,
+             "recupere": [
+                 {"jour": "Mardi", "livreur": "Livreur 1", "cash": 280, "heure": "", "ravitailleur": sam, "note": ""},
+                 {"jour": "Lundi", "livreur": "Livreur 2", "cash": 50, "heure": "22:46 (bot)", "ravitailleur": sam,
+                  "note": f"Bot R#{written['id']}"},
+                 {"jour": "Mardi", "livreur": "Livreur 2", "cash": 10, "heure": "", "ravitailleur": "", "note": ""}],
+             "moves": [
+                 {"date": "26/10 (bot)", "type": "Depot", "montant": 200, "motif": "Chez Leila", "ravitailleur": sam,
+                  "note": f"Bot V#{done['id']}"},
+                 {"date": "", "type": "Depot", "montant": 320, "motif": "Chez Red", "ravitailleur": sam, "note": ""},
+                 {"date": "", "type": "Depot", "montant": 40, "motif": "Report semaine passée", "ravitailleur": sam,
+                  "note": "Bot V#R9"}]}
+    calls = []
+
+    async def fake_action(action, client=None, payload=None, **kw):
+        calls.append((action, payload))
+        if action == "ravi_sheet":
+            return sheet
+        return {"ok": False, "error": "pas écrit (test)"}       # les mouvements en attente le restent
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    data = await ravi.accounts()
+    assert data["source"] == "tableau"
+    [acc] = data["ravis"]
+    assert acc["start"] == {"amount": 40.0, "when": acc["start"]["when"], "set": True, "motif": "Report semaine passée"}
+    # Récupéré : 280 tapés à la main + 50 écrits par le bot (une seule fois) + 30 pas encore écrits (⏳) ; les
+    # 10 € sans ravitailleur (colonne vide, un seul ravitailleur) sont pour lui.
+    assert acc["totals"] == {"recupere": 370.0, "depot": 520.0, "charge": 15.0, "invest": 0.0, "perso": 0.0}
+    assert acc["balance"] == 40 + 370 + 520 - 15
+    hist = {(h["label"], h["sheet"]): h for h in acc["history"]}
+    assert hist[("Tu lui as donné — Chez Leila", "done")]["id"] == done["id"]          # écrit par le bot : annulable
+    assert hist[("Tu lui as donné — Chez Red", "done")]["id"] is None                   # tapé à la main : dans le tableau
+    assert hist[("Charges — essence", "pending")]["id"]                                 # noté, pas encore écrit (⏳)
+    assert hist[("Récupéré chez Livreur 1", "pending")]["amount"] == 30
+    assert hist[("Récupéré chez Livreur 1", "done")]["amount"] == 280
+    assert data["unassigned"]["total"] == 0
+
+    # Fixer le solde à 900 € (au lieu de 915) : une ligne d'ajustement « Perso » de 15 € part dans RAVI.
+    move, _ = await ravi.set_start(admin, sam, 900)
+    assert move["kind"] == "perso" and float(move["amount"]) == 15 and move["motif"].startswith("Ajustement")
+    assert move["sheet_state"] == "pending" and any(a == "ravi_move" for a, _ in calls)   # envoyé (ici refusé : ⏳)
+    assert (await ravi.account(sam))["balance"] == 900
+
+    # Ancien script (pas d'action ravi_sheet) : calcul d'après le bot seulement.
+    async def old_script(action, client=None, payload=None, **kw):
+        return {"ok": True, "added": 0}
+
+    monkeypatch.setattr(sheets, "fetch_action", old_script)
+    data = await ravi.accounts()
+    assert data["source"] == "bot" and data["ravis"][0]["totals"]["recupere"] == 80.0   # 50 + 30 notés dans le bot
 
 
 async def test_ravi_money_space(h, monkeypatch):

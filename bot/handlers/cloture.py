@@ -91,8 +91,12 @@ async def run(user: dict) -> tuple[bool, str]:
     async with _lock:
         if _last_done is not None and time.monotonic() - _last_done < AGAIN_AFTER:
             return False, texts.CLOTURE_ALREADY
+        from bot.services import ravi
+
         label = f"Reset du {to_paris(now_utc()):%Y-%m-%d %Hh%M}"
         tab = REPORT_TAB
+        # Soldes des ravitailleurs AVANT que le script vide les tableaux (ils y sont lus).
+        before = await ravi.accounts()
         result = await sheets.fetch_action("cloture", payload={"onglet": tab, "libelle": label}, timeout=TIMEOUT)
         if not result or not result.get("ok"):
             return False, texts.cloture_failed((result or {}).get("error") or "Google Sheets non relié")
@@ -100,11 +104,9 @@ async def run(user: dict) -> tuple[bool, str]:
         # Nouvelle semaine : les mouvements pas encore écrits appartenaient à l'ancienne.
         stock._inflight.clear()
         stock._sheet_cache = None
-        # Argent des ravitailleurs : le solde devient le départ de la nouvelle semaine (avant l'événement
-        # « cloture », qui sert de début de semaine), et une ligne « Report » est écrite dans RAVI.
-        from bot.services import ravi
-
-        carried = await ravi.carry_over(user, label)
+        # Argent des ravitailleurs : le solde d'avant le reset devient le départ de la nouvelle semaine (avant
+        # l'événement « cloture », qui sert de début de semaine), et une ligne « Report » est écrite dans RAVI.
+        carried = await ravi.carry_over(user, label, before)
         await db.log_event("cloture", user_id=user["id"],
                            payload={"archive": result.get("archive"), "reports": result.get("reports")})
         return True, texts.cloture_done(result, tab) + texts.cloture_ravi(carried)

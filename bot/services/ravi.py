@@ -8,14 +8,22 @@ contrôle de caisse ou reporté au reset de la semaine)
 Le registre est gardé d'une semaine à l'autre ; chaque charge / invest / perso / dépôt est recopié dans l'onglet
 RAVI du Compta (action « ravi_move » du script). Un contrôle de caisse note le montant compté et l'écart, sans
 toucher au solde ; « caler sur le compté » crée un nouveau départ.
+
+Va-et-vient avec les tableaux : quand le script répond à « ravi_sheet », le compte se lit DANS LES TABLEAUX
+(cash récupéré des onglets du tableau Rechargement, lignes de COMPTA RAVI, y compris celles tapées à la main),
+plus ce qui a été noté dans le bot et n'y est pas encore écrit. Caler le solde ou fixer un départ écrit alors
+une ligne d'ajustement dans RAVI. Sans réponse du script (ancien script, tableau injoignable), le calcul se
+fait comme avant, à partir de ce que le bot a noté.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+import re
+from datetime import date, datetime, time, timedelta
 
 from bot import config, db, messaging, texts
-from bot.timeutil import now_utc, parse_ts, to_paris
+from bot.config import PARIS
+from bot.timeutil import night_start_date, now_utc, parse_ts, to_paris
 
 log = logging.getLogger(__name__)
 
@@ -84,8 +92,190 @@ async def _week_start(now: datetime) -> datetime:
 
 
 async def accounts(now: datetime | None = None) -> dict:
-    """{"ravis": [compte…], "unassigned": {"total", "items"}, "week_start"} — un compte par ravitailleur."""
+    """{"ravis": [compte…], "unassigned": {"total", "items"}, "week_start", "source"} — un compte par
+    ravitailleur, lu dans les tableaux (« tableau ») ou, faute de script à jour, d'après le bot (« bot »)."""
     now = now or now_utc()
+    data = await _sheet_data()
+    if data is not None:
+        return await _accounts_sheet(data, now)
+    return {**await _accounts_bot(now), "source": "bot"}
+
+
+async def _sheet_data() -> dict | None:
+    """Ce que les tableaux disent de l'argent des ravitailleurs (action « ravi_sheet »), ou None."""
+    from bot.services import sheets
+
+    if not sheets.enabled():
+        return None
+    result = await sheets.fetch_action("ravi_sheet")
+    if not result or not result.get("ok") or "recupere" not in result or "moves" not in result:
+        return None                                   # ancien script (pas d'action ravi_sheet) ou injoignable
+    return result
+
+
+_DAYS_FULL = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+_TIME_RE = re.compile(r"(\d{1,2})[:h](\d{2})")
+_DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})")
+_NOTE_RESTOCK = re.compile(r"^Bot R#(\d+)")
+_NOTE_MOVE = re.compile(r"^Bot V#(\d+)")
+
+
+def _monday(now: datetime) -> date:
+    night = night_start_date(now, config.get().night_end_hour)
+    return night - timedelta(days=night.weekday())
+
+
+def _row_at(monday: date, day: str, heure: str) -> datetime:
+    """Instant d'une ligne d'un onglet du jour (heure de la colonne S si elle y est, sinon midi)."""
+    idx = _DAYS_FULL.index(day.lower()) if day.lower() in _DAYS_FULL else 0
+    d = monday + timedelta(days=idx)
+    m = _TIME_RE.search(heure or "")
+    if not m:
+        return datetime.combine(d, time(12), tzinfo=PARIS)
+    hh, mm = int(m[1]) % 24, int(m[2]) % 60
+    if hh < config.get().night_end_hour:                # 2h du matin : fin de la nuit, donc le lendemain
+        d += timedelta(days=1)
+    return datetime.combine(d, time(hh, mm), tzinfo=PARIS)
+
+
+def _date_at(monday: date, text: str, fallback: datetime) -> datetime:
+    m = _DATE_RE.search(text or "")
+    if not m:
+        return fallback
+    try:
+        d = date(monday.year, int(m[2]), int(m[1]))
+    except ValueError:
+        return fallback
+    if d > monday + timedelta(days=180):              # 30/12 lu en janvier
+        d = date(monday.year - 1, d.month, d.day)
+    return datetime.combine(d, time(12), tzinfo=PARIS)
+
+
+_TYPES = {_key(v[3]): k for k, v in KINDS.items()}   # « depot » → depot, « charge » → charge…
+
+
+async def _accounts_sheet(data: dict, now: datetime) -> dict:
+    """Comptes lus dans les tableaux + ce que le bot a noté et qui n'y est pas encore."""
+    users = await db.list_users()
+    users_by_id = {u["id"]: u for u in users}
+    known = await names([u for u in users if u["role"] == "ravitailleur"])
+    moves = await db.list_ravi_moves()
+    leaving = {m["id"] for m in await db.list_ravi_moves_to_sync() if m["sheet_state"] == "remove"}
+    week_start = await _week_start(now)
+    monday = _monday(now)
+
+    def target(name: str | None) -> str | None:
+        found = canonical(name, known)
+        if found or name:
+            return found
+        return known[0] if len(known) == 1 else None    # colonne vide : le seul ravitailleur
+
+    acc = {n: {"start": 0.0, "start_rows": 0, "totals": {"recupere": 0.0, **{k: 0.0 for k in KINDS}},
+               "history": []} for n in known}
+    lost, in_sheet = [], set()
+    for r in data.get("recupere") or []:
+        note = _NOTE_RESTOCK.match(str(r.get("note") or ""))
+        if note:
+            in_sheet.add(int(note[1]))
+        at = _row_at(monday, str(r.get("jour") or ""), str(r.get("heure") or ""))
+        amount = round(float(r.get("cash") or 0), 2)
+        name = target(r.get("ravitailleur"))
+        if name is None:
+            lost.append({"id": int(note[1]) if note else None, "when": when(at), "livreur": r.get("livreur") or "?",
+                         "amount": amount, "by": None})
+            continue
+        acc[name]["totals"]["recupere"] += amount
+        acc[name]["history"].append({"at": at.isoformat(), "when": when(at), "kind": "recupere", "icon": "💶",
+                                     "label": f"Récupéré chez {r.get('livreur') or '?'}", "amount": amount,
+                                     "sheet": "done"})
+    by_id = {m["id"]: m for m in moves}
+    for row in data.get("moves") or []:
+        note = _NOTE_MOVE.match(str(row.get("note") or ""))
+        move_id = int(note[1]) if note else None
+        if move_id in leaving:                         # annulé dans le bot, ligne pas encore effacée
+            continue
+        kind = _TYPES.get(_key(row.get("type")))
+        name = target(row.get("ravitailleur"))
+        if kind is None or name is None:
+            continue
+        amount = round(float(row.get("montant") or 0), 2)
+        motif = str(row.get("motif") or "")
+        at = _date_at(monday, str(row.get("date") or ""), week_start)
+        a = acc[name]
+        if motif.lower().startswith("report"):          # solde de la semaine d'avant, écrit au reset
+            a["start"] += KINDS[kind][2] * amount
+            a["start_rows"] += 1
+            continue
+        a["totals"][kind] += amount
+        move = by_id.get(move_id)
+        a["history"].append({"at": at.isoformat(), "when": when(at) if _DATE_RE.search(str(row.get("date") or ""))
+                             else "cette semaine", "kind": kind, "id": move["id"] if move else None,
+                             "icon": KINDS[kind][0], "label": KINDS[kind][1] + (f" — {motif}" if motif else ""),
+                             "amount": KINDS[kind][2] * amount, "sheet": "done",
+                             "by": (users_by_id.get(move["by_user_id"]) or {}).get("display_name") if move else None})
+    # Noté dans le bot, pas encore dans les tableaux : compté en attendant (⏳).
+    pending_restocks = [r for r in await db.list_restocks_between(week_start, now + timedelta(days=1))
+                        if r.get("kind") != "swipe" and float(r.get("cash") or 0) > 0 and r["id"] not in in_sheet]
+
+    def who(r):
+        return r.get("livreur_name") or (users_by_id.get(r.get("livreur_id")) or {}).get("display_name") or "?"
+
+    for r in pending_restocks:
+        name = attribute(r, users_by_id, known)
+        amount = float(r["cash"])
+        if name is None:
+            lost.append({"id": r["id"], "when": when(r["created_at"]), "livreur": who(r), "amount": amount,
+                         "by": (users_by_id.get(r.get("by_user_id")) or {}).get("display_name")})
+            continue
+        acc[name]["totals"]["recupere"] += amount
+        acc[name]["history"].append({"at": r["created_at"], "when": when(r["created_at"]), "kind": "recupere",
+                                     "icon": "💶", "label": f"Récupéré chez {who(r)}", "amount": amount,
+                                     "sheet": "pending"})
+    for m in moves:
+        if m["sheet_state"] != "pending" or m["kind"] not in KINDS or m["ravitailleur"] not in acc:
+            continue
+        icon, label, sign, _ = KINDS[m["kind"]]
+        a = acc[m["ravitailleur"]]
+        a["totals"][m["kind"]] += float(m["amount"])
+        a["history"].append({"at": m["created_at"], "when": when(m["created_at"]), "kind": m["kind"], "id": m["id"],
+                             "icon": icon, "label": label + (f" — {m['motif']}" if m.get("motif") else ""),
+                             "amount": sign * float(m["amount"]), "sheet": "pending",
+                             "by": (users_by_id.get(m["by_user_id"]) or {}).get("display_name")})
+    out = []
+    for name in known:
+        a, t = acc[name], acc[name]["totals"]
+        balance = a["start"] + t["recupere"] + t["depot"] - t["charge"] - t["invest"] - t["perso"]
+        a["history"].sort(key=lambda h: str(h["at"]), reverse=True)
+        out.append({
+            "name": name,
+            "account": any(u["role"] == "ravitailleur" and _key(u.get("display_name")) == _key(name) for u in users),
+            "start": {"amount": round(a["start"], 2), "when": when(week_start), "set": bool(a["start_rows"]),
+                      "motif": "Report semaine passée" if a["start_rows"] else None},
+            "totals": {k: round(v, 2) for k, v in t.items()},
+            "balance": round(balance, 2),
+            "control": _control(moves, name),
+            "pending_sheet": sum(1 for m in moves if m["ravitailleur"] == name and m["sheet_state"] == "pending"),
+            "history": a["history"][:80],
+        })
+    return {"ravis": out, "week_start": when(week_start), "source": "tableau",
+            "unassigned": {"total": round(sum(u["amount"] for u in lost), 2), "items": lost}}
+
+
+def _control(moves: list[dict], name: str) -> dict | None:
+    """Dernier contrôle de caisse ; calé : un départ ou une ligne d'ajustement l'a suivi."""
+    controls = [m for m in moves if m["ravitailleur"] == name and m["kind"] == "controle"]
+    if not controls:
+        return None
+    last = controls[-1]
+    after = [m for m in moves if m["ravitailleur"] == name and parse_ts(m["created_at"]) >= parse_ts(last["created_at"])
+             and (m["kind"] == "depart" or str(m.get("motif") or "").startswith("Calé sur le contrôle"))]
+    return {"id": last["id"], "when": when(last["created_at"]), "counted": float(last["amount"]),
+            "expected": float(last["expected"] or 0),
+            "gap": round(float(last["amount"]) - float(last["expected"] or 0), 2), "aligned": bool(after)}
+
+
+async def _accounts_bot(now: datetime) -> dict:
+    """Calcul d'avant le va-et-vient : seulement ce que le bot a noté (script pas à jour)."""
     users = await db.list_users()
     users_by_id = {u["id"]: u for u in users}
     known = await names([u for u in users if u["role"] == "ravitailleur"])
@@ -128,8 +318,6 @@ async def accounts(now: datetime | None = None) -> dict:
                             "amount": sign * amount, "sheet": m["sheet_state"],
                             "by": (users_by_id.get(m["by_user_id"]) or {}).get("display_name")})
         balance = base + totals["recupere"] + totals["depot"] - totals["charge"] - totals["invest"] - totals["perso"]
-        controls = [m for m in moves if m["ravitailleur"] == name and m["kind"] == "controle"]
-        last = controls[-1] if controls else None
         history.sort(key=lambda h: h["at"], reverse=True)
         has_account = any(u["role"] == "ravitailleur" and _key(u.get("display_name")) == _key(name) for u in users)
         out.append({
@@ -138,12 +326,7 @@ async def accounts(now: datetime | None = None) -> dict:
                       "motif": anchor.get("motif") if anchor else None},
             "totals": {k: round(v, 2) for k, v in totals.items()},
             "balance": round(balance, 2),
-            "control": {"id": last["id"], "when": when(last["created_at"]), "counted": float(last["amount"]),
-                        "expected": float(last["expected"] or 0),
-                        "gap": round(float(last["amount"]) - float(last["expected"] or 0), 2),
-                        "aligned": any(m["kind"] == "depart" and m["ravitailleur"] == name
-                                       and parse_ts(m["created_at"]) >= parse_ts(last["created_at"]) for m in moves)}
-            if last else None,
+            "control": _control(moves, name),
             "pending_sheet": sum(1 for m in moves if m["ravitailleur"] == name and m["sheet_state"] == "pending"),
             "history": history[:80],
         })
@@ -216,6 +399,23 @@ async def set_start(actor: dict, name: str, amount, motif: str | None = None) ->
         return None, texts.RAVI_UNKNOWN
     if not 0 <= value <= MAX_AMOUNT:
         return None, texts.RAVI_AMOUNT
+    data = await accounts()
+    if data.get("source") == "tableau":
+        # Les tableaux font foi : l'écart devient une ligne d'ajustement dans RAVI (Dépôt s'il manque,
+        # Perso s'il y en a trop), visible et modifiable dans le tableau.
+        current = next((a["balance"] for a in data["ravis"] if a["name"] == name), 0.0)
+        delta = round(value - current, 2)
+        if abs(delta) < 0.01:
+            return None, texts.ravi_saved(name, value)
+        motif = " ".join(str(motif or "").split())[:MAX_MOTIF] or f"Ajustement : solde fixé à {texts.eur(value)}"
+        from bot.services import sheets
+
+        move = await db.create_ravi_move({"ravitailleur": name, "kind": "depot" if delta > 0 else "perso",
+                                          "amount": abs(delta), "motif": motif, "by_user_id": actor["id"],
+                                          "sheet_state": "pending" if sheets.enabled() else "none"})
+        await db.log_event("ravi_start", user_id=actor["id"], payload={"move": move["id"], "delta": delta})
+        await sync_sheet()
+        return move, texts.ravi_saved(name, value)
     move = await db.create_ravi_move({"ravitailleur": name, "kind": "depart", "amount": value,
                                       "motif": " ".join(str(motif or "").split())[:MAX_MOTIF] or "Solde de départ",
                                       "by_user_id": actor["id"]})
@@ -300,13 +500,14 @@ async def sync_sheet(context=None) -> int:
     return done
 
 
-async def carry_over(actor: dict, label: str) -> list[str]:
+async def carry_over(actor: dict, label: str, before: dict | None = None) -> list[str]:
     """Reset de la semaine : chaque solde devient un départ (le registre continue), et une ligne Dépôt
-    « Report semaine passée » est écrite dans RAVI (vidé par le reset) pour que la feuille reste juste."""
+    « Report semaine passée » est écrite dans RAVI (vidé par le reset) pour que la feuille reste juste.
+    before : les comptes lus AVANT que le reset vide les tableaux."""
     from bot.services import sheets
 
     lines = []
-    for acc in (await accounts())["ravis"]:
+    for acc in (before or await accounts())["ravis"]:
         if not acc["start"]["set"] and abs(acc["balance"]) < 0.01:
             continue
         move = await db.create_ravi_move({"ravitailleur": acc["name"], "kind": "depart",

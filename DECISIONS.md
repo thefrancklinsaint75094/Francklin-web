@@ -808,3 +808,12 @@ simple qui respecte le mur de confidentialité (§12).
      formulaire de rechargement déjà rempli : même enregistrement que 🔄 Recharger (récap puis ✅). L'argent
      affiché est celui de l'écran Argent (tableau + mouvements du bot) ; s'il est illisible, le stock s'affiche
      quand même, sans montant.
+
+179. **Argent du ravitailleur : les tableaux font foi, dans les deux sens** (l'exploitant : « ce que je note dans
+     l'un est automatiquement pris en compte dans l'autre »). L'espace 💼 Ravi lit le cash récupéré dans le
+     Rechargement et les mouvements dans l'onglet RAVI du Compta : une saisie à la main dans un tableau compte
+     comme une saisie du bot. Ce que l'appli écrit (rechargements, mouvements) part dans les tableaux comme avant ;
+     en attendant, ⏳ et compté une seule fois (repéré par la note « Bot R# » / « Bot V# »). Le Compta comptait le
+     cash récupéré moins le report de début de semaine (SOLDES D) : il lit maintenant une colonne « Cash remis »
+     (SOLDES G), le cash réellement remis, sans report ni swipe. Fixer le solde de départ écrit l'écart dans RAVI
+     au lieu d'un départ caché dans le bot. Aucun produit n'est lu ni envoyé.

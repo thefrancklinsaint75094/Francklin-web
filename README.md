@@ -753,8 +753,16 @@ jamais l'onglet Mardi.
 
 ### Argent du ravitailleur (espace 💼 Ravi de l'appli Dispatch, dispatch seulement)
 
-Ce que chaque ravitailleur **doit avoir sur lui** = départ + 💶 cash récupéré auprès des livreurs (rechargements du
-bot, depuis le départ) + 💰 ce que tu lui as donné − 🧾 charges − 📦 invest − 💸 ce qu'il t'a remis.
+Ce que chaque ravitailleur **doit avoir sur lui** = départ + 💶 cash récupéré auprès des livreurs + 💰 ce que tu lui
+as donné − 🧾 charges − 📦 invest − 💸 ce qu'il t'a remis.
+
+**Va-et-vient appli ↔ tableaux** : l'espace lit les tableaux (action `ravi_sheet` du script). Le cash récupéré vient
+des 7 onglets de jour du Rechargement (colonne C, colonne T = ravitailleur ; sans le « Stock antérieur » ni les
+swipes), les mouvements viennent de l'onglet RAVI du Compta (une ligne écrite à la main compte comme une ligne du
+bot ; un motif « Report… » est le départ de la semaine). Ce qui est noté dans l'appli et pas encore écrit dans les
+tableaux s'affiche avec ⏳ (compté une seule fois). Script pas à jour : calcul sur les seuls enregistrements du bot,
+avec un avertissement. Côté tableaux : Rechargement SOLDES!G (« Cash remis au ravitailleur ») → Compta IMPORT!BW →
+RAVI!C2 (« Total récupéré »).
 
 - **➕ Mouvement** : je lui donne (dépôt), il m'a remis, charge, invest — montant et motif ; le ravitailleur est
   prévenu ; chaque mouvement est recopié dans l'onglet RAVI du Compta (action `ravi_move` du script ; tant que le
@@ -762,8 +770,8 @@ bot, depuis le départ) + 💰 ce que tu lui as donné − 🧾 charges − 📦
   RAVI est effacée).
 - **🧮 Compter sa caisse** : ce qu'il a vraiment → écart (manque / en trop) gardé avec la date ; le solde ne bouge
   pas, **⚖️ Caler le solde sur le compté** en fait le nouveau départ.
-- **🏁 Solde de départ** : fixe le solde à partir de maintenant (reprise des comptes). Sans départ, le calcul part
-  du dernier reset.
+- **🏁 Solde de départ** : fixe le solde à partir de maintenant (reprise des comptes). Avec les tableaux, l'écart
+  est écrit dans RAVI (Dépôt ou Perso « Ajustement : solde fixé à … »). Sans départ, le calcul part du dernier reset.
 - **Reset de la semaine** : le solde de chacun devient le départ de la nouvelle semaine (le registre continue) et une
   ligne Dépôt « Report semaine passée » est écrite dans RAVI.
 - ⚠️ Cash récupéré **sans ravitailleur** (rechargement saisi par le dispatch sans « /ravi 1 ») : listé à part.
