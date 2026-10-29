@@ -638,6 +638,9 @@ function viewRavi() {
   const s = S.cache.ravi;
   const wrap = el("div", {}, el("div", { class: "h2" }, "Argent des ravitailleurs", refreshBtn("ravi")));
   const list = el("div", { class: "list" });
+  list.append(s.source === "tableau"
+    ? el("div", { class: "muted small", style: "text-align:center" }, "Lu dans les tableaux (Rechargement + onglet RAVI du Compta), lignes tapées à la main comprises. ⏳ : noté dans l'appli, pas encore écrit dans le tableau.")
+    : el("div", { class: "card badge warn" }, "⚠️ Script Google pas à jour (ou tableau injoignable) : seul ce qui a été noté dans le bot est compté ici."));
   if (s.unassigned.total) list.append(el("div", { class: "card" },
     el("div", { class: "badge warn" }, `⚠️ ${eur(s.unassigned.total)} récupérés sans ravitailleur noté (cette semaine)`),
     s.unassigned.items.map((u) => el("div", { class: "kv small" }, el("span", {}, `${u.when} · ${u.livreur}` + (u.by ? ` · saisi par ${u.by}` : "")), el("b", {}, eur(u.amount)))),
