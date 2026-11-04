@@ -23,7 +23,7 @@ simple qui respecte le mur de confidentialité (§12).
    sont inchangés. La clé `service_role` du bot contourne RLS ; la clé publique `anon` ne voit rien.
 6. **`ANTHROPIC_MODEL` et `BAN_URL`** sont surchargeables par variable d'environnement (défauts = la spec),
    pour pouvoir changer de modèle ou suivre un déménagement de l'API Adresse sans toucher au code.
-7. `.python-version` fixe Python 3.11 pour le build Nixpacks.
+7. `.python-version` fixe Python 3.11 pour le build (Nixpacks, puis Railpack depuis novembre 2026 : `railpack.json` donne aussi la commande de démarrage).
 
 ## Nuits, récap et journal
 
