@@ -817,3 +817,10 @@ simple qui respecte le mur de confidentialité (§12).
      cash récupéré moins le report de début de semaine (SOLDES D) : il lit maintenant une colonne « Cash remis »
      (SOLDES G), le cash réellement remis, sans report ni swipe. Fixer le solde de départ écrit l'écart dans RAVI
      au lieu d'un départ caché dans le bot. Aucun produit n'est lu ni envoyé.
+
+180. **/ventes : l'adresse seule sur la ligne au-dessus de la vente** (l'exploitant écrit naturellement l'adresse,
+     puis la vente en dessous ; « 27 rue … 94360 » était lu comme 27 fois un produit inconnu à 94 360 €). Une ligne
+     reconnue comme adresse (code postal à 5 chiffres ou mot de voie) va à la vente suivante ; deux lignes
+     d'adresse se recollent. Garde-fous : une ligne « quantité produit prix » reste une vente (le produit inconnu
+     bloque toujours, règle 177), sauf si son « prix » est un code postal ; une adresse sans vente en dessous est
+     une erreur. Le catalogue n'est pas touché.

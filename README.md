@@ -261,7 +261,8 @@ CB 1 DIV 30
 
 Livreur B
 12 rue de la Paix Paris : 3 MSX 90
-8 av. Foch Créteil : CB 1 US 50
+8 av. Foch Créteil 94000
+CB 1 US 50
 charge = 20 essence
 paye = 100
 ```
@@ -272,7 +273,10 @@ Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la 
 écrit « Virement » dans la feuille, qui ne connaît que Espèces et Virement. `/ventes` seul donne l'exemple et attend le
 récap. Le bot montre l'aperçu (par livreur, totaux espèces / virement) ; **✅ Ajouter au tableau** écrit une
 ligne au statut OK par vente dans l'onglet de la nuit. **Adresse facultative** devant la vente, suivie de
-« : » (`12 rue de la Paix : 2 US 60`) : elle va dans la colonne Adresse ; sans adresse, « Récap ventes ».
+« : » (`12 rue de la Paix : 2 US 60`), **ou seule sur la ligne au-dessus** de la vente, reconnue à son code postal
+ou à un mot de voie (rue, avenue, bd, place, villa…) ; une adresse sur deux lignes est recollée. Elle va dans la
+colonne Adresse ; sans adresse, « Récap ventes ». Une ligne « quantité produit prix » n'est jamais prise pour une
+adresse (un produit inconnu reste bloqué), et une adresse sans vente en dessous est signalée.
 « Livreur A : 2 US 60 » sur une seule ligne marche aussi.
 **Charges et paye** dans le même récap : `charge = 20 essence`, `paye = 100` (seules sur leur ligne, ou au bout
 d'une ligne de vente : `12 rue X : 2 US 100 charge = 20`) → dépense du livreur du bloc, écrite dans la zone

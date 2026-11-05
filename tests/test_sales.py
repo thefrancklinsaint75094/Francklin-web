@@ -88,6 +88,25 @@ def test_parse_address_line_errors():
         "ligne 3 : produit inconnu « KT »"]
 
 
+def test_parse_address_alone_on_the_line_above():
+    text = ("Livreur A\n27 rue Marchand Orly 94360\n1 US 60€\n8 av. Foch\nCréteil 94000\nCB 2 MSX 100\n"
+            "1 US 30\nb\n75011\n1 divin 50")
+    out = sales.parse(text, CAT, NAMES, USERS)
+    assert out.errors == []
+    assert out.blocks[0].lines == [{"pay": "especes", "q": 1, "p": "US", "x": 60.0, "a": "27 rue Marchand Orly 94360"},
+                                   {"pay": "virement", "q": 2, "p": "MSX", "x": 100.0, "a": "8 av. Foch, Créteil 94000"},
+                                   {"pay": "especes", "q": 1, "p": "US", "x": 30.0}]
+    assert out.blocks[1].lines == [{"pay": "especes", "q": 1, "p": "DIV", "x": 50.0, "a": "75011"}]
+
+
+def test_parse_address_alone_never_hides_an_unknown_product():
+    out = sales.parse("Livreur A\n1 villa 60\n2 US 60\n12 rue X 75011\nLivreur B\n2 US 60\n5 rue Y", CAT, NAMES, USERS)
+    assert out.errors == ["ligne 2 : produit inconnu « villa »",
+                          "ligne 4 : adresse « 12 rue X 75011 » sans vente en dessous (ex. 12 rue de la Paix 75002, puis 2 US 60)",
+                          "ligne 7 : adresse « 5 rue Y » sans vente en dessous (ex. 12 rue de la Paix 75002, puis 2 US 60)"]
+    assert out.blocks[0].lines == [{"pay": "especes", "q": 2, "p": "US", "x": 60.0}]
+
+
 def test_parse_charges_and_paye():
     text = ("Livreur A\n12 rue X : 2 US 100\ncharge = 20 essence\nPaye 100\nCharges: 15,5 € - parking\n"
             "5 rue Y : 1 MSX 50 paye = 30\nb\npayé=40")

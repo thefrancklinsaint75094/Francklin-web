@@ -9,7 +9,8 @@ Format (un bloc par livreur, autant de blocs que voulu) :
 
 Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €, ou 0 € pour un
 produit offert : il sort du stock du livreur sans rien rapporter). L'adresse, facultative, se met devant, suivie de
-« : » ; elle va dans la colonne Adresse de la feuille (sinon « Récap ventes »).
+« : », ou seule sur la ligne au-dessus de la vente (reconnue à son code postal ou à « rue », « avenue »…) ; elle va
+dans la colonne Adresse de la feuille (sinon « Récap ventes »).
 Dépenses du livreur dans le même bloc : « charge = 20 essence » ou « paye = 100 » (seules sur leur ligne, ou au
 bout d'une ligne de vente avec « = ») → zone DÉPENSES LIVREURS de l'onglet (Charges / Paye, montant, motif).
 Espèces par défaut ; sinon « CB » ou « virement » n'importe où avant le prix (CB compte comme virement :
@@ -150,9 +151,45 @@ def split_address(line: str) -> tuple[str | None, str]:
     return " ".join(address.split()) or None, rest.strip()
 
 
+_POSTCODE_RE = re.compile(r"(?<!\d)\d{5}(?!\d)")
+_STREET_WORDS = {"rue", "avenue", "av", "bd", "boulevard", "blvd", "allee", "impasse", "imp", "place", "pl", "chemin",
+                 "villa", "quai", "route", "rte", "cours", "square", "sq", "passage", "residence", "cite",
+                 "lotissement", "sentier", "voie", "ruelle", "hameau", "parvis", "esplanade", "promenade",
+                 "faubourg", "fg", "rond-point", "mail", "clos", "domaine"}
+
+
+def looks_like_address(line: str) -> bool:
+    """« 27 rue Marchand Orly 94360 », « Orly 94360 », « 8 av. Foch » : un code postal ou un mot de voie."""
+    if _POSTCODE_RE.search(line):
+        return True
+    return any(w in _STREET_WORDS for w in re.split(r"[\s,.;/]+", _plain(line)))
+
+
+def _sale_shaped(line: str, catalog) -> bool:
+    """« 1 US 60 » : quantité, produit, prix, jamais prise pour une adresse (un produit inconnu reste bloqué).
+    Seule exception : un « prix » de 5 chiffres qui est un code postal (« 27 rue X 94360 »), si le produit
+    n'est pas au catalogue."""
+    m = LINE_RE.match(split_payment(line)[1])
+    if not m:
+        return False
+    if not _POSTCODE_RE.fullmatch(m["price"]):
+        return True
+    match = catalog.match(m["product"]) if catalog else None
+    return bool(match and match.product)
+
+
 def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
     out = Parsed()
     current: Block | None = None
+    pending: tuple[int, str] | None = None   # adresse seule sur sa ligne, pour la vente de la ligne suivante
+
+    def unused() -> None:
+        nonlocal pending
+        if pending:
+            out.errors.append(f"ligne {pending[0]} : adresse « {pending[1]} » sans vente en dessous "
+                              "(ex. 12 rue de la Paix 75002, puis 2 US 60)")
+        pending = None
+
     for n, raw in enumerate((text or "").splitlines(), 1):
         line = raw.strip()
         if not line or line.lower().startswith("/vente"):
@@ -172,11 +209,20 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             line = sale = address
             address = None
         elif address and resolve_livreur(address, names, users)[0]:   # « Livreur A : 2 US 60 »
+            unused()
             name, user = resolve_livreur(address, names, users)
             current = next((b for b in out.blocks if b.livreur == name), None) or Block(name, user)
             if current not in out.blocks:
                 out.blocks.append(current)
             address = None
+        if (address is None and current is not None and looks_like_address(sale)
+                and not _sale_shaped(sale, catalog)):   # adresse seule : elle va à la vente d'en dessous
+            joined = f"{pending[1]}, {' '.join(sale.split())}" if pending else " ".join(sale.split())
+            pending = (pending[0] if pending else n, joined)
+            continue
+        if address is None and pending and LINE_RE.match(split_payment(sale)[1]):
+            address = pending[1]
+            pending = None
         pay, rest = split_payment(sale)
         m = LINE_RE.match(rest)
         if m:
@@ -204,6 +250,7 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             out.errors.append(f"ligne {n} : « {line} » — attendu : quantité, produit, prix "
                               "(ex. 2 US 60, ou CB 2 US 60)")
             continue
+        unused()
         name, user = resolve_livreur(line, names, users)
         if name is None:
             out.errors.append(f"ligne {n} : livreur inconnu « {line} »")
@@ -211,6 +258,7 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             continue
         current = Block(name, user)
         out.blocks.append(current)
+    unused()
     out.blocks = [b for b in out.blocks if b.lines or b.expenses]
     if out.count + out.expense_count > MAX_LINES:
         out.errors.append(f"trop de lignes ({out.count + out.expense_count}) : envoie-les en plusieurs fois (au plus {MAX_LINES})")
