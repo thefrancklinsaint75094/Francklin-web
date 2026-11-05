@@ -431,6 +431,14 @@ async def get_restock(restock_id: int) -> dict | None:
     return _first(await _t("restocks").select("*").eq("id", restock_id).limit(1).execute())
 
 
+async def update_restock(restock_id: int, fields: dict) -> dict | None:
+    return _first(await _t("restocks").update(fields).eq("id", restock_id).execute())
+
+
+async def delete_restock(restock_id: int) -> None:
+    await _t("restocks").delete().eq("id", restock_id).execute()
+
+
 async def list_restocks_between(start: datetime, end: datetime) -> list[dict]:
     res = await (
         _t("restocks").select("*").gte("created_at", iso(start)).lt("created_at", iso(end))
@@ -445,6 +453,14 @@ async def create_expense(fields: dict) -> dict | None:
 
 async def get_expense(expense_id: int) -> dict | None:
     return _first(await _t("expenses").select("*").eq("id", expense_id).limit(1).execute())
+
+
+async def update_expense(expense_id: int, fields: dict) -> dict | None:
+    return _first(await _t("expenses").update(fields).eq("id", expense_id).execute())
+
+
+async def delete_expense(expense_id: int) -> None:
+    await _t("expenses").delete().eq("id", expense_id).execute()
 
 
 async def list_expenses_between(start: datetime, end: datetime) -> list[dict]:
@@ -465,6 +481,18 @@ async def list_expenses_for_livreur(livreur_id: str, since: datetime) -> list[di
 
 async def create_sales(rows: list[dict]) -> list[dict]:
     return (await _t("sales").insert(rows).execute()).data
+
+
+async def get_sale(sale_id: int) -> dict | None:
+    return _first(await _t("sales").select("*").eq("id", sale_id).limit(1).execute())
+
+
+async def update_sale(sale_id: int, fields: dict) -> dict | None:
+    return _first(await _t("sales").update(fields).eq("id", sale_id).execute())
+
+
+async def delete_sale(sale_id: int) -> None:
+    await _t("sales").delete().eq("id", sale_id).execute()
 
 
 async def list_sales_between(start: datetime, end: datetime) -> list[dict]:

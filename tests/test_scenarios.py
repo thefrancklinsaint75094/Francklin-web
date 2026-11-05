@@ -4537,3 +4537,117 @@ async def test_livreur_notifications_pro(h, test_config):
         assert (await post("/api/action", F1, type="install_guide_all"))[1]["ok"] is False   # dispatch seulement
         status, r = await post("/api/action", DISPATCH, type="install_guide_all")
         assert r["ok"] and r["message"] == "Guide envoyé à 2 livreurs."
+
+
+async def test_actions_tab_edits_and_deletes(h, monkeypatch):
+    """Onglet ⚡ Actions (dispatch) : rechargements, ventes, dépenses et argent du ravi depuis le reset ; une
+    correction ou une suppression change la base ET la ligne du tableau (edit_row, retrouvée par sa note) ; si le
+    tableau ne peut pas être modifié (ancien script), rien n'est changé ; produits choisis dans le catalogue."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot import web
+    from bot.services import sheets
+
+    monkeypatch.setenv("GOOGLE_SHEETS_WEBHOOK_URL", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setenv("GOOGLE_SHEETS_SECRET", "s")
+    calls, script = [], {"new": True}
+
+    async def fake_action(action, client=None, payload=None, **kw):
+        if not script["new"]:
+            return {"ok": True, "added": 0}                  # ancien script : action inconnue
+        calls.append((action, payload))
+        if action == "edit_row":
+            return {"ok": True, "removed": 1, "written": payload["op"] == "replace"}
+        if action == "ravi_move":
+            return {"ok": True, "removed": True} if payload["op"] == "remove" else {"ok": True, "written": True}
+        return {"ok": False, "error": "pas de tableau dans ce test"}
+
+    async def fake_send(rows, client=None):
+        return len(rows)
+
+    monkeypatch.setattr(sheets, "fetch_action", fake_action)
+    monkeypatch.setattr(sheets, "send_rows", fake_send)
+    for name in ("US", "DIV"):
+        await db.create_product(name, name.lower(), [])
+    f1, _, (l1, l2) = await setup_network(h)
+    r1 = await register(h, R1, "ravitailleur", "Sam")
+    admin = await db.get_user_by_tg(DISPATCH)
+    restock = await db.create_restock({"livreur_id": l1["id"], "by_user_id": r1["id"], "kind": "load", "box": "Box 1",
+                                       "items": [{"p": "US", "q": 12}], "cash": 300})
+    [sale] = await db.create_sales([{"livreur_name": l1["display_name"], "livreur_id": l1["id"], "by_user_id": admin["id"],
+                                     "payment": "especes", "product": "US", "qty": 2, "price": 60}])
+    expense = await db.create_expense({"livreur_id": l2["id"], "by_user_id": admin["id"], "kind": "charges",
+                                       "amount": 20, "motif": "essence"})
+    move = await db.create_ravi_move({"ravitailleur": r1["display_name"], "kind": "depot", "amount": 200,
+                                      "motif": "Chez Leila", "by_user_id": admin["id"], "sheet_state": "done"})
+
+    async with TestClient(TestServer(web.build(h.app))) as client:
+        async def post(path, tg_id, **body):
+            return await (await client.post(path, json=body, headers={"X-Init-Data": _init_data(tg_id)})).json()
+
+        assert (await post("/api/section", F1, name="actions"))["ok"] is False          # dispatch seulement
+        assert (await post("/api/action", F1, type="act_delete", what="sale", id=sale["id"]))["ok"] is False
+        data = await post("/api/section", DISPATCH, name="actions")
+        assert data["ok"] and {(i["type"], i["id"]) for i in data["items"]} == {
+            ("restock", restock["id"]), ("sale", sale["id"]), ("expense", expense["id"]), ("ravi", move["id"])}
+        item = next(i for i in data["items"] if i["type"] == "restock")
+        assert item["fields"] == {"kind": "load", "livreur": l1["display_name"], "box": "Box 1",
+                                  "items": [{"p": "US", "q": 12}], "cash": 300.0}
+
+        # Rechargement : 12 US → 10 US + 3 DIV, 250 € ; un produit hors catalogue est refusé.
+        bad = await post("/api/action", DISPATCH, type="act_edit", what="restock", id=restock["id"],
+                         fields={"livreur": l1["display_name"], "box": "Box 1", "cash": 250, "items": [{"p": "XYZ", "q": 1}]})
+        assert bad["ok"] is False and calls == []
+        r = await post("/api/action", DISPATCH, type="act_edit", what="restock", id=restock["id"],
+                       fields={"livreur": l1["display_name"], "box": "Box 1", "cash": "250",
+                               "items": [{"p": "US", "q": "10"}, {"p": "div", "q": 3}]})
+        assert r["ok"], r
+        (action, payload), = calls
+        assert action == "edit_row" and payload["kind"] == "recharge" and payload["numero"] == restock["id"]
+        assert payload["op"] == "replace" and payload["row"]["produits"] == {"US": 10, "DIV": 3} and payload["row"]["cash"] == 250
+        fixed = await db.get_restock(restock["id"])
+        assert fixed["items"] == [{"p": "US", "q": 10}, {"p": "DIV", "q": 3}] and float(fixed["cash"]) == 250
+
+        # Vente : livreur et prix corrigés ; prix hors pas de 10 € refusé.
+        calls.clear()
+        bad = await post("/api/action", DISPATCH, type="act_edit", what="sale", id=sale["id"],
+                         fields={"livreur": l2["display_name"], "product": "US", "qty": 2, "price": 65})
+        assert bad["ok"] is False and calls == []
+        r = await post("/api/action", DISPATCH, type="act_edit", what="sale", id=sale["id"],
+                       fields={"livreur": l2["display_name"], "product": "DIV", "qty": 1, "price": 50,
+                               "payment": "virement", "address": "27 rue Marchand Orly 94360"})
+        assert r["ok"], r
+        (action, payload), = calls
+        assert (payload["kind"], payload["numero"], payload["row"]["livreur"], payload["row"]["paiement"],
+                payload["row"]["adresse"]) == ("vente", f"V{sale['id']}", l2["display_name"], "Virement",
+                                               "27 rue Marchand Orly 94360")
+        assert (await db.get_sale(sale["id"]))["livreur_id"] == l2["id"]
+
+        # Dépense : montant corrigé ; mouvement du ravi : sa ligne RAVI est effacée puis réécrite.
+        calls.clear()
+        assert (await post("/api/action", DISPATCH, type="act_edit", what="expense", id=expense["id"],
+                           fields={"livreur": l2["display_name"], "kind": "paye", "amount": "30"}))["ok"]
+        assert calls[0][1]["kind"] == "depense" and calls[0][1]["row"]["montant"] == 30
+        assert (await db.get_expense(expense["id"]))["kind"] == "paye"
+        calls.clear()
+        assert (await post("/api/action", DISPATCH, type="act_edit", what="ravi", id=move["id"],
+                           fields={"kind": "depot", "amount": 250, "motif": "Chez Leila"}))["ok"]
+        assert [p["op"] for _, p in calls] == ["remove", "add"] and calls[1][1]["montant"] == 250
+        assert (await db.get_ravi_move(move["id"]))["sheet_state"] == "done"
+
+        # Ancien script : rien n'est changé, ni la base ni le tableau.
+        script["new"] = False
+        r = await post("/api/action", DISPATCH, type="act_delete", what="sale", id=sale["id"])
+        assert r["ok"] is False and "pas à jour" in r["message"] and await db.get_sale(sale["id"])
+        script["new"] = True
+
+        # Supprimer : la ligne du tableau est effacée, puis l'action disparaît de la base et de l'onglet.
+        calls.clear()
+        assert (await post("/api/action", DISPATCH, type="act_delete", what="restock", id=restock["id"]))["ok"]
+        assert calls == [("edit_row", {"kind": "recharge", "numero": restock["id"], "op": "remove", "row": None})]
+        assert await db.get_restock(restock["id"]) is None
+        assert (await post("/api/action", DISPATCH, type="act_delete", what="restock", id=restock["id"]))["ok"] is False
+        data = await post("/api/section", DISPATCH, name="actions")
+        assert ("restock", restock["id"]) not in {(i["type"], i["id"]) for i in data["items"]}
+        events = [e["type"] for e in (await db._t("events").select("type").execute()).data]
+        assert events.count("action_edit") == 4 and events.count("action_delete") == 1

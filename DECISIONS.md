@@ -824,3 +824,11 @@ simple qui respecte le mur de confidentialité (§12).
      d'adresse se recollent. Garde-fous : une ligne « quantité produit prix » reste une vente (le produit inconnu
      bloque toujours, règle 177), sauf si son « prix » est un code postal ; une adresse sans vente en dessous est
      une erreur. Le catalogue n'est pas touché.
+
+181. **Onglet ⚡ Actions : corriger ou supprimer ce qui a été saisi** (l'exploitant : « l'historique des actions et
+     pouvoir modifier »). Choix de l'exploitant : rechargements (et swipes), ventes, dépenses, argent du ravi ;
+     corriger ET supprimer ; depuis le dernier reset (ce qui est encore dans les tableaux). Réservé au dispatch.
+     Le tableau d'abord : si sa ligne ne peut pas être corrigée (script pas à jour, injoignable), la base ne change
+     pas, pour que les deux restent d'accord. Suppression réelle en base (rien d'autre n'y renvoie), anciennes
+     valeurs gardées dans le journal. Produits choisis dans le catalogue, jamais tapés (règle 177). Le livreur
+     n'est pas prévenu d'une correction (c'est le dispatch qui rectifie une erreur de saisie).

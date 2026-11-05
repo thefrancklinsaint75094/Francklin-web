@@ -464,6 +464,35 @@ async def delete(actor: dict, move_id: int) -> tuple[bool, str]:
     return True, texts.RAVI_DELETED
 
 
+async def edit(actor: dict, move_id: int, kind: str, amount, motif: str | None) -> tuple[bool, str]:
+    """Corrige un dépôt, une charge, un invest ou un « remis » (onglet ⚡ Actions) : sa ligne RAVI est effacée puis
+    réécrite. Si le tableau ne peut pas être corrigé (script pas à jour, injoignable), rien n'est changé."""
+    from bot.services import sheets
+
+    move = await db.get_ravi_move(int(move_id))
+    if not move or move.get("deleted_at"):
+        return False, texts.ALREADY_HANDLED
+    if move["kind"] not in KINDS or kind not in KINDS:
+        return False, "Ce mouvement ne se corrige pas : supprime-le et refais-le."
+    amount = clean_amount(amount)
+    if amount is None:
+        return False, texts.RAVI_AMOUNT
+    if sheets.enabled() and move["sheet_state"] == "done":
+        result = await sheets.fetch_action("ravi_move", payload={"op": "remove", "numero": move["id"]})
+        if not (result and result.get("ok") and (result.get("removed") or result.get("missing"))):
+            error = (result or {}).get("error") if result and not result.get("ok") else None
+            return False, f"⚠️ Tableau injoignable, rien n'est changé : {error}" if error else \
+                "⚠️ Le script Google n'est pas à jour : rien n'est changé."
+    fields = {"kind": kind, "amount": amount, "motif": " ".join(str(motif or "").split())[:MAX_MOTIF] or None,
+              "sheet_state": "pending" if sheets.enabled() else "none"}
+    await db.update_ravi_move(move["id"], fields)
+    await db.log_event("action_edit", user_id=actor["id"],
+                       payload={"type": "ravi", "id": move["id"],
+                                "before": {k: move.get(k) for k in ("kind", "amount", "motif")}})
+    await sync_sheet()
+    return True, "✅ Mouvement corrigé (base et RAVI)."
+
+
 # ---------------------------------------------------------------- copie dans le Compta (onglet RAVI)
 
 def _sheet_row(move: dict) -> dict:
