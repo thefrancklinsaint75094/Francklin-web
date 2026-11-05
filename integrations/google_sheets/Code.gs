@@ -59,6 +59,11 @@
  * (colonne C, ravitailleur en T, sans « Stock antérieur » ni « Swipe ») et les lignes de COMPTA RAVI, y compris
  * celles tapées à la main : l'espace 💼 Ravi du bot compte exactement ce qu'il y a dans les tableaux.
  *
+ * Corriger ou supprimer (« action: edit_row », onglet ⚡ Actions de l'appli) : une vente (« Bot #V… », feuille
+ * Dispatch), un rechargement (« Bot R#… », tableau Rechargement) ou une dépense (« Bot D#… », feuille Dispatch),
+ * retrouvé par sa note dans les 7 onglets : la ligne est effacée, puis réécrite avec les nouvelles valeurs
+ * (op « replace ») ou laissée vide (op « remove »).
+ *
  * Clôture de la semaine (« action: cloture », commande /cloture du bot) :
  * 1. copie des 3 fichiers dans le dossier Drive « Archives bot » (si la copie échoue, rien n'est effacé) ;
  * 2. stock actuel des box (ORGA ④) → nouveau stock initial (COMPTA, onglet STOCK) ;
@@ -140,6 +145,7 @@ function doPost(e) {
     if (data.action === 'cloture') return json_(cloture_(data));
     if (data.action === 'ravi_move') return json_(raviMove_(data));
     if (data.action === 'ravi_sheet') return json_(raviSheet_());
+    if (data.action === 'edit_row') return json_(editRow_(data));
     const rows = data.rows || [];
     const courses = rows.filter(function (r) { return r.type !== 'recharge' && r.type !== 'depense'; });
     const recharges = rows.filter(function (r) { return r.type === 'recharge'; });
@@ -435,6 +441,48 @@ function raviMove_(data) {
                                                data.motif || '', data.ravitailleur || '']]);
   sheet.getRange(rowNum, 1).setNote(tag);
   return { ok: true, written: true };
+}
+
+// Corrige (op « replace ») ou efface (op « remove ») une ligne écrite par le bot, retrouvée par sa note.
+// data.kind : « vente » (feuille Dispatch), « recharge » (tableau Rechargement) ou « depense » (feuille Dispatch).
+function editRow_(data) {
+  const kind = data.kind;
+  if (['vente', 'recharge', 'depense'].indexOf(kind) < 0) return { ok: false, error: 'type inconnu : ' + kind };
+  if (kind === 'recharge' && !RECHARGE_SPREADSHEET_ID) return { ok: false, error: 'RECHARGE_SPREADSHEET_ID vide dans le script' };
+  const ss = kind === 'recharge' ? SpreadsheetApp.openById(RECHARGE_SPREADSHEET_ID) : spreadsheet_();
+  const first = kind === 'vente' ? FIRST_ROW : kind === 'recharge' ? R_FIRST_ROW : DEP_FIRST_ROW;
+  const last = kind === 'vente' ? LAST_ROW : kind === 'recharge' ? R_LAST_ROW : DEP_LAST_ROW;
+  const cols = kind === 'vente' ? COLS : kind === 'recharge' ? R_COLS : DEP_COLS;
+  const tag = (kind === 'vente' ? NOTE_PREFIX : kind === 'recharge' ? R_NOTE_PREFIX : DEP_NOTE_PREFIX) + data.numero;
+  let removed = 0;
+  JOURS.forEach(function (day) {
+    const sheet = ss.getSheetByName(day);
+    if (!sheet) return;
+    const notes = sheet.getRange(first, 1, last - first + 1, 1).getNotes();
+    notes.forEach(function (n, i) {
+      const note = n[0];
+      if (note !== tag && note.indexOf(tag + ' ') !== 0) return;
+      const rowNum = first + i;
+      if (kind === 'vente') {
+        sheet.getRange(rowNum, 2, 1, cols - 1).clearContent();
+        sheet.getRange(rowNum, 1).setValue(VENDEUR).clearNote();
+      } else {
+        sheet.getRange(rowNum, 1, 1, cols).clearContent();
+        sheet.getRange(rowNum, 1).clearNote();
+      }
+      removed++;
+    });
+  });
+  if (data.op !== 'replace') return { ok: true, removed: removed, written: false };
+  const r = data.row || {};
+  if (kind === 'recharge') {
+    writeRecharge_(ss, names_(ss, R_NAMES_RANGE), r);
+  } else if (kind === 'vente') {
+    write_(ss, names_(ss, NAMES_RANGE), r);
+  } else {
+    writeDepense_(ss, names_(ss, NAMES_RANGE), r);
+  }
+  return { ok: true, removed: removed, written: true };
 }
 
 // À exécuter une fois depuis l'éditeur (▶) pour autoriser l'accès à Google Drive (archives).

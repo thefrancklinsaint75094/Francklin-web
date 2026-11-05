@@ -470,6 +470,16 @@ vraie appli dans Telegram, avec un **menu à gauche** (☰ ou glisser depuis le 
 - **🛵 Livreurs** : service / pause d'un geste, position (envoyée dans le chat), adresse en cours.
 - **📦 Stock** (box et livreurs), **🍾 Produits** (lecture), **💶 Caisse**, **📊 Bilan de la nuit**,
   **🔔 Activité** (tous les avis), **👥 Équipe**, **⚙️ Commandes et réglages** (les commandes du chat par chapitre).
+- **⚡ Actions** (dispatch) : tout ce qui a été saisi depuis le dernier reset, jour par jour — rechargements,
+  reprises, cash récupéré et swipes, ventes de `/ventes`, dépenses des livreurs, argent du ravitailleur (filtres
+  Tout / Recharg. / Ventes / Dépenses / Ravi). Une action touchée → **corriger** (livreur, box, produits et
+  quantités, cash ; produit, quantité, prix, paiement, adresse ; montant, type, motif) ou **🗑 supprimer**. La base
+  ET la ligne du tableau changent ensemble (action `edit_row` du script : la ligne est retrouvée par sa note
+  « Bot R#… », « Bot #V… », « Bot D#… » dans les 7 onglets ; RAVI : effacée puis réécrite). Script pas à jour ou
+  tableau injoignable : rien n'est changé. Les produits se choisissent dans la liste du catalogue : un produit
+  inconnu ne peut pas entrer par ici. Les lignes tapées à la main dans les tableaux ne sont pas dans cet onglet
+  (elles se corrigent dans le tableau). Chaque correction est gardée dans le journal (événements `action_edit`,
+  `action_delete`, avec les anciennes valeurs).
 
 **Tout se fait dans l'appli** (le chat reste disponible) :
 

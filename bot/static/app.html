@@ -207,6 +207,7 @@ const SCREENS = [
   { key: "products", icon: "🍾", label: "Produits" },
   { key: "cash", icon: "💶", label: "Caisse" },
   { key: "ravi", icon: "💼", label: "Ravi (argent)", dispatch: true },
+  { key: "actions", icon: "⚡", label: "Actions", dispatch: true },
   { key: "bilan", icon: "📊", label: "Bilan de la nuit" },
   { key: "feed", icon: "🔔", label: "Activité" },
   { key: "team", icon: "👥", label: "Équipe" },
@@ -333,7 +334,7 @@ function go(key) {
   S.screen = key; S.open = null; S.q = ""; closeDrawer(); window.scrollTo(0, 0);
   $("title").textContent = SCREENS.find((s) => s.key === key).label;
   if (key === "feed") loadFeed(false);
-  if (["stock", "cash", "products", "team", "ravi"].includes(key)) loadSection(key);
+  if (["stock", "cash", "products", "team", "ravi", "actions"].includes(key)) loadSection(key);
   drawer(); render();
 }
 
@@ -341,7 +342,7 @@ function go(key) {
 function render() {
   if (!S.data) return;
   const views = { home: viewHome, courses: viewCourses, livreurs: viewLivreurs, stock: viewStock, products: viewProducts,
-                  cash: viewCash, ravi: viewRavi, bilan: viewBilan, feed: viewFeed, team: viewTeam, plus: viewPlus };
+                  cash: viewCash, ravi: viewRavi, actions: viewActions, bilan: viewBilan, feed: viewFeed, team: viewTeam, plus: viewPlus };
   const v = views[S.screen]();
   const fab = ["home", "courses"].includes(S.screen) ? el("button", { class: "fab", onclick: newOrder }, "➕ Commande") : null;
   $("view").replaceChildren(...nodes(v, fab, el("div", { style: "height:70px" })));
@@ -708,6 +709,106 @@ function raviStartSheet(r) {
   openSheet(el("h3", {}, `🏁 Solde de départ · ${r.name}`), el("p", {}, "À partir de maintenant, son solde part de ce montant ; seuls les mouvements suivants comptent."),
     field("Montant (€)", amount), field("Motif", motif),
     el("button", { class: "btn main full", onclick: () => raviDo({ type: "rv_start", ravi: r.name, amount: amount.value, motif: motif.value }, `Fixer le départ de ${r.name} à ${eur(parseFloat(amount.value) || 0)} ?`) }, "Fixer le départ"));
+}
+
+// ------------------------------------------------------------------ ⚡ Actions : historique, corriger, supprimer
+const ACT_FILTERS = [["all", "Tout"], ["restock", "Recharg."], ["sale", "Ventes"], ["expense", "Dépenses"], ["ravi", "Ravi"]];
+function viewActions() {
+  const wait = sectionState("actions"); if (wait) return wait;
+  const s = S.cache.actions;
+  const f = S.actFilter || "all";
+  const wrap = el("div", {}, el("div", { class: "h2" }, `Depuis le reset · ${s.since}`, refreshBtn("actions")));
+  wrap.append(el("div", { class: "seg" }, ACT_FILTERS.map(([k, l]) =>
+    el("button", { class: f === k ? "on" : "", onclick: () => { S.actFilter = k; render(); } }, l))));
+  const list = el("div", { class: "list" });
+  list.append(el("div", { class: "muted small", style: "text-align:center" }, "Touche une action pour la corriger ou la supprimer : la base et la ligne du tableau changent ensemble."));
+  const items = s.items.filter((i) => f === "all" || i.type === f);
+  let day = null;
+  items.forEach((i) => {
+    const d = i.when.split(" ")[0];
+    if (d !== day) { day = d; list.append(el("div", { class: "muted small", style: "margin:8px 4px 0; font-weight:600" }, d)); }
+    list.append(el("button", { class: "card tap", onclick: () => actionSheet(i) },
+      el("div", { class: "row" }, el("b", { class: "grow" }, `${i.icon} ${i.title}`), el("span", { class: "muted small" }, i.when.split(" ")[1])),
+      i.detail ? el("div", { class: "small", style: "margin-top:4px" }, i.detail) : null,
+      el("div", { class: "muted small", style: "margin-top:2px" }, (i.by ? `par ${i.by}` : "") + (i.pending ? " · ⏳ pas encore dans le tableau" : ""))));
+  });
+  if (!items.length) list.append(el("div", { class: "card empty" }, el("b", {}, "⚡"), "Aucune action depuis le reset."));
+  wrap.append(list);
+  return wrap;
+}
+async function actDo(body, question) {
+  if (question && !(await confirmBox(question))) return;
+  const r = await call(body);
+  toast(r.message || (r.ok ? "Enregistré" : "Erreur"));
+  if (r.ok) { closeSheet(); loadSection("actions"); S.cache.ravi = null; S.cache.stock = null; S.cache.cash = null; }
+}
+function toggleOf(options, value, onchange) {
+  const t = el("div", { class: "toggle" });
+  const draw = () => t.replaceChildren(...options.map(([k, l]) => el("button", { class: value === k ? "on" : "", onclick: () => { value = k; onchange(k); draw(); } }, l)));
+  draw();
+  return t;
+}
+async function actionSheet(i) {
+  tap();
+  const fm = await forms();
+  const v = i.fields;
+  const out = { what: i.type, id: i.id };
+  const del = el("button", { class: "btn full", style: "margin-top:8px; color:var(--red, #d33)",
+    onclick: () => actDo({ type: "act_delete", what: i.type, id: i.id }, `Supprimer « ${i.title} » (${i.detail}) ? La ligne du tableau est effacée aussi.`) }, "🗑 Supprimer");
+  const save = (fields) => actDo({ type: "act_edit", ...out, fields });
+  const livreurSel = () => select(fm.livreurs.includes(v.livreur) ? fm.livreurs : [v.livreur, ...fm.livreurs], v.livreur);
+  const head = [el("h3", {}, `${i.icon} ${i.title}`), el("p", { class: "muted small" }, `${i.when}` + (i.by ? ` · par ${i.by}` : ""))];
+  if (i.type === "restock") {
+    const liv = v.kind === "swipe" ? null : livreurSel();
+    const box = ["load", "unload"].includes(v.kind) ? select(fm.boxes.includes(v.box) || !v.box ? fm.boxes : [v.box, ...fm.boxes], v.box) : null;
+    const rows = el("div", {});
+    const addRow = (p, q) => {
+      const ps = select(fm.products.includes(p) || !p ? fm.products : [p, ...fm.products], p, "Produit…");
+      const qs = textInput({ type: "number", min: "1", max: "999", inputmode: "numeric", value: q ? String(q) : "", style: "width:80px" });
+      const line = el("div", { class: "row", style: "margin:6px 0" }, el("div", { class: "grow" }, ps), qs,
+        el("button", { class: "muted", onclick: () => line.remove() }, "✕"));
+      line.get = () => ({ p: ps.value, q: qs.value });
+      rows.append(line);
+    };
+    if (v.kind !== "cash") v.items.forEach((it) => addRow(it.p, it.q));
+    const cash = textInput({ type: "number", min: "0", inputmode: "decimal", value: String(v.cash || 0) });
+    openSheet(...head,
+      liv ? field("Livreur", liv) : null, box ? field("Box", box) : null,
+      v.kind !== "cash" ? el("div", { class: "field" }, el("span", {}, v.kind === "unload" ? "Produits repris" : v.kind === "swipe" ? "Produits donnés" : "Produits chargés"), rows,
+        el("button", { class: "btn full", onclick: () => addRow("", "") }, "➕ Un produit")) : null,
+      field("Cash récupéré (€)", cash),
+      el("button", { class: "btn main full", onclick: () => save({ livreur: liv && liv.value, box: box && box.value, cash: cash.value,
+        items: [...rows.children].map((r) => r.get()).filter((x) => x.p || x.q) }) }, "Enregistrer la correction"), del);
+  } else if (i.type === "sale") {
+    let pay = v.payment;
+    const liv = livreurSel();
+    const prod = select(fm.products.includes(v.product) ? fm.products : [v.product, ...fm.products], v.product);
+    const qty = textInput({ type: "number", min: "1", inputmode: "numeric", value: String(v.qty) });
+    const price = textInput({ type: "number", min: "0", step: "10", inputmode: "decimal", value: String(v.price) });
+    const addr = textInput({ placeholder: "Adresse (facultatif)", maxlength: "150", value: v.address });
+    openSheet(...head, field("Livreur", liv), field("Produit", prod), field("Quantité", qty), field("Prix total (€)", price),
+      el("div", { class: "field" }, toggleOf([["especes", "💵 Espèces"], ["virement", "💳 CB / virement"]], pay, (k) => { pay = k; })),
+      field("Adresse", addr),
+      el("button", { class: "btn main full", onclick: () => save({ livreur: liv.value, product: prod.value, qty: qty.value, price: price.value, payment: pay, address: addr.value }) }, "Enregistrer la correction"), del);
+  } else if (i.type === "expense") {
+    let kind = v.kind;
+    const liv = livreurSel();
+    const amount = textInput({ type: "number", min: "0", inputmode: "decimal", value: String(v.amount) });
+    const motif = textInput({ placeholder: "Motif (facultatif)", maxlength: "80", value: v.motif });
+    openSheet(...head, field("Livreur", liv),
+      el("div", { class: "field" }, toggleOf([["charges", "🧾 Charge"], ["paye", "💸 Paye"]], kind, (k) => { kind = k; })),
+      field("Montant (€)", amount), field("Motif", motif),
+      el("button", { class: "btn main full", onclick: () => save({ livreur: liv.value, kind, amount: amount.value, motif: motif.value }) }, "Enregistrer la correction"), del);
+  } else {
+    let kind = v.kind;
+    const amount = textInput({ type: "number", min: "0", inputmode: "decimal", value: String(v.amount) });
+    const motif = textInput({ placeholder: "Motif (facultatif)", maxlength: "80", value: v.motif });
+    openSheet(...head,
+      i.editable ? el("div", { class: "field" }, toggleOf([["depot", "💰 Donné"], ["perso", "💸 Remis"], ["charge", "🧾 Charge"], ["invest", "📦 Invest"]], kind, (k) => { kind = k; })) : null,
+      i.editable ? field("Montant (€)", amount) : el("p", {}, "Ce mouvement ne se corrige pas : supprime-le puis refais-le dans 💼 Ravi."),
+      i.editable ? field("Motif", motif) : null,
+      i.editable ? el("button", { class: "btn main full", onclick: () => save({ kind, amount: amount.value, motif: motif.value }) }, "Enregistrer la correction") : null, del);
+  }
 }
 
 function viewBilan() {

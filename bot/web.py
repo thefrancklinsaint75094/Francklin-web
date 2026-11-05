@@ -4,7 +4,7 @@ messages. Servie par le bot lui-même (aiohttp, port PORT de Railway), ouverte p
 - GET  /            → bot/static/app.html (l'appli)
 - POST /api/board   → courses de la nuit (en attente, en cours, livrées), livreurs (avec l'adresse qu'ils sont en
                       train de faire et leur heure d'arrivée), totaux
-- POST /api/section → stock (box, livreurs), caisse, produits, équipe
+- POST /api/section → stock (box, livreurs), caisse, produits, équipe, actions de la semaine (⚡ Actions)
 - POST /api/feed    → fil d'activité (tous les avis, même ceux qui n'arrivent plus en message)
 - POST /api/action  → attribuer, changer de livreur, livrée, rediffuser, annuler, heure, adresse, service / pause,
                       position, ouvrir dans le chat, commande du menu, niveau de notifications
@@ -319,6 +319,16 @@ async def _act(request: web.Request, admin: dict, body: dict) -> dict:
         return {"ok": True, "message": f"Guide envoyé à {n} livreur{'s' if n > 1 else ''}."}
     if kind in RAVI_ACTIONS:
         return await _ravi(context, admin, kind, body)
+    if kind in ("act_edit", "act_delete"):              # onglet ⚡ Actions : corriger ou supprimer (dispatch)
+        from bot.services import actions
+
+        if not common.is_dispatch(admin):
+            return {"ok": False, "message": texts.DISPATCH_ONLY}
+        what = str(body.get("what") or "")
+        fields = body.get("fields") if isinstance(body.get("fields"), dict) else {}
+        ok, text = await (actions.edit(admin, what, body.get("id"), fields) if kind == "act_edit"
+                          else actions.delete(admin, what, body.get("id")))
+        return {"ok": ok, "message": text}
     if kind == "notify_level":
         level = "tout" if body.get("value") == "tout" else "essentiel"
         await db.update_user(admin["id"], {"notify_level": level})
@@ -755,6 +765,12 @@ async def section(name: str, viewer: dict) -> dict:
                 "ravitailleurs": await restock_text._ravitailleurs(), "boxes": list(config.get().boxes),
                 "products": [p["name"] for p in await db.list_products()],
                 "can_order": common.can_order(viewer), "dispatch": common.is_dispatch(viewer)}
+    if name == "actions":
+        if not common.is_dispatch(viewer):
+            return {"ok": False, "error": texts.DISPATCH_ONLY}
+        from bot.services import actions
+
+        return await actions.history()
     if name == "ravi":
         if not common.is_dispatch(viewer):
             return {"ok": False, "error": texts.DISPATCH_ONLY}
