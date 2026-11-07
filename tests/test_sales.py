@@ -107,6 +107,21 @@ def test_parse_address_alone_never_hides_an_unknown_product():
     assert out.blocks[0].lines == [{"pay": "especes", "q": 2, "p": "US", "x": 60.0}]
 
 
+def test_parse_address_and_sale_on_one_line_without_colon():
+    text = ("Livreur A\n27 rue Marchand Orly 94360 1 US 60€\nCB 8 av. Foch Créteil 2 MSX 100\n"
+            "Bât 2 rue X 1 divin 30\nNanterre 1 US 50\n2 US 60\nb\n12 rue Y 75011 1 KT 50")
+    out = sales.parse(text, CAT, NAMES, USERS)
+    assert out.errors == ["ligne 8 : produit inconnu « KT »"]
+    assert out.blocks[0].lines == [{"pay": "especes", "q": 1, "p": "US", "x": 60.0, "a": "27 rue Marchand Orly 94360"},
+                                   {"pay": "virement", "q": 2, "p": "MSX", "x": 100.0, "a": "8 av. Foch Créteil"},
+                                   {"pay": "especes", "q": 1, "p": "DIV", "x": 30.0, "a": "Bât 2 rue X"},
+                                   {"pay": "especes", "q": 1, "p": "US", "x": 50.0, "a": "Nanterre"},
+                                   {"pay": "especes", "q": 2, "p": "US", "x": 60.0}]
+    # « Livreur A 2 US 60 » sans « : » : pas une adresse (le nom du livreur n'est jamais pris pour une adresse).
+    out = sales.parse("Livreur A\nLivreur B 2 US 60", CAT, NAMES, USERS)
+    assert out.errors and not any(line.get("a") == "Livreur B" for b in out.blocks for line in b.lines)
+
+
 def test_parse_charges_and_paye():
     text = ("Livreur A\n12 rue X : 2 US 100\ncharge = 20 essence\nPaye 100\nCharges: 15,5 € - parking\n"
             "5 rue Y : 1 MSX 50 paye = 30\nb\npayé=40")

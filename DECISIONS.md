@@ -832,3 +832,9 @@ simple qui respecte le mur de confidentialité (§12).
      pas, pour que les deux restent d'accord. Suppression réelle en base (rien d'autre n'y renvoie), anciennes
      valeurs gardées dans le journal. Produits choisis dans le catalogue, jamais tapés (règle 177). Le livreur
      n'est pas prévenu d'une correction (c'est le dispatch qui rectifie une erreur de saisie).
+
+182. **/ventes : « adresse quantité produit prix » sur une ligne, sans « : »** (l'exploitant écrit
+     « 27 rue … 94360 1 [produit] 60€ »). Le bot lisait 27 fois un « produit » dont le nom contenait l'adresse
+     (le catalogue reconnaît un nom contenu dans le texte) : refus, ou pire 27 unités. La vente est maintenant
+     cherchée au premier nombre suivi exactement d'un produit du catalogue et d'un prix ; ce qui précède est
+     l'adresse. Jamais un nom de livreur ; un produit inconnu reste bloqué et est signalé seul.

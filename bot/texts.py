@@ -1666,7 +1666,7 @@ SALES_HELP = (
     "charge = 20 essence\n"
     "paye = 100</code>\n\n"
     "Chaque ligne : quantité, produit, prix total de la ligne (de 10 en 10 €, ou 0 si c'est offert). "
-    "L'adresse est facultative : devant la vente suivie de « : », ou seule sur la ligne au-dessus "
+    "L'adresse est facultative : devant la vente (avec ou sans « : »), ou seule sur la ligne au-dessus "
     "(avec le code postal ou « rue », « avenue »…). "
     "<b>charge = …</b> et <b>paye = …</b> (motif facultatif après le montant) vont dans les dépenses du "
     "livreur du bloc. "
