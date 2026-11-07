@@ -9,8 +9,9 @@ Format (un bloc par livreur, autant de blocs que voulu) :
 
 Chaque ligne : quantité, produit (nom du catalogue ou alias), prix total de la ligne (de 10 en 10 €, ou 0 € pour un
 produit offert : il sort du stock du livreur sans rien rapporter). L'adresse, facultative, se met devant, suivie de
-« : », ou seule sur la ligne au-dessus de la vente (reconnue à son code postal ou à « rue », « avenue »…) ; elle va
-dans la colonne Adresse de la feuille (sinon « Récap ventes »).
+« : », ou juste devant sans « : » (« 12 rue de la Paix 75002 2 US 60 »), ou seule sur la ligne au-dessus de la vente
+(reconnue à son code postal ou à « rue », « avenue »…) ; elle va dans la colonne Adresse de la feuille (sinon
+« Récap ventes »).
 Dépenses du livreur dans le même bloc : « charge = 20 essence » ou « paye = 100 » (seules sur leur ligne, ou au
 bout d'une ligne de vente avec « = ») → zone DÉPENSES LIVREURS de l'onglet (Charges / Paye, montant, motif).
 Espèces par défaut ; sinon « CB » ou « virement » n'importe où avant le prix (CB compte comme virement :
@@ -178,6 +179,50 @@ def _sale_shaped(line: str, catalog) -> bool:
     return bool(match and match.product)
 
 
+def _known(product: str, catalog) -> bool:
+    match = catalog.match(product) if catalog else None
+    return bool(match and match.product)
+
+
+def _whole_name(product: str, catalog) -> bool:
+    """Le texte EST un produit (nom, surnom ou faute de frappe proche), pas une phrase qui en contient un
+    (« rue Marchand Orly 94360 1 US » contient « US » : c'est une adresse suivie d'une vente)."""
+    from bot.services.catalog import normalize
+
+    if not catalog:
+        return False
+    match = catalog.match(product)
+    return bool(match.product) and (normalize(product) in catalog.index or match.fuzzy)
+
+
+def split_inline_address(line: str, catalog, names: list[str], users: list[dict]) -> tuple[str, str] | None:
+    """« 27 rue Marchand Orly 94360 1 US 60€ » (adresse puis vente, sans « : ») → (« 27 rue Marchand Orly 94360 »,
+    « 1 US 60€ »). La vente est cherchée au premier nombre (1 à 3 chiffres) après lequel le reste se lit
+    « quantité produit prix » avec un produit du catalogue ; sinon, si le début ressemble à une adresse, au premier
+    découpage possible (le produit inconnu est alors signalé seul et bloque). None : pas d'adresse devant."""
+    pay, rest = split_payment(line)
+    whole = LINE_RE.match(rest)
+    if whole and _whole_name(whole["product"], catalog):
+        return None                                      # « 2 US 60 » : déjà une vente
+    tokens = rest.split()
+    splits = []                                          # (début, vente, produit) possibles, de gauche à droite
+    for i in range(1, len(tokens) - 2):
+        if not (tokens[i].isdigit() and len(tokens[i]) <= 3):
+            continue
+        head, tail = " ".join(tokens[:i]), " ".join(tokens[i:])
+        m = LINE_RE.match(tail)
+        if m and re.search(r"[^\W\d_]", head) and not resolve_livreur(head, names, users)[0]:
+            splits.append((head, ("virement " if pay == "virement" else "") + tail, m["product"]))
+    # Le produit exact d'abord (« Bât 2 rue X 1 DIV 30 » : la vente est « 1 DIV 30 », pas « 2 rue X 1 DIV 30 »).
+    for test in (_whole_name, _known):
+        for head, sale, product in splits:
+            if test(product, catalog):
+                return head, sale
+    if whole and _known(whole["product"], catalog):
+        return None                                      # produit contenu dans la ligne, sans adresse devant
+    return next(((head, sale) for head, sale, _ in splits if looks_like_address(head)), None)
+
+
 def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
     out = Parsed()
     current: Block | None = None
@@ -215,6 +260,10 @@ def parse(text: str, catalog, names: list[str], users: list[dict]) -> Parsed:
             if current not in out.blocks:
                 out.blocks.append(current)
             address = None
+        if address is None and current is not None:
+            inline = split_inline_address(sale, catalog, names, users)   # « 12 rue X 75011 2 US 60 »
+            if inline:
+                address, sale = inline
         if (address is None and current is not None and looks_like_address(sale)
                 and not _sale_shaped(sale, catalog)):   # adresse seule : elle va à la vente d'en dessous
             joined = f"{pending[1]}, {' '.join(sale.split())}" if pending else " ".join(sale.split())
